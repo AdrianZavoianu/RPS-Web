@@ -21,8 +21,8 @@ class ExportJobListView(APIView):
     def get(self, request: Request, slug: str) -> Response:
         """List export jobs for project."""
         project = get_object_or_404(Project, slug=slug)
-        jobs = ExportJob.objects.filter(project=project).order_by('-created_at')[:20]
-        serializer = ExportJobSerializer(jobs, many=True, context={'request': request})
+        jobs = ExportJob.objects.filter(project=project).order_by("-created_at")[:20]
+        serializer = ExportJobSerializer(jobs, many=True, context={"request": request})
         return Response(serializer.data)
 
     def post(self, request: Request, slug: str) -> Response:
@@ -37,14 +37,14 @@ class ExportJobListView(APIView):
         job = ExportJob.objects.create(
             project=project,
             user=request.user,
-            export_format=data['format'],
+            export_format=data["format"],
             export_config={
-                'result_set_id': data['result_set_id'],
-                'result_types': data.get('result_types', []),
-                'directions': data.get('directions', ['X', 'Y']),
-                'include_summary': data.get('include_summary', True),
+                "result_set_id": data["result_set_id"],
+                "result_types": data.get("result_types", []),
+                "directions": data.get("directions", ["X", "Y"]),
+                "include_summary": data.get("include_summary", True),
             },
-            status='pending'
+            status="pending",
         )
 
         # Start Celery task
@@ -52,7 +52,7 @@ class ExportJobListView(APIView):
         job.celery_task_id = task.id
         job.save()
 
-        response_serializer = ExportJobSerializer(job, context={'request': request})
+        response_serializer = ExportJobSerializer(job, context={"request": request})
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
 
@@ -63,7 +63,7 @@ class ExportJobDetailView(APIView):
         """Get export job status."""
         project = get_object_or_404(Project, slug=slug)
         job = get_object_or_404(ExportJob, id=job_id, project=project)
-        serializer = ExportJobSerializer(job, context={'request': request})
+        serializer = ExportJobSerializer(job, context={"request": request})
         return Response(serializer.data)
 
     def delete(self, request: Request, slug: str, job_id: int) -> Response:
@@ -71,12 +71,12 @@ class ExportJobDetailView(APIView):
         project = get_object_or_404(Project, slug=slug)
         job = get_object_or_404(ExportJob, id=job_id, project=project)
 
-        if job.status in ['pending', 'processing']:
+        if job.status in ["pending", "processing"]:
             if job.celery_task_id:
                 AsyncResult(job.celery_task_id).revoke(terminate=True)
-            job.status = 'failed'
-            job.error_message = 'Cancelled by user'
-            job.save(update_fields=['status', 'error_message'])
+            job.status = "failed"
+            job.error_message = "Cancelled by user"
+            job.save(update_fields=["status", "error_message"])
 
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -89,12 +89,12 @@ class ExportDownloadView(APIView):
         project = get_object_or_404(Project, slug=slug)
         job = get_object_or_404(ExportJob, id=job_id, project=project)
 
-        if job.status != 'completed' or not job.output_file:
+        if job.status != "completed" or not job.output_file:
             raise Http404("Export file not available")
 
         response = FileResponse(
-            job.output_file.open('rb'),
+            job.output_file.open("rb"),
             as_attachment=True,
-            filename=job.file_name or f"export_{job.id}.{job.export_format}"
+            filename=job.file_name or f"export_{job.id}.{job.export_format}",
         )
         return response

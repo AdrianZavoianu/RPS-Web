@@ -24,23 +24,23 @@ class ChartDataView(ProjectResultsMixin, APIView):
     def get(self, request, project_slug):
         params = self.validate_result_params(
             request,
-            ('result_set_id', 'result_type', 'direction'),
+            ("result_set_id", "result_type", "direction"),
         )
         if isinstance(params, Response):
             return params
 
-        column = request.query_params.get('column', 'Avg')
+        column = request.query_params.get("column", "Avg")
 
         service = self.get_result_service()
         chart_data = service.get_chart_data(
-            result_set_id=int(params['result_set_id']),
-            result_type=params['result_type'],
-            direction=params['direction'],
+            result_set_id=int(params["result_set_id"]),
+            result_type=params["result_type"],
+            direction=params["direction"],
             column=column,
         )
 
         if not chart_data:
-            return Response({'stories': [], 'values': []})
+            return Response({"stories": [], "values": []})
 
         return Response(chart_data)
 
@@ -59,36 +59,42 @@ class TimeSeriesDataView(ProjectResultsMixin, APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, project_slug):
-        result_set_id = request.query_params.get('result_set_id')
-        load_case = request.query_params.get('load_case')
-        result_type = request.query_params.get('result_type')
-        direction = request.query_params.get('direction')
+        result_set_id = request.query_params.get("result_set_id")
+        load_case = request.query_params.get("load_case")
+        result_type = request.query_params.get("result_type")
+        direction = request.query_params.get("direction")
 
         if not all([result_set_id, load_case, result_type, direction]):
             return Response(
-                {'error': 'result_set_id, load_case, result_type, and direction are required'},
+                {"error": "result_set_id, load_case, result_type, and direction are required"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         project = self.get_project()
 
-        cache_entries = TimeSeriesGlobalCache.objects.filter(
-            project=project,
-            result_set_id=result_set_id,
-            load_case_name=load_case,
-            result_type=result_type,
-            direction=direction,
-        ).select_related('story').order_by('-story_sort_order')
+        cache_entries = (
+            TimeSeriesGlobalCache.objects.filter(
+                project=project,
+                result_set_id=result_set_id,
+                load_case_name=load_case,
+                result_type=result_type,
+                direction=direction,
+            )
+            .select_related("story")
+            .order_by("-story_sort_order")
+        )
 
         if not cache_entries.exists():
-            return Response({
-                'stories': [],
-                'time_steps': [],
-                'data': {},
-                'load_case': load_case,
-                'result_type': result_type,
-                'direction': direction,
-            })
+            return Response(
+                {
+                    "stories": [],
+                    "time_steps": [],
+                    "data": {},
+                    "load_case": load_case,
+                    "result_type": result_type,
+                    "direction": direction,
+                }
+            )
 
         stories = []
         data = {}
@@ -102,14 +108,16 @@ class TimeSeriesDataView(ProjectResultsMixin, APIView):
             if time_steps is None and entry.time_steps:
                 time_steps = entry.time_steps
 
-        return Response({
-            'stories': stories,
-            'time_steps': time_steps or [],
-            'data': data,
-            'load_case': load_case,
-            'result_type': result_type,
-            'direction': direction,
-        })
+        return Response(
+            {
+                "stories": stories,
+                "time_steps": time_steps or [],
+                "data": data,
+                "load_case": load_case,
+                "result_type": result_type,
+                "direction": direction,
+            }
+        )
 
 
 class TimeSeriesLoadCasesView(ProjectResultsMixin, APIView):
@@ -124,13 +132,12 @@ class TimeSeriesLoadCasesView(ProjectResultsMixin, APIView):
 
     def get(self, request, project_slug):
         project = self.get_project()
-        result_set_id = request.query_params.get('result_set_id')
+        result_set_id = request.query_params.get("result_set_id")
 
         queryset = TimeSeriesGlobalCache.objects.filter(project=project)
         if result_set_id:
             queryset = queryset.filter(result_set_id=result_set_id)
 
-        load_cases = queryset.values_list('load_case_name', flat=True).distinct()
+        load_cases = queryset.values_list("load_case_name", flat=True).distinct()
 
-        return Response({'load_cases': list(load_cases)})
-
+        return Response({"load_cases": list(load_cases)})

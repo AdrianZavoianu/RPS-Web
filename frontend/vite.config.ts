@@ -25,6 +25,32 @@ export default defineConfig(async ({ mode }) => {
 
   return {
     plugins,
+    define: {
+      global: 'globalThis',
+    },
+    build: {
+      chunkSizeWarningLimit: 1200,
+      rollupOptions: {
+        output: {
+          manualChunks: (id) => {
+            if (id.includes('node_modules/plotly.js') || id.includes('node_modules/react-plotly.js')) {
+              return 'plotly-vendor'
+            }
+            if (id.includes('node_modules/@tanstack')) {
+              return 'tanstack-vendor'
+            }
+            return undefined
+          },
+        },
+      },
+    },
+    optimizeDeps: {
+      esbuildOptions: {
+        define: {
+          global: 'globalThis',
+        },
+      },
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),

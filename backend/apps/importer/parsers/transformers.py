@@ -6,7 +6,6 @@ Ported from RPS_desktop/src/processing/result_transformers.py
 import logging
 from abc import ABC, abstractmethod
 from collections import Counter
-from typing import Optional
 
 import pandas as pd
 
@@ -38,13 +37,13 @@ class ResultTransformer(ABC):
             return df
 
         cleaned_columns = []
-        direction_suffix = self.config.direction_suffix or ''
+        direction_suffix = self.config.direction_suffix or ""
 
         for col in df.columns:
             # Remove direction suffix
-            col_without_suffix = col.replace(direction_suffix, '') if direction_suffix else col
+            col_without_suffix = col.replace(direction_suffix, "") if direction_suffix else col
             # Get the last part after splitting by underscore (load case name)
-            parts = col_without_suffix.split('_')
+            parts = col_without_suffix.split("_")
             load_case_name = parts[-1] if parts else col_without_suffix
             cleaned_columns.append(load_case_name)
 
@@ -64,10 +63,10 @@ class ResultTransformer(ABC):
 
         Default implementation calculates across all numeric columns.
         """
-        numeric_data = df.apply(pd.to_numeric, errors='coerce')
-        df['Avg'] = numeric_data.mean(axis=1)
-        df['Max'] = numeric_data.max(axis=1)
-        df['Min'] = numeric_data.min(axis=1)
+        numeric_data = df.apply(pd.to_numeric, errors="coerce")
+        df["Avg"] = numeric_data.mean(axis=1)
+        df["Max"] = numeric_data.max(axis=1)
+        df["Min"] = numeric_data.min(axis=1)
         return df
 
     def transform(self, df: pd.DataFrame, skip_summary: bool = False) -> pd.DataFrame:
@@ -105,8 +104,9 @@ class GenericResultTransformer(ResultTransformer):
 
 class QuadRotationTransformer(GenericResultTransformer):
     """Transformer for quad rotation results (already converted to percentage in cache)."""
+
     def __init__(self):
-        super().__init__('QuadRotations')
+        super().__init__("QuadRotations")
 
     def filter_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """Keep all columns (no direction filtering needed for rotations)."""
@@ -115,8 +115,9 @@ class QuadRotationTransformer(GenericResultTransformer):
 
 class MinAxialTransformer(GenericResultTransformer):
     """Transformer for minimum axial force results."""
+
     def __init__(self):
-        super().__init__('ColumnAxials')
+        super().__init__("ColumnAxials")
 
     def filter_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """Keep all columns (no direction filtering needed for axial forces)."""
@@ -125,8 +126,9 @@ class MinAxialTransformer(GenericResultTransformer):
 
 class BeamRotationTransformer(GenericResultTransformer):
     """Transformer for beam R3 plastic rotation results."""
+
     def __init__(self):
-        super().__init__('BeamRotations')
+        super().__init__("BeamRotations")
 
     def filter_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """Keep all columns (no direction filtering needed for beam rotations)."""
@@ -135,8 +137,9 @@ class BeamRotationTransformer(GenericResultTransformer):
 
 class SoilPressureTransformer(GenericResultTransformer):
     """Transformer for minimum soil pressure results."""
+
     def __init__(self):
-        super().__init__('SoilPressures_Min')
+        super().__init__("SoilPressures_Min")
 
     def filter_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """Keep all columns (no direction filtering needed for soil pressures)."""
@@ -145,8 +148,9 @@ class SoilPressureTransformer(GenericResultTransformer):
 
 class VerticalDisplacementTransformer(GenericResultTransformer):
     """Transformer for minimum vertical displacement results."""
+
     def __init__(self):
-        super().__init__('VerticalDisplacements_Min')
+        super().__init__("VerticalDisplacements_Min")
 
     def filter_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """Keep all columns (no direction filtering needed for displacements)."""
@@ -156,17 +160,18 @@ class VerticalDisplacementTransformer(GenericResultTransformer):
 def _build_transformer_registry() -> dict:
     """Build the transformer registry from RESULT_CONFIGS."""
     transformers = {
-        result_type: GenericResultTransformer(result_type)
-        for result_type in RESULT_CONFIGS
+        result_type: GenericResultTransformer(result_type) for result_type in RESULT_CONFIGS
     }
     # Override with specialized transformers
-    transformers.update({
-        'QuadRotations': QuadRotationTransformer(),
-        'ColumnAxials': MinAxialTransformer(),
-        'BeamRotations': BeamRotationTransformer(),
-        'SoilPressures_Min': SoilPressureTransformer(),
-        'VerticalDisplacements_Min': VerticalDisplacementTransformer(),
-    })
+    transformers.update(
+        {
+            "QuadRotations": QuadRotationTransformer(),
+            "ColumnAxials": MinAxialTransformer(),
+            "BeamRotations": BeamRotationTransformer(),
+            "SoilPressures_Min": SoilPressureTransformer(),
+            "VerticalDisplacements_Min": VerticalDisplacementTransformer(),
+        }
+    )
     return transformers
 
 
@@ -175,4 +180,6 @@ TRANSFORMERS = _build_transformer_registry()
 
 def get_transformer(result_type: str) -> ResultTransformer:
     """Get transformer for a result type."""
-    return TRANSFORMERS.get(result_type, TRANSFORMERS.get('Drifts_X', GenericResultTransformer('Drifts_X')))
+    return TRANSFORMERS.get(
+        result_type, TRANSFORMERS.get("Drifts_X", GenericResultTransformer("Drifts_X"))
+    )

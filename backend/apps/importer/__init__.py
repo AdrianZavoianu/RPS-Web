@@ -1,1 +1,1 @@
-default_app_config = 'apps.importer.apps.ImporterConfig'
+default_app_config = "apps.importer.apps.ImporterConfig"

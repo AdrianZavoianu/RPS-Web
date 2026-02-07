@@ -1,1 +1,1 @@
-default_app_config = 'apps.exporter.apps.ExporterConfig'
+default_app_config = "apps.exporter.apps.ExporterConfig"

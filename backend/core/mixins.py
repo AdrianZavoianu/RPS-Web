@@ -20,4 +20,3 @@ class ProjectLookupMixin:
             project, _ = Project.objects.get_or_create(catalog_project=catalog_project)
             return project
         return get_object_or_404(Project, catalog_project=catalog_project)
-

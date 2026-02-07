@@ -11,10 +11,9 @@ class Project(models.Model):
     Per-project data container.
     Links to catalog entry for metadata.
     """
+
     catalog_project = models.OneToOneField(
-        CatalogProject,
-        on_delete=models.CASCADE,
-        related_name='project_data'
+        CatalogProject, on_delete=models.CASCADE, related_name="project_data"
     )
 
     # Timestamps (separate from catalog)
@@ -22,7 +21,7 @@ class Project(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        db_table = 'projects'
+        db_table = "projects"
 
     def __str__(self):
         return self.catalog_project.name
@@ -40,21 +39,18 @@ class Story(models.Model):
     """
     Building story/floor level.
     """
-    project = models.ForeignKey(
-        Project,
-        on_delete=models.CASCADE,
-        related_name='stories'
-    )
+
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="stories")
     name = models.CharField(max_length=100)
     elevation = models.FloatField(null=True, blank=True)
     sort_order = models.IntegerField(null=True, blank=True, db_index=True)
 
     class Meta:
-        db_table = 'stories'
-        unique_together = ['project', 'name']
-        ordering = ['sort_order']
+        db_table = "stories"
+        unique_together = ["project", "name"]
+        ordering = ["sort_order"]
         indexes = [
-            models.Index(fields=['project', 'sort_order']),
+            models.Index(fields=["project", "sort_order"]),
         ]
 
     def __str__(self):
@@ -65,30 +61,23 @@ class LoadCase(models.Model):
     """
     Analysis load case (e.g., TH01, TH02, Push_X+).
     """
-    project = models.ForeignKey(
-        Project,
-        on_delete=models.CASCADE,
-        related_name='load_cases'
-    )
+
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="load_cases")
     name = models.CharField(max_length=100)
 
     CASE_TYPE_CHOICES = [
-        ('Time History', 'Time History'),
-        ('Modal', 'Modal'),
-        ('Static', 'Static'),
-        ('Pushover', 'Pushover'),
+        ("Time History", "Time History"),
+        ("Modal", "Modal"),
+        ("Static", "Static"),
+        ("Pushover", "Pushover"),
     ]
-    case_type = models.CharField(
-        max_length=50,
-        choices=CASE_TYPE_CHOICES,
-        blank=True
-    )
+    case_type = models.CharField(max_length=50, choices=CASE_TYPE_CHOICES, blank=True)
     description = models.TextField(blank=True)
 
     class Meta:
-        db_table = 'load_cases'
-        unique_together = ['project', 'name']
-        ordering = ['name']
+        db_table = "load_cases"
+        unique_together = ["project", "name"]
+        ordering = ["name"]
 
     def __str__(self):
         return f"{self.project.name} - {self.name}"
@@ -98,18 +87,15 @@ class Element(models.Model):
     """
     Structural element (Wall, Column, Beam, etc.).
     """
-    project = models.ForeignKey(
-        Project,
-        on_delete=models.CASCADE,
-        related_name='elements'
-    )
+
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="elements")
 
     ELEMENT_TYPE_CHOICES = [
-        ('Wall', 'Wall'),
-        ('Column', 'Column'),
-        ('Beam', 'Beam'),
-        ('Pier', 'Pier'),
-        ('Link', 'Link'),
+        ("Wall", "Wall"),
+        ("Column", "Column"),
+        ("Beam", "Beam"),
+        ("Pier", "Pier"),
+        ("Link", "Link"),
     ]
     element_type = models.CharField(max_length=50, choices=ELEMENT_TYPE_CHOICES)
     name = models.CharField(max_length=100)
@@ -117,19 +103,15 @@ class Element(models.Model):
 
     # Optional story association
     story = models.ForeignKey(
-        Story,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='elements'
+        Story, on_delete=models.SET_NULL, null=True, blank=True, related_name="elements"
     )
 
     class Meta:
-        db_table = 'elements'
-        unique_together = ['project', 'element_type', 'unique_name']
-        ordering = ['element_type', 'name']
+        db_table = "elements"
+        unique_together = ["project", "element_type", "unique_name"]
+        ordering = ["element_type", "name"]
         indexes = [
-            models.Index(fields=['project', 'element_type']),
+            models.Index(fields=["project", "element_type"]),
         ]
 
     def __str__(self):

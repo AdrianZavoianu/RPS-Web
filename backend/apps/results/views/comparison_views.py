@@ -19,12 +19,12 @@ class MaxMinDataView(ProjectResultsMixin, APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, project_slug):
-        result_set_id = request.query_params.get('result_set_id')
-        result_type = request.query_params.get('result_type', 'Drifts')
+        result_set_id = request.query_params.get("result_set_id")
+        result_type = request.query_params.get("result_type", "Drifts")
 
         if not result_set_id:
             return Response(
-                {'error': 'result_set_id is required'},
+                {"error": "result_set_id is required"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -35,7 +35,7 @@ class MaxMinDataView(ProjectResultsMixin, APIView):
         )
 
         if not dataset:
-            return Response({'rows': [], 'directions': [], 'meta': None})
+            return Response({"rows": [], "directions": [], "meta": None})
 
         return Response(dataset.to_dict())
 
@@ -55,23 +55,23 @@ class ComparisonDataView(ProjectResultsMixin, APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, project_slug):
-        result_set_ids_str = request.query_params.get('result_set_ids', '')
-        result_type = request.query_params.get('result_type')
-        direction = request.query_params.get('direction')
-        metric = request.query_params.get('metric', 'Avg')
-        element_id = request.query_params.get('element_id')
+        result_set_ids_str = request.query_params.get("result_set_ids", "")
+        result_type = request.query_params.get("result_type")
+        direction = request.query_params.get("direction")
+        metric = request.query_params.get("metric", "Avg")
+        element_id = request.query_params.get("element_id")
 
         if not result_set_ids_str or not result_type:
             return Response(
-                {'error': 'result_set_ids and result_type are required'},
+                {"error": "result_set_ids and result_type are required"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         try:
-            result_set_ids = [int(x.strip()) for x in result_set_ids_str.split(',')]
+            result_set_ids = [int(x.strip()) for x in result_set_ids_str.split(",")]
         except ValueError:
             return Response(
-                {'error': 'result_set_ids must be comma-separated integers'},
+                {"error": "result_set_ids must be comma-separated integers"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -85,7 +85,6 @@ class ComparisonDataView(ProjectResultsMixin, APIView):
         )
 
         if not dataset:
-            return Response({'rows': [], 'series': [], 'warnings': []})
+            return Response({"rows": [], "series": [], "warnings": []})
 
         return Response(dataset.to_dict())
-

@@ -36,7 +36,9 @@ from apps.importer.parsers.excel_parser import TimeHistoryParseResult, TimeSerie
 logger = logging.getLogger(__name__)
 
 
-def _compute_aggregates(results_matrix: Dict[str, float]) -> Tuple[Optional[float], Optional[float], Optional[float], int]:
+def _compute_aggregates(
+    results_matrix: Dict[str, float]
+) -> Tuple[Optional[float], Optional[float], Optional[float], int]:
     """Compute aggregate statistics from a results matrix in a single pass.
 
     Args:
@@ -49,8 +51,8 @@ def _compute_aggregates(results_matrix: Dict[str, float]) -> Tuple[Optional[floa
         return None, None, None, 0
 
     total = 0.0
-    max_val = float('-inf')
-    min_val = float('inf')
+    max_val = float("-inf")
+    min_val = float("inf")
     count = 0
 
     for v in results_matrix.values():
@@ -91,30 +93,30 @@ class CacheBuilderService:
             Dict with counts of cached items by type
         """
         stats = {
-            'global_cache_rows': 0,
-            'element_cache_rows': 0,
-            'joint_cache_rows': 0,
-            'time_series_cache_rows': 0,
+            "global_cache_rows": 0,
+            "element_cache_rows": 0,
+            "joint_cache_rows": 0,
+            "time_series_cache_rows": 0,
         }
 
         # Mark cache as building
-        self.result_set.cache_status = 'building'
-        self.result_set.save(update_fields=['cache_status'])
+        self.result_set.cache_status = "building"
+        self.result_set.save(update_fields=["cache_status"])
 
         try:
             self.progress_callback("Building global results cache...", 1, 4)
-            stats['global_cache_rows'] = self._build_global_cache()
+            stats["global_cache_rows"] = self._build_global_cache()
 
             self.progress_callback("Building element results cache...", 2, 4)
-            stats['element_cache_rows'] = self._build_element_cache()
+            stats["element_cache_rows"] = self._build_element_cache()
 
             self.progress_callback("Building joint results cache...", 3, 4)
-            stats['joint_cache_rows'] = self._build_joint_cache()
+            stats["joint_cache_rows"] = self._build_joint_cache()
 
             self.progress_callback("Cache building complete", 4, 4)
 
             # Mark cache as ready
-            self.result_set.cache_status = 'ready'
+            self.result_set.cache_status = "ready"
             self.result_set.cache_built_at = timezone.now()
         except Exception:
             logger.exception(
@@ -123,10 +125,10 @@ class CacheBuilderService:
                 self.result_set.id,
             )
             # Mark cache as stale on failure
-            self.result_set.cache_status = 'stale'
+            self.result_set.cache_status = "stale"
             raise
         finally:
-            self.result_set.save(update_fields=['cache_status', 'cache_built_at'])
+            self.result_set.save(update_fields=["cache_status", "cache_built_at"])
 
         return stats
 
@@ -160,45 +162,37 @@ class CacheBuilderService:
             # Process each result type
             # Drifts
             for series in th_result.drifts_x:
-                row = self._create_time_series_row(
-                    load_case_name, 'Drifts', series, stories_map
-                )
+                row = self._create_time_series_row(load_case_name, "Drifts", series, stories_map)
                 if row:
                     cache_rows.append(row)
 
             for series in th_result.drifts_y:
-                row = self._create_time_series_row(
-                    load_case_name, 'Drifts', series, stories_map
-                )
+                row = self._create_time_series_row(load_case_name, "Drifts", series, stories_map)
                 if row:
                     cache_rows.append(row)
 
             # Forces
             for series in th_result.forces_x:
-                row = self._create_time_series_row(
-                    load_case_name, 'Forces', series, stories_map
-                )
+                row = self._create_time_series_row(load_case_name, "Forces", series, stories_map)
                 if row:
                     cache_rows.append(row)
 
             for series in th_result.forces_y:
-                row = self._create_time_series_row(
-                    load_case_name, 'Forces', series, stories_map
-                )
+                row = self._create_time_series_row(load_case_name, "Forces", series, stories_map)
                 if row:
                     cache_rows.append(row)
 
             # Displacements
             for series in th_result.displacements_x:
                 row = self._create_time_series_row(
-                    load_case_name, 'Displacements', series, stories_map
+                    load_case_name, "Displacements", series, stories_map
                 )
                 if row:
                     cache_rows.append(row)
 
             for series in th_result.displacements_y:
                 row = self._create_time_series_row(
-                    load_case_name, 'Displacements', series, stories_map
+                    load_case_name, "Displacements", series, stories_map
                 )
                 if row:
                     cache_rows.append(row)
@@ -206,14 +200,14 @@ class CacheBuilderService:
             # Accelerations
             for series in th_result.accelerations_x:
                 row = self._create_time_series_row(
-                    load_case_name, 'Accelerations', series, stories_map
+                    load_case_name, "Accelerations", series, stories_map
                 )
                 if row:
                     cache_rows.append(row)
 
             for series in th_result.accelerations_y:
                 row = self._create_time_series_row(
-                    load_case_name, 'Accelerations', series, stories_map
+                    load_case_name, "Accelerations", series, stories_map
                 )
                 if row:
                     cache_rows.append(row)
@@ -271,14 +265,14 @@ class CacheBuilderService:
 
         # Build cache for each result type and direction
         result_configs = [
-            ('Drifts_X', StoryDrift, 'drift', {'direction': 'X'}),
-            ('Drifts_Y', StoryDrift, 'drift', {'direction': 'Y'}),
-            ('Accelerations_UX', StoryAcceleration, 'acceleration', {'direction': 'UX'}),
-            ('Accelerations_UY', StoryAcceleration, 'acceleration', {'direction': 'UY'}),
-            ('Forces_VX', StoryForce, 'force', {'direction': 'VX'}),
-            ('Forces_VY', StoryForce, 'force', {'direction': 'VY'}),
-            ('Displacements_UX', StoryDisplacement, 'displacement', {'direction': 'UX'}),
-            ('Displacements_UY', StoryDisplacement, 'displacement', {'direction': 'UY'}),
+            ("Drifts_X", StoryDrift, "drift", {"direction": "X"}),
+            ("Drifts_Y", StoryDrift, "drift", {"direction": "Y"}),
+            ("Accelerations_UX", StoryAcceleration, "acceleration", {"direction": "UX"}),
+            ("Accelerations_UY", StoryAcceleration, "acceleration", {"direction": "UY"}),
+            ("Forces_VX", StoryForce, "force", {"direction": "VX"}),
+            ("Forces_VY", StoryForce, "force", {"direction": "VY"}),
+            ("Displacements_UX", StoryDisplacement, "displacement", {"direction": "UX"}),
+            ("Displacements_UY", StoryDisplacement, "displacement", {"direction": "UY"}),
         ]
 
         for result_type, model, value_field, filters in result_configs:
@@ -308,7 +302,7 @@ class CacheBuilderService:
         queryset = model.objects.filter(
             result_category__result_set=self.result_set,
             **extra_filters,
-        ).select_related('story', 'load_case')
+        ).select_related("story", "load_case")
 
         # Pivot to wide format
         story_data: Dict[int, Dict[str, float]] = defaultdict(dict)
@@ -367,15 +361,15 @@ class CacheBuilderService:
 
         # Build cache for each element result type
         element_configs = [
-            ('WallShears_V2', WallShear, 'force', {'direction': 'V2'}),
-            ('WallShears_V3', WallShear, 'force', {'direction': 'V3'}),
-            ('QuadRotations', QuadRotation, 'rotation', {}),
-            ('ColumnShears_V2', ColumnShear, 'force', {'direction': 'V2'}),
-            ('ColumnShears_V3', ColumnShear, 'force', {'direction': 'V3'}),
-            ('ColumnAxials', ColumnAxial, 'min_axial', {}),
-            ('ColumnRotations_R2', ColumnRotation, 'rotation', {'direction': 'R2'}),
-            ('ColumnRotations_R3', ColumnRotation, 'rotation', {'direction': 'R3'}),
-            ('BeamRotations', BeamRotation, 'r3_plastic', {}),
+            ("WallShears_V2", WallShear, "force", {"direction": "V2"}),
+            ("WallShears_V3", WallShear, "force", {"direction": "V3"}),
+            ("QuadRotations", QuadRotation, "rotation", {}),
+            ("ColumnShears_V2", ColumnShear, "force", {"direction": "V2"}),
+            ("ColumnShears_V3", ColumnShear, "force", {"direction": "V3"}),
+            ("ColumnAxials", ColumnAxial, "min_axial", {}),
+            ("ColumnRotations_R2", ColumnRotation, "rotation", {"direction": "R2"}),
+            ("ColumnRotations_R3", ColumnRotation, "rotation", {"direction": "R3"}),
+            ("BeamRotations", BeamRotation, "r3_plastic", {}),
         ]
 
         for result_type, model, value_field, filters in element_configs:
@@ -404,7 +398,7 @@ class CacheBuilderService:
         queryset = model.objects.filter(
             result_category__result_set=self.result_set,
             **extra_filters,
-        ).select_related('element', 'story', 'load_case')
+        ).select_related("element", "story", "load_case")
 
         # Pivot to wide format
         # Key: (element_id, story_id) -> {load_case: value}
@@ -478,7 +472,7 @@ class CacheBuilderService:
         queryset = SoilPressure.objects.filter(
             project=self.project,
             result_set=self.result_set,
-        ).select_related('load_case')
+        ).select_related("load_case")
 
         # Pivot to wide format
         # Key: unique_name -> {load_case: value}
@@ -501,8 +495,8 @@ class CacheBuilderService:
             row = JointResultsCache(
                 project=self.project,
                 result_set=self.result_set,
-                result_type='SoilPressures_Min',
-                shell_object=joint_shell.get(unique_name, ''),
+                result_type="SoilPressures_Min",
+                shell_object=joint_shell.get(unique_name, ""),
                 unique_name=unique_name,
                 results_matrix=results_matrix,
             )
@@ -524,7 +518,7 @@ class CacheBuilderService:
         queryset = VerticalDisplacement.objects.filter(
             project=self.project,
             result_set=self.result_set,
-        ).select_related('load_case')
+        ).select_related("load_case")
 
         # Pivot to wide format
         joint_data: Dict[str, Dict[str, float]] = defaultdict(dict)
@@ -546,8 +540,8 @@ class CacheBuilderService:
             row = JointResultsCache(
                 project=self.project,
                 result_set=self.result_set,
-                result_type='VerticalDisplacements_Min',
-                shell_object=joint_label.get(unique_name, ''),  # Using label as shell_object
+                result_type="VerticalDisplacements_Min",
+                shell_object=joint_label.get(unique_name, ""),  # Using label as shell_object
                 unique_name=unique_name,
                 results_matrix=results_matrix,
             )

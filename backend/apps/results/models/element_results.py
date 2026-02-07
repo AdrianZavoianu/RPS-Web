@@ -9,14 +9,12 @@ from .result_sets import ResultCategory
 
 class BaseElementResult(models.Model):
     """Abstract base for element-level results."""
+
     element = models.ForeignKey(Element, on_delete=models.CASCADE)
     story = models.ForeignKey(Story, on_delete=models.CASCADE)
     load_case = models.ForeignKey(LoadCase, on_delete=models.CASCADE)
     result_category = models.ForeignKey(
-        ResultCategory,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True
+        ResultCategory, on_delete=models.CASCADE, null=True, blank=True
     )
 
     # Per-result ordering
@@ -28,15 +26,16 @@ class BaseElementResult(models.Model):
 
 class WallShear(BaseElementResult):
     """Wall shear force results (kN)."""
+
     DIRECTION_CHOICES = [
-        ('V2', 'V2'),
-        ('V3', 'V3'),
+        ("V2", "V2"),
+        ("V3", "V3"),
     ]
     direction = models.CharField(max_length=10, choices=DIRECTION_CHOICES)
 
     LOCATION_CHOICES = [
-        ('Top', 'Top'),
-        ('Bottom', 'Bottom'),
+        ("Top", "Top"),
+        ("Bottom", "Bottom"),
     ]
     location = models.CharField(max_length=20, choices=LOCATION_CHOICES, blank=True)
 
@@ -45,10 +44,10 @@ class WallShear(BaseElementResult):
     min_force = models.FloatField(null=True, blank=True)
 
     class Meta:
-        db_table = 'wall_shears'
+        db_table = "wall_shears"
         indexes = [
-            models.Index(fields=['element', 'story', 'load_case', 'direction']),
-            models.Index(fields=['result_category']),
+            models.Index(fields=["element", "story", "load_case", "direction"]),
+            models.Index(fields=["result_category"]),
         ]
 
     def __str__(self):
@@ -57,6 +56,7 @@ class WallShear(BaseElementResult):
 
 class QuadRotation(BaseElementResult):
     """Quad strain gauge rotation results (%)."""
+
     quad_name = models.CharField(max_length=50, blank=True)
     direction = models.CharField(max_length=20, blank=True)  # Typically 'Pier'
 
@@ -65,10 +65,10 @@ class QuadRotation(BaseElementResult):
     min_rotation = models.FloatField(null=True, blank=True)
 
     class Meta:
-        db_table = 'quad_rotations'
+        db_table = "quad_rotations"
         indexes = [
-            models.Index(fields=['element', 'story', 'load_case']),
-            models.Index(fields=['result_category']),
+            models.Index(fields=["element", "story", "load_case"]),
+            models.Index(fields=["result_category"]),
         ]
 
     def __str__(self):
@@ -77,15 +77,16 @@ class QuadRotation(BaseElementResult):
 
 class ColumnShear(BaseElementResult):
     """Column shear force results (kN)."""
+
     DIRECTION_CHOICES = [
-        ('V2', 'V2'),
-        ('V3', 'V3'),
+        ("V2", "V2"),
+        ("V3", "V3"),
     ]
     direction = models.CharField(max_length=10, choices=DIRECTION_CHOICES)
 
     LOCATION_CHOICES = [
-        ('Top', 'Top'),
-        ('Bottom', 'Bottom'),
+        ("Top", "Top"),
+        ("Bottom", "Bottom"),
     ]
     location = models.CharField(max_length=20, choices=LOCATION_CHOICES, blank=True)
 
@@ -94,10 +95,10 @@ class ColumnShear(BaseElementResult):
     min_force = models.FloatField(null=True, blank=True)
 
     class Meta:
-        db_table = 'column_shears'
+        db_table = "column_shears"
         indexes = [
-            models.Index(fields=['element', 'story', 'load_case', 'direction']),
-            models.Index(fields=['result_category']),
+            models.Index(fields=["element", "story", "load_case", "direction"]),
+            models.Index(fields=["result_category"]),
         ]
 
     def __str__(self):
@@ -106,9 +107,10 @@ class ColumnShear(BaseElementResult):
 
 class ColumnAxial(BaseElementResult):
     """Column axial force results (kN)."""
+
     LOCATION_CHOICES = [
-        ('Top', 'Top'),
-        ('Bottom', 'Bottom'),
+        ("Top", "Top"),
+        ("Bottom", "Bottom"),
     ]
     location = models.CharField(max_length=20, choices=LOCATION_CHOICES, blank=True)
 
@@ -116,10 +118,10 @@ class ColumnAxial(BaseElementResult):
     max_axial = models.FloatField(null=True, blank=True)  # Most tension
 
     class Meta:
-        db_table = 'column_axials'
+        db_table = "column_axials"
         indexes = [
-            models.Index(fields=['element', 'story', 'load_case']),
-            models.Index(fields=['result_category']),
+            models.Index(fields=["element", "story", "load_case"]),
+            models.Index(fields=["result_category"]),
         ]
 
     def __str__(self):
@@ -128,9 +130,10 @@ class ColumnAxial(BaseElementResult):
 
 class ColumnRotation(BaseElementResult):
     """Column fiber hinge rotation results (%)."""
+
     DIRECTION_CHOICES = [
-        ('R2', 'R2'),
-        ('R3', 'R3'),
+        ("R2", "R2"),
+        ("R3", "R3"),
     ]
     direction = models.CharField(max_length=10, choices=DIRECTION_CHOICES)
 
@@ -139,10 +142,10 @@ class ColumnRotation(BaseElementResult):
     min_rotation = models.FloatField(null=True, blank=True)
 
     class Meta:
-        db_table = 'column_rotations'
+        db_table = "column_rotations"
         indexes = [
-            models.Index(fields=['element', 'story', 'load_case', 'direction']),
-            models.Index(fields=['result_category']),
+            models.Index(fields=["element", "story", "load_case", "direction"]),
+            models.Index(fields=["result_category"]),
         ]
 
     def __str__(self):
@@ -151,6 +154,7 @@ class ColumnRotation(BaseElementResult):
 
 class BeamRotation(BaseElementResult):
     """Beam hinge R3 plastic rotation results (%)."""
+
     step_type = models.CharField(max_length=10, blank=True)  # Max, Min
     hinge = models.CharField(max_length=20, blank=True)  # SB2
     generated_hinge = models.CharField(max_length=20, blank=True)  # B19H1
@@ -161,10 +165,10 @@ class BeamRotation(BaseElementResult):
     min_r3_plastic = models.FloatField(null=True, blank=True)
 
     class Meta:
-        db_table = 'beam_rotations'
+        db_table = "beam_rotations"
         indexes = [
-            models.Index(fields=['element', 'story', 'load_case']),
-            models.Index(fields=['result_category']),
+            models.Index(fields=["element", "story", "load_case"]),
+            models.Index(fields=["result_category"]),
         ]
 
     def __str__(self):

@@ -1,1 +1,1 @@
-default_app_config = 'apps.reporting.apps.ReportingConfig'
+default_app_config = "apps.reporting.apps.ReportingConfig"

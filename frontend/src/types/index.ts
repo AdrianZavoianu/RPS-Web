@@ -241,6 +241,7 @@ export interface ProfileChartData {
     values: number[]
     color?: string
   }[]
+  result_type?: string
   unit: string
   title: string
 }

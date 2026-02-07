@@ -7,6 +7,7 @@ import {
 } from '@tanstack/react-table'
 import clsx from 'clsx'
 import { getGradientColor, getMinMax } from '../../utils/gradients'
+import { getResultTypeDecimals } from '../../utils/resultConfig'
 
 interface ComparisonTableProps {
   dataset: {
@@ -14,12 +15,14 @@ interface ComparisonTableProps {
     series: { result_set_name: string; has_data: boolean }[]
     ratio_column: string | null
     metric: string
+    result_type: string
   }
   className?: string
 }
 
 function ComparisonTableComponent({ dataset, className }: ComparisonTableProps) {
   const columnHelper = createColumnHelper<Record<string, unknown>>()
+  const decimals = getResultTypeDecimals(dataset.result_type)
 
   const globalMinMax = useMemo(() => {
     const allValues: number[] = []
@@ -62,7 +65,7 @@ function ComparisonTableComponent({ dataset, className }: ComparisonTableProps) 
                 className="results-table-value"
                 style={{ color: textColor }}
               >
-                {value.toFixed(2)}
+                {value.toFixed(decimals)}
               </span>
             )
           },
@@ -94,7 +97,7 @@ function ComparisonTableComponent({ dataset, className }: ComparisonTableProps) 
     }
 
     return cols
-  }, [dataset, columnHelper, globalMinMax])
+  }, [dataset, columnHelper, decimals, globalMinMax])
 
   const table = useReactTable({
     data: dataset.rows,

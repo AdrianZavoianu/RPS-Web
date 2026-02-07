@@ -18,20 +18,20 @@ from ..datasets import MaxMinDataset, ResultDatasetMeta
 
 
 RAW_MODEL_MAP = {
-    'Drifts': (StoryDrift, 'drift', 'max_drift', 'min_drift'),
-    'Accelerations': (StoryAcceleration, 'acceleration', 'max_acceleration', 'min_acceleration'),
-    'Forces': (StoryForce, 'force', 'max_force', 'min_force'),
-    'Displacements': (StoryDisplacement, 'displacement', 'max_displacement', 'min_displacement'),
+    "Drifts": (StoryDrift, "drift", "max_drift", "min_drift"),
+    "Accelerations": (StoryAcceleration, "acceleration", "max_acceleration", "min_acceleration"),
+    "Forces": (StoryForce, "force", "max_force", "min_force"),
+    "Displacements": (StoryDisplacement, "displacement", "max_displacement", "min_displacement"),
 }
 
 
 def get_maxmin_dataset(
     service,
     result_set_id: int,
-    base_result_type: str = 'Drifts',
+    base_result_type: str = "Drifts",
 ) -> Optional[MaxMinDataset]:
     """Get max/min envelope data for a result type."""
-    if base_result_type == 'Drifts':
+    if base_result_type == "Drifts":
         result = _get_drift_maxmin(service, result_set_id)
         if result is None:
             result = _get_generic_maxmin(service, result_set_id, base_result_type)
@@ -41,10 +41,14 @@ def get_maxmin_dataset(
 
 def _get_drift_maxmin(service, result_set_id: int) -> Optional[MaxMinDataset]:
     """Get max/min drifts from precomputed table."""
-    entries = AbsoluteMaxMinDrift.objects.filter(
-        project=service.project,
-        result_set_id=result_set_id,
-    ).select_related('story', 'load_case').order_by('-story__sort_order')
+    entries = (
+        AbsoluteMaxMinDrift.objects.filter(
+            project=service.project,
+            result_set_id=result_set_id,
+        )
+        .select_related("story", "load_case")
+        .order_by("-story__sort_order")
+    )
 
     if not entries.exists():
         return None
@@ -68,19 +72,19 @@ def _get_drift_maxmin(service, result_set_id: int) -> Optional[MaxMinDataset]:
 
     rows = []
     for story_name in sorted(story_data.keys(), key=lambda s: -story_order.get(s, 0)):
-        row = {'Story': story_name, **story_data[story_name]}
+        row = {"Story": story_name, **story_data[story_name]}
         rows.append(row)
 
     return MaxMinDataset(
         meta=ResultDatasetMeta(
-            result_type='MaxMin_Drifts',
+            result_type="MaxMin_Drifts",
             direction=None,
             result_set_id=result_set_id,
-            display_name='Max/Min Drifts (%)',
+            display_name="Max/Min Drifts (%)",
         ),
         rows=rows,
-        directions=('X', 'Y'),
-        source_type='Drifts',
+        directions=("X", "Y"),
+        source_type="Drifts",
     )
 
 
@@ -91,9 +95,9 @@ def _get_generic_maxmin(
 ) -> Optional[MaxMinDataset]:
     """Get max/min envelopes for non-drift result types from raw models."""
     config = RESULT_TYPE_CONFIG.get(base_result_type, {})
-    directions = config.get('directions', [])
-    internal_directions = config.get('internal_directions', {})
-    multiplier = config.get('multiplier', 1)
+    directions = config.get("directions", [])
+    internal_directions = config.get("internal_directions", {})
+    multiplier = config.get("multiplier", 1)
 
     if not directions:
         return None
@@ -119,11 +123,15 @@ def _get_generic_maxmin(
     for ui_dir in directions:
         internal_dir = internal_directions.get(ui_dir, ui_dir)
 
-        entries = model_class.objects.filter(
-            story__project=service.project,
-            result_category__in=categories,
-            direction=internal_dir,
-        ).select_related('story', 'load_case').order_by('-story__sort_order')
+        entries = (
+            model_class.objects.filter(
+                story__project=service.project,
+                result_category__in=categories,
+                direction=internal_dir,
+            )
+            .select_related("story", "load_case")
+            .order_by("-story__sort_order")
+        )
 
         for entry in entries:
             story_name = entry.story.name
@@ -165,12 +173,12 @@ def _get_generic_maxmin(
 
     rows = []
     for story_name in sorted(story_data.keys(), key=lambda s: -story_order.get(s, 0)):
-        row = {'Story': story_name, **story_data[story_name]}
+        row = {"Story": story_name, **story_data[story_name]}
         rows.append(row)
 
     return MaxMinDataset(
         meta=ResultDatasetMeta(
-            result_type=f'MaxMin_{base_result_type}',
+            result_type=f"MaxMin_{base_result_type}",
             direction=None,
             result_set_id=result_set_id,
             display_name=f'Max/Min {base_result_type} ({config.get("unit", "")})',

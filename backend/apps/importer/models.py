@@ -10,38 +10,29 @@ from apps.results.models import ResultSet
 
 class ImportJob(models.Model):
     """Tracks import job status and progress."""
-    project = models.ForeignKey(
-        Project,
-        on_delete=models.CASCADE,
-        related_name='import_jobs'
-    )
+
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="import_jobs")
     result_set = models.ForeignKey(
-        ResultSet,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='import_jobs'
+        ResultSet, on_delete=models.SET_NULL, null=True, blank=True, related_name="import_jobs"
     )
     user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name='import_jobs'
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="import_jobs"
     )
 
     STATUS_CHOICES = [
-        ('pending', 'Pending'),
-        ('scanning', 'Scanning'),
-        ('processing', 'Processing'),
-        ('building_cache', 'Building Cache'),
-        ('completed', 'Completed'),
-        ('failed', 'Failed'),
-        ('cancelled', 'Cancelled'),
+        ("pending", "Pending"),
+        ("scanning", "Scanning"),
+        ("processing", "Processing"),
+        ("building_cache", "Building Cache"),
+        ("completed", "Completed"),
+        ("failed", "Failed"),
+        ("cancelled", "Cancelled"),
     ]
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
 
     # Job configuration
     job_config = models.JSONField(default=dict)  # Selected load cases, conflict resolutions
-    files = models.JSONField(default=list)       # List of uploaded file paths
+    files = models.JSONField(default=list)  # List of uploaded file paths
 
     # Progress tracking
     current_phase = models.CharField(max_length=50, blank=True)
@@ -61,8 +52,8 @@ class ImportJob(models.Model):
     completed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        db_table = 'import_jobs'
-        ordering = ['-created_at']
+        db_table = "import_jobs"
+        ordering = ["-created_at"]
 
     def __str__(self):
         return f"Import {self.id} - {self.project.name} ({self.status})"

@@ -14,7 +14,7 @@ class ResultSetViewSet(ProjectResultsMixin, viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return ResultSet.objects.filter(project=self.get_project()).prefetch_related('categories')
+        return ResultSet.objects.filter(project=self.get_project()).prefetch_related("categories")
 
     def perform_create(self, serializer):
         serializer.save(project=self.get_project())
@@ -31,4 +31,3 @@ class ComparisonSetViewSet(ProjectResultsMixin, viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(project=self.get_project())
-

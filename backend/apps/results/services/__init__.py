@@ -11,11 +11,11 @@ from .result_service import (
 )
 
 __all__ = [
-    'ResultDataService',
-    'ResultDataset',
-    'ResultDatasetMeta',
-    'MaxMinDataset',
-    'ComparisonDataset',
-    'ComparisonSeries',
-    'RESULT_TYPE_CONFIG',
+    "ResultDataService",
+    "ResultDataset",
+    "ResultDatasetMeta",
+    "MaxMinDataset",
+    "ComparisonDataset",
+    "ComparisonSeries",
+    "RESULT_TYPE_CONFIG",
 ]

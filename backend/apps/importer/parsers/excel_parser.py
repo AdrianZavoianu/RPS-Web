@@ -64,7 +64,7 @@ class ExcelParser:
         return self._excel_file
 
     def close(self) -> None:
-        excel_file = getattr(self, '_excel_file', None)
+        excel_file = getattr(self, "_excel_file", None)
         if excel_file is not None:
             try:
                 excel_file.close()
@@ -126,9 +126,7 @@ class ExcelParser:
         except Exception as e:
             raise ValueError(f"Error reading sheet '{sheet_name}': {e}")
 
-    def get_unique_values(
-        self, df: pd.DataFrame, column_names: List[str]
-    ) -> Dict[str, List[Any]]:
+    def get_unique_values(self, df: pd.DataFrame, column_names: List[str]) -> Dict[str, List[Any]]:
         """Get unique values for specified columns.
 
         Args:
@@ -182,7 +180,15 @@ class ExcelParser:
             Format has separate Max/Min rows with Max UX/UY and Min UX/UY columns.
         """
         sheet = "Diaphragm Accelerations"
-        columns = [0, 2, 4, 5, 6, 11, 12]  # Story, Output Case, Step Type, Max UX, Max UY, Min UX, Min UY
+        columns = [
+            0,
+            2,
+            4,
+            5,
+            6,
+            11,
+            12,
+        ]  # Story, Output Case, Step Type, Max UX, Max UY, Min UX, Min UY
 
         df = self.read_sheet(sheet, columns)
 
@@ -241,7 +247,9 @@ class ExcelParser:
             return pd.DataFrame(), [], []
 
         df_full = self._load_joint_displacements_full()
-        df = df_full[["Story", "Output Case", "Step Type", "Ux", "Uy"]].dropna(subset=["Story", "Output Case"])
+        df = df_full[["Story", "Output Case", "Step Type", "Ux", "Uy"]].dropna(
+            subset=["Story", "Output Case"]
+        )
 
         load_cases = df["Output Case"].unique().tolist()
         stories = df["Story"].unique().tolist()
@@ -352,7 +360,16 @@ class ExcelParser:
             Tuple of (DataFrame, load_cases, stories, columns)
         """
         sheet = "Element Forces - Columns"
-        columns = [0, 1, 2, 3, 6, 7, 8, 9]  # Story, Column, Unique Name, Output Case, Location, P, V2, V3
+        columns = [
+            0,
+            1,
+            2,
+            3,
+            6,
+            7,
+            8,
+            9,
+        ]  # Story, Column, Unique Name, Output Case, Location, P, V2, V3
 
         if self._column_forces_df is None:
             self._column_forces_df = self.read_sheet(sheet, columns)
@@ -372,7 +389,17 @@ class ExcelParser:
             Tuple of (DataFrame, load_cases, stories, piers)
         """
         sheet = "Quad Strain Gauge - Rotation"
-        columns = [0, 1, 2, 3, 5, 6, 7, 8, 9]  # Story, Name, PropertyName, Output Case, StepType, Direction, Rotation, MaxRotation, MinRotation
+        columns = [
+            0,
+            1,
+            2,
+            3,
+            5,
+            6,
+            7,
+            8,
+            9,
+        ]  # Story, Name, PropertyName, Output Case, StepType, Direction, Rotation, MaxRotation, MinRotation
 
         df = self.read_sheet(sheet, columns)
 
@@ -393,7 +420,15 @@ class ExcelParser:
             Only processes columns where Frame/Wall starts with 'C' (e.g., C2, C10).
         """
         sheet = "Fiber Hinge States"
-        columns = [0, 1, 2, 3, 5, 20, 21]  # Story, Frame/Wall, Unique Name, Output Case, Step Type, R2, R3
+        columns = [
+            0,
+            1,
+            2,
+            3,
+            5,
+            20,
+            21,
+        ]  # Story, Frame/Wall, Unique Name, Output Case, Step Type, R2, R3
 
         df = self.read_sheet(sheet, columns)
 
@@ -418,7 +453,17 @@ class ExcelParser:
             Only processes beams where Frame/Wall starts with 'B' (e.g., B19, B20).
         """
         sheet = "Hinge States"
-        columns = [0, 1, 2, 3, 5, 6, 7, 8, 21]  # Story, Frame/Wall, Unique Name, Output Case, Step Type, Hinge, Generated Hinge, Rel Dist, R3 Plastic
+        columns = [
+            0,
+            1,
+            2,
+            3,
+            5,
+            6,
+            7,
+            8,
+            21,
+        ]  # Story, Frame/Wall, Unique Name, Output Case, Step Type, Hinge, Generated Hinge, Rel Dist, R3 Plastic
 
         df = self.read_sheet(sheet, columns)
 
@@ -448,22 +493,32 @@ class ExcelParser:
         df = self.read_sheet(sheet, columns)
 
         df.columns = [
-            "Story", "Shell Object", "Unique Name", "Shell Element", "Joint",
-            "Output Case", "Case Type", "Step Type", "Soil Pressure",
-            "Global X", "Global Y", "Global Z",
+            "Story",
+            "Shell Object",
+            "Unique Name",
+            "Shell Element",
+            "Joint",
+            "Output Case",
+            "Case Type",
+            "Step Type",
+            "Soil Pressure",
+            "Global X",
+            "Global Y",
+            "Global Z",
         ]
 
-        df['Soil Pressure'] = pd.to_numeric(df['Soil Pressure'], errors='coerce')
+        df["Soil Pressure"] = pd.to_numeric(df["Soil Pressure"], errors="coerce")
 
         # Filter to only Min step type
-        df = df[df['Step Type'] == 'Min'].copy()
+        df = df[df["Step Type"] == "Min"].copy()
 
         # Min soil pressure per (Shell Object, Unique Name, Output Case)
-        grp = (df.groupby(['Shell Object', 'Unique Name', 'Output Case'], as_index=False)['Soil Pressure']
-                 .min())
+        grp = df.groupby(["Shell Object", "Unique Name", "Output Case"], as_index=False)[
+            "Soil Pressure"
+        ].min()
 
-        load_cases = grp['Output Case'].unique().tolist()
-        unique_elements = grp['Unique Name'].unique().tolist()
+        load_cases = grp["Output Case"].unique().tolist()
+        unique_elements = grp["Unique Name"].unique().tolist()
 
         return grp, load_cases, unique_elements
 
@@ -480,14 +535,16 @@ class ExcelParser:
 
         df = self.read_sheet(sheet, columns=[0])
 
-        if 'Unique Name' in df.columns:
-            joint_names = df['Unique Name'].dropna().astype(str).unique().tolist()
+        if "Unique Name" in df.columns:
+            joint_names = df["Unique Name"].dropna().astype(str).unique().tolist()
         else:
             joint_names = df.iloc[:, 0].dropna().astype(str).unique().tolist()
 
         return joint_names
 
-    def get_vertical_displacements(self, foundation_joints: Optional[List[str]] = None) -> Tuple[pd.DataFrame, List[str], List[str]]:
+    def get_vertical_displacements(
+        self, foundation_joints: Optional[List[str]] = None
+    ) -> Tuple[pd.DataFrame, List[str], List[str]]:
         """Parse vertical displacement data from 'Joint Displacements' sheet.
 
         Args:
@@ -496,8 +553,6 @@ class ExcelParser:
         Returns:
             Tuple of (DataFrame, load_cases, unique_joints)
         """
-        sheet = "Joint Displacements"
-
         if foundation_joints is None:
             foundation_joints = self.get_foundation_joints()
 
@@ -506,29 +561,30 @@ class ExcelParser:
 
         df = self._load_joint_displacements_full()
 
-        df['Unique Name'] = df['Unique Name'].astype(str)
-        df = df[df['Unique Name'].isin(foundation_joints)].copy()
+        df["Unique Name"] = df["Unique Name"].astype(str)
+        df = df[df["Unique Name"].isin(foundation_joints)].copy()
 
         if df.empty:
             return pd.DataFrame(), [], []
 
-        df['Uz'] = pd.to_numeric(df['Uz'], errors='coerce')
+        df["Uz"] = pd.to_numeric(df["Uz"], errors="coerce")
 
         # Filter to only Min step type
-        df = df[df['Step Type'] == 'Min'].copy()
+        df = df[df["Step Type"] == "Min"].copy()
 
         # Min Uz per (Unique Name, Output Case)
-        grp = (df.groupby(['Unique Name', 'Output Case'], as_index=False)
-                 .agg({
-                     'Uz': 'min',
-                     'Story': 'first',
-                     'Label': 'first',
-                 }))
+        grp = df.groupby(["Unique Name", "Output Case"], as_index=False).agg(
+            {
+                "Uz": "min",
+                "Story": "first",
+                "Label": "first",
+            }
+        )
 
-        grp = grp.rename(columns={'Uz': 'Min Uz'})
+        grp = grp.rename(columns={"Uz": "Min Uz"})
 
-        load_cases = grp['Output Case'].unique().tolist()
-        unique_joints = grp['Unique Name'].unique().tolist()
+        load_cases = grp["Output Case"].unique().tolist()
+        unique_joints = grp["Unique Name"].unique().tolist()
 
         return grp, load_cases, unique_joints
 
@@ -545,16 +601,16 @@ class ExcelParser:
             'X', 'Y', 'XY', or 'Unknown'
         """
         case_upper = str(case_name).upper()
-        has_x = 'X' in case_upper
-        has_y = 'Y' in case_upper
+        has_x = "X" in case_upper
+        has_y = "Y" in case_upper
 
         if has_x and has_y:
-            return 'XY'
+            return "XY"
         if has_x:
-            return 'X'
+            return "X"
         if has_y:
-            return 'Y'
-        return 'Unknown'
+            return "Y"
+        return "Unknown"
 
     def get_pushover_cases(self) -> List[str]:
         """Get list of pushover case names from Story Forces sheet.
@@ -577,26 +633,28 @@ class ExcelParser:
             )
 
             # If 'Step Number' column exists, it's pushover data
-            if 'Step Number' not in header_df.columns:
+            if "Step Number" not in header_df.columns:
                 return []
 
             # Get all unique output cases
             df = self._get_excel_file().parse(
                 sheet_name=sheet,
                 skiprows=[0, 2],
-                usecols=['Output Case'],
+                usecols=["Output Case"],
             )
 
-            cases = df['Output Case'].dropna().unique().tolist()
+            cases = df["Output Case"].dropna().unique().tolist()
             # Filter to only pushover-like case names (contain 'Push' or similar)
-            pushover_cases = [c for c in cases if 'push' in str(c).lower()]
+            pushover_cases = [c for c in cases if "push" in str(c).lower()]
             return pushover_cases
 
         except Exception as e:
             logger.warning(f"Error getting pushover cases: {e}")
             return []
 
-    def get_pushover_curve_data(self, base_story: Optional[str] = None) -> Tuple[pd.DataFrame, List[str]]:
+    def get_pushover_curve_data(
+        self, base_story: Optional[str] = None
+    ) -> Tuple[pd.DataFrame, List[str]]:
         """Parse pushover curve data (displacement vs base shear).
 
         Reads from Joint Displacements (roof displacement) and Story Forces (base shear).
@@ -612,7 +670,9 @@ class ExcelParser:
         displ_sheet = "Joint Displacements"
         force_sheet = "Story Forces"
 
-        if not self.validate_sheet_exists(displ_sheet) or not self.validate_sheet_exists(force_sheet):
+        if not self.validate_sheet_exists(displ_sheet) or not self.validate_sheet_exists(
+            force_sheet
+        ):
             return pd.DataFrame(), []
 
         try:
@@ -629,19 +689,20 @@ class ExcelParser:
             )
 
             # Check if this is pushover data (has Step Number)
-            if 'Step Number' not in displ_df.columns or 'Step Number' not in force_df.columns:
+            if "Step Number" not in displ_df.columns or "Step Number" not in force_df.columns:
                 return pd.DataFrame(), []
 
             # Get pushover cases
-            pushover_cases = [c for c in displ_df['Output Case'].dropna().unique()
-                             if 'push' in str(c).lower()]
+            pushover_cases = [
+                c for c in displ_df["Output Case"].dropna().unique() if "push" in str(c).lower()
+            ]
 
             if not pushover_cases:
                 return pd.DataFrame(), []
 
             # Find base story if not specified
             if base_story is None:
-                stories = force_df['Story'].dropna().unique().tolist()
+                stories = force_df["Story"].dropna().unique().tolist()
                 if stories:
                     base_story = stories[0]  # Use first story as base
                 else:
@@ -653,72 +714,74 @@ class ExcelParser:
                 direction = self.detect_pushover_direction(case_name)
 
                 # Get roof displacements for this case
-                case_displ = displ_df[displ_df['Output Case'] == case_name].copy()
+                case_displ = displ_df[displ_df["Output Case"] == case_name].copy()
 
                 # Get base shear for this case (bottom location of base story)
                 case_force = force_df[
-                    (force_df['Output Case'] == case_name) &
-                    (force_df['Story'] == base_story) &
-                    (force_df['Location'] == 'Bottom')
+                    (force_df["Output Case"] == case_name)
+                    & (force_df["Story"] == base_story)
+                    & (force_df["Location"] == "Bottom")
                 ].copy()
 
                 if case_displ.empty or case_force.empty:
                     continue
 
                 # Group by step number to get max displacement per step
-                step_groups = case_displ.groupby('Step Number')
+                step_groups = case_displ.groupby("Step Number")
 
                 for step_num, step_df in step_groups:
                     # Get displacement based on direction
-                    ux = step_df['Ux'].abs().max() if 'Ux' in step_df.columns else 0
-                    uy = step_df['Uy'].abs().max() if 'Uy' in step_df.columns else 0
+                    ux = step_df["Ux"].abs().max() if "Ux" in step_df.columns else 0
+                    uy = step_df["Uy"].abs().max() if "Uy" in step_df.columns else 0
 
-                    if direction == 'X':
+                    if direction == "X":
                         displacement = ux
-                    elif direction == 'Y':
+                    elif direction == "Y":
                         displacement = uy
-                    elif direction == 'XY':
+                    elif direction == "XY":
                         displacement = math.sqrt(ux**2 + uy**2)
                     else:
                         displacement = max(ux, uy)
 
                     # Get base shear for this step
-                    step_force = case_force[case_force['Step Number'] == step_num]
+                    step_force = case_force[case_force["Step Number"] == step_num]
                     if step_force.empty:
                         continue
 
-                    vx = step_force['VX'].abs().max() if 'VX' in step_force.columns else 0
-                    vy = step_force['VY'].abs().max() if 'VY' in step_force.columns else 0
+                    vx = step_force["VX"].abs().max() if "VX" in step_force.columns else 0
+                    vy = step_force["VY"].abs().max() if "VY" in step_force.columns else 0
 
-                    if direction == 'X':
+                    if direction == "X":
                         base_shear = vx
-                    elif direction == 'Y':
+                    elif direction == "Y":
                         base_shear = vy
-                    elif direction == 'XY':
+                    elif direction == "XY":
                         base_shear = math.sqrt(vx**2 + vy**2)
                     else:
                         base_shear = max(vx, vy)
 
-                    results.append({
-                        'Case': case_name,
-                        'Step': int(step_num),
-                        'Displacement': float(displacement),
-                        'BaseShear': float(base_shear),
-                        'Direction': direction,
-                    })
+                    results.append(
+                        {
+                            "Case": case_name,
+                            "Step": int(step_num),
+                            "Displacement": float(displacement),
+                            "BaseShear": float(base_shear),
+                            "Direction": direction,
+                        }
+                    )
 
             if not results:
                 return pd.DataFrame(), []
 
             result_df = pd.DataFrame(results)
-            result_df = result_df.sort_values(['Case', 'Step']).reset_index(drop=True)
+            result_df = result_df.sort_values(["Case", "Step"]).reset_index(drop=True)
 
             # Normalize displacement (subtract initial value so curve starts at 0)
             for case_name in pushover_cases:
-                case_mask = result_df['Case'] == case_name
+                case_mask = result_df["Case"] == case_name
                 if case_mask.any():
-                    initial_disp = result_df.loc[case_mask, 'Displacement'].iloc[0]
-                    result_df.loc[case_mask, 'Displacement'] -= initial_disp
+                    initial_disp = result_df.loc[case_mask, "Displacement"].iloc[0]
+                    result_df.loc[case_mask, "Displacement"] -= initial_disp
 
             return result_df, pushover_cases
 
@@ -765,10 +828,14 @@ class ExcelParser:
 
         # Check if we got any data
         has_data = (
-            result.drifts_x or result.drifts_y or
-            result.forces_x or result.forces_y or
-            result.displacements_x or result.displacements_y or
-            result.accelerations_x or result.accelerations_y
+            result.drifts_x
+            or result.drifts_y
+            or result.forces_x
+            or result.forces_y
+            or result.displacements_x
+            or result.displacements_y
+            or result.accelerations_x
+            or result.accelerations_y
         )
 
         return result if has_data else None
@@ -787,24 +854,26 @@ class ExcelParser:
             )
 
             # Check for Step Type column indicating time-series data
-            if 'Step Type' not in df.columns:
+            if "Step Type" not in df.columns:
                 return None
 
             # Filter to Step By Step rows
-            step_by_step = df[df['Step Type'] == 'Step By Step']
+            step_by_step = df[df["Step Type"] == "Step By Step"]
             if step_by_step.empty:
                 return None
 
             # Get first output case name
-            if 'Output Case' in step_by_step.columns:
-                return str(step_by_step['Output Case'].dropna().iloc[0])
+            if "Output Case" in step_by_step.columns:
+                return str(step_by_step["Output Case"].dropna().iloc[0])
 
             return None
         except Exception as e:
             logger.warning(f"Error detecting time history load case: {e}")
             return None
 
-    def _parse_story_drifts_timeseries(self) -> Tuple[List[TimeSeriesData], List[TimeSeriesData], List[str]]:
+    def _parse_story_drifts_timeseries(
+        self,
+    ) -> Tuple[List[TimeSeriesData], List[TimeSeriesData], List[str]]:
         """Parse Story Drifts sheet for step-by-step time series data.
 
         Returns:
@@ -818,14 +887,14 @@ class ExcelParser:
             )
 
             # Required columns: Story, Output Case, Step Type, Step Number, Direction, Drift
-            required_cols = ['Story', 'Output Case', 'Step Type', 'Direction', 'Drift']
+            required_cols = ["Story", "Output Case", "Step Type", "Direction", "Drift"]
             if not all(col in df.columns for col in required_cols):
                 return [], [], []
 
             # Check for Step Number column (may be named differently)
             step_num_col = None
             for col in df.columns:
-                if 'step' in str(col).lower() and 'type' not in str(col).lower():
+                if "step" in str(col).lower() and "type" not in str(col).lower():
                     step_num_col = col
                     break
 
@@ -833,21 +902,21 @@ class ExcelParser:
                 return [], [], []
 
             # Filter to Step By Step rows only
-            df = df[df['Step Type'] == 'Step By Step'].copy()
+            df = df[df["Step Type"] == "Step By Step"].copy()
             if df.empty:
                 return [], [], []
 
             # Get story order (preserve first-occurrence order)
-            story_order = df['Story'].dropna().unique().tolist()
+            story_order = df["Story"].dropna().unique().tolist()
 
             # Extract X direction
             drifts_x = self._extract_time_series_by_direction(
-                df, 'X', 'Drift', step_num_col, story_order
+                df, "X", "Drift", step_num_col, story_order
             )
 
             # Extract Y direction
             drifts_y = self._extract_time_series_by_direction(
-                df, 'Y', 'Drift', step_num_col, story_order
+                df, "Y", "Drift", step_num_col, story_order
             )
 
             return drifts_x, drifts_y, story_order
@@ -856,7 +925,9 @@ class ExcelParser:
             logger.warning(f"Error parsing story drifts time series: {e}")
             return [], [], []
 
-    def _parse_story_forces_timeseries(self) -> Tuple[List[TimeSeriesData], List[TimeSeriesData], List[str]]:
+    def _parse_story_forces_timeseries(
+        self,
+    ) -> Tuple[List[TimeSeriesData], List[TimeSeriesData], List[str]]:
         """Parse Story Forces sheet for step-by-step time series data.
 
         Returns:
@@ -870,13 +941,13 @@ class ExcelParser:
             )
 
             # Check for Step Type column
-            if 'Step Type' not in df.columns:
+            if "Step Type" not in df.columns:
                 return [], [], []
 
             # Check for Step Number column
             step_num_col = None
             for col in df.columns:
-                if 'step' in str(col).lower() and 'type' not in str(col).lower():
+                if "step" in str(col).lower() and "type" not in str(col).lower():
                     step_num_col = col
                     break
 
@@ -884,25 +955,21 @@ class ExcelParser:
                 return [], [], []
 
             # Filter to Step By Step rows and Bottom location
-            df = df[df['Step Type'] == 'Step By Step'].copy()
-            if 'Location' in df.columns:
-                df = df[df['Location'] == 'Bottom']
+            df = df[df["Step Type"] == "Step By Step"].copy()
+            if "Location" in df.columns:
+                df = df[df["Location"] == "Bottom"]
 
             if df.empty:
                 return [], [], []
 
             # Get story order
-            story_order = df['Story'].dropna().unique().tolist()
+            story_order = df["Story"].dropna().unique().tolist()
 
             # Extract VX (X direction shear)
-            forces_x = self._extract_time_series_direct(
-                df, 'VX', 'X', step_num_col, story_order
-            )
+            forces_x = self._extract_time_series_direct(df, "VX", "X", step_num_col, story_order)
 
             # Extract VY (Y direction shear)
-            forces_y = self._extract_time_series_direct(
-                df, 'VY', 'Y', step_num_col, story_order
-            )
+            forces_y = self._extract_time_series_direct(df, "VY", "Y", step_num_col, story_order)
 
             return forces_x, forces_y, story_order
 
@@ -910,7 +977,9 @@ class ExcelParser:
             logger.warning(f"Error parsing story forces time series: {e}")
             return [], [], []
 
-    def _parse_joint_displacements_timeseries(self) -> Tuple[List[TimeSeriesData], List[TimeSeriesData], List[str]]:
+    def _parse_joint_displacements_timeseries(
+        self,
+    ) -> Tuple[List[TimeSeriesData], List[TimeSeriesData], List[str]]:
         """Parse Joint Displacements sheet for step-by-step time series data.
 
         Uses Label=1 joint (typically center of mass).
@@ -926,13 +995,13 @@ class ExcelParser:
             )
 
             # Check for Step Type column
-            if 'Step Type' not in df.columns:
+            if "Step Type" not in df.columns:
                 return [], [], []
 
             # Check for Step Number column
             step_num_col = None
             for col in df.columns:
-                if 'step' in str(col).lower() and 'type' not in str(col).lower():
+                if "step" in str(col).lower() and "type" not in str(col).lower():
                     step_num_col = col
                     break
 
@@ -940,24 +1009,24 @@ class ExcelParser:
                 return [], [], []
 
             # Filter to Step By Step rows and Label=1 joint
-            df = df[df['Step Type'] == 'Step By Step'].copy()
-            if 'Label' in df.columns:
-                df = df[df['Label'] == 1]
+            df = df[df["Step Type"] == "Step By Step"].copy()
+            if "Label" in df.columns:
+                df = df[df["Label"] == 1]
 
             if df.empty:
                 return [], [], []
 
             # Get story order
-            story_order = df['Story'].dropna().unique().tolist()
+            story_order = df["Story"].dropna().unique().tolist()
 
             # Extract Ux (X direction displacement)
             displacements_x = self._extract_time_series_direct(
-                df, 'Ux', 'X', step_num_col, story_order
+                df, "Ux", "X", step_num_col, story_order
             )
 
             # Extract Uy (Y direction displacement)
             displacements_y = self._extract_time_series_direct(
-                df, 'Uy', 'Y', step_num_col, story_order
+                df, "Uy", "Y", step_num_col, story_order
             )
 
             return displacements_x, displacements_y, story_order
@@ -966,7 +1035,9 @@ class ExcelParser:
             logger.warning(f"Error parsing joint displacements time series: {e}")
             return [], [], []
 
-    def _parse_diaphragm_accelerations_timeseries(self) -> Tuple[List[TimeSeriesData], List[TimeSeriesData], List[str]]:
+    def _parse_diaphragm_accelerations_timeseries(
+        self,
+    ) -> Tuple[List[TimeSeriesData], List[TimeSeriesData], List[str]]:
         """Parse Diaphragm Accelerations sheet for step-by-step time series data.
 
         Returns:
@@ -980,13 +1051,13 @@ class ExcelParser:
             )
 
             # Check for Step Type column
-            if 'Step Type' not in df.columns:
+            if "Step Type" not in df.columns:
                 return [], [], []
 
             # Check for Step Number column
             step_num_col = None
             for col in df.columns:
-                if 'step' in str(col).lower() and 'type' not in str(col).lower():
+                if "step" in str(col).lower() and "type" not in str(col).lower():
                     step_num_col = col
                     break
 
@@ -994,21 +1065,21 @@ class ExcelParser:
                 return [], [], []
 
             # Filter to Step By Step rows
-            df = df[df['Step Type'] == 'Step By Step'].copy()
+            df = df[df["Step Type"] == "Step By Step"].copy()
             if df.empty:
                 return [], [], []
 
             # Get story order
-            story_order = df['Story'].dropna().unique().tolist()
+            story_order = df["Story"].dropna().unique().tolist()
 
             # Look for UX/UY columns (may be named Max UX, UX, etc.)
             ux_col = None
             uy_col = None
             for col in df.columns:
                 col_lower = str(col).lower()
-                if 'ux' in col_lower and ux_col is None:
+                if "ux" in col_lower and ux_col is None:
                     ux_col = col
-                elif 'uy' in col_lower and uy_col is None:
+                elif "uy" in col_lower and uy_col is None:
                     uy_col = col
 
             accelerations_x = []
@@ -1016,12 +1087,12 @@ class ExcelParser:
 
             if ux_col:
                 accelerations_x = self._extract_time_series_direct(
-                    df, ux_col, 'X', step_num_col, story_order
+                    df, ux_col, "X", step_num_col, story_order
                 )
 
             if uy_col:
                 accelerations_y = self._extract_time_series_direct(
-                    df, uy_col, 'Y', step_num_col, story_order
+                    df, uy_col, "Y", step_num_col, story_order
                 )
 
             return accelerations_x, accelerations_y, story_order
@@ -1041,10 +1112,10 @@ class ExcelParser:
         """Extract time series for each story filtered by direction column."""
         result = []
 
-        df_dir = df[df['Direction'] == direction]
+        df_dir = df[df["Direction"] == direction]
 
         for idx, story in enumerate(story_order):
-            story_df = df_dir[df_dir['Story'] == story].sort_values(step_num_col)
+            story_df = df_dir[df_dir["Story"] == story].sort_values(step_num_col)
 
             if story_df.empty:
                 continue
@@ -1059,13 +1130,15 @@ class ExcelParser:
             except (ValueError, TypeError):
                 continue
 
-            result.append(TimeSeriesData(
-                story=str(story),
-                direction=direction,
-                time_steps=time_steps,
-                values=values,
-                story_sort_order=idx,
-            ))
+            result.append(
+                TimeSeriesData(
+                    story=str(story),
+                    direction=direction,
+                    time_steps=time_steps,
+                    values=values,
+                    story_sort_order=idx,
+                )
+            )
 
         return result
 
@@ -1084,7 +1157,7 @@ class ExcelParser:
             return result
 
         for idx, story in enumerate(story_order):
-            story_df = df[df['Story'] == story].sort_values(step_num_col)
+            story_df = df[df["Story"] == story].sort_values(step_num_col)
 
             if story_df.empty:
                 continue
@@ -1099,13 +1172,15 @@ class ExcelParser:
             except (ValueError, TypeError):
                 continue
 
-            result.append(TimeSeriesData(
-                story=str(story),
-                direction=direction,
-                time_steps=time_steps,
-                values=values,
-                story_sort_order=idx,
-            ))
+            result.append(
+                TimeSeriesData(
+                    story=str(story),
+                    direction=direction,
+                    time_steps=time_steps,
+                    values=values,
+                    story_sort_order=idx,
+                )
+            )
 
         return result
 

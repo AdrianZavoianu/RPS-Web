@@ -1,20 +1,59 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, lazy, Suspense } from 'react'
 import { useParams, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { useResultSets } from '../hooks/useResults'
-import { ComparisonView } from '../components/results/ComparisonView'
-import { ResultsView } from '../components/results/ResultsView'
-import { MaxMinView } from '../components/results/MaxMinView'
-import { PushoverView } from '../components/results/PushoverView'
-import { ElementResultsView } from '../components/results/ElementResultsView'
-import { JointResultsView } from '../components/results/JointResultsView'
-import { ImportDialog } from '../components/imports/ImportDialog'
-import { ExportDialog } from '../components/exports/ExportDialog'
-import { ReportDialog } from '../components/reports/ReportDialog'
-import { TimeSeriesView } from '../components/results/TimeSeriesView'
 import { useProject } from '../hooks/useProjects'
-import { ProjectSettings } from '../components/projects/ProjectSettings'
+
+const ComparisonView = lazy(() =>
+  import('../components/results/ComparisonView').then((module) => ({ default: module.ComparisonView }))
+)
+const ResultsView = lazy(() =>
+  import('../components/results/ResultsView').then((module) => ({ default: module.ResultsView }))
+)
+const MaxMinView = lazy(() =>
+  import('../components/results/MaxMinView').then((module) => ({ default: module.MaxMinView }))
+)
+const PushoverView = lazy(() =>
+  import('../components/results/PushoverView').then((module) => ({ default: module.PushoverView }))
+)
+const ElementResultsView = lazy(() =>
+  import('../components/results/ElementResultsView').then((module) => ({
+    default: module.ElementResultsView,
+  }))
+)
+const JointResultsView = lazy(() =>
+  import('../components/results/JointResultsView').then((module) => ({
+    default: module.JointResultsView,
+  }))
+)
+const TimeSeriesView = lazy(() =>
+  import('../components/results/TimeSeriesView').then((module) => ({ default: module.TimeSeriesView }))
+)
+const ProjectSettings = lazy(() =>
+  import('../components/projects/ProjectSettings').then((module) => ({
+    default: module.ProjectSettings,
+  }))
+)
+const importImportDialogModule = () => import('../components/imports/ImportDialog')
+const importExportDialogModule = () => import('../components/exports/ExportDialog')
+const importReportDialogModule = () => import('../components/reports/ReportDialog')
+
+const ImportDialog = lazy(() =>
+  importImportDialogModule().then((module) => ({
+    default: module.ImportDialog,
+  }))
+)
+const ExportDialog = lazy(() =>
+  importExportDialogModule().then((module) => ({
+    default: module.ExportDialog,
+  }))
+)
+const ReportDialog = lazy(() =>
+  importReportDialogModule().then((module) => ({
+    default: module.ReportDialog,
+  }))
+)
 
 export function ProjectDetailPage() {
   const { slug } = useParams<{ slug: string }>()
@@ -61,6 +100,26 @@ export function ProjectDetailPage() {
         <div className="text-red-400">Failed to load project</div>
       </div>
     )
+  }
+
+  const routeFallback = (
+    <div className="h-full flex items-center justify-center">
+      <div className="text-text-secondary">Loading view...</div>
+    </div>
+  )
+  const dialogFallback = (
+    <div className="dialog-overlay fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="text-text-secondary">Loading dialog...</div>
+    </div>
+  )
+  const prefetchImportDialog = () => {
+    void importImportDialogModule()
+  }
+  const prefetchExportDialog = () => {
+    void importExportDialogModule()
+  }
+  const prefetchReportDialog = () => {
+    void importReportDialogModule()
   }
 
   return (
@@ -116,6 +175,8 @@ export function ProjectDetailPage() {
                     <button
                       type="button"
                       onClick={() => setShowImportDialog(true)}
+                      onMouseEnter={prefetchImportDialog}
+                      onFocus={prefetchImportDialog}
                       className="project-header-link"
                     >
                       Load NLTHA Data
@@ -126,6 +187,8 @@ export function ProjectDetailPage() {
                         navigate(`/projects/${projectSlug}/time-series`)
                         setShowImportDialog(true)
                       }}
+                      onMouseEnter={prefetchImportDialog}
+                      onFocus={prefetchImportDialog}
                       className="project-header-link"
                     >
                       Load Time Series
@@ -140,6 +203,8 @@ export function ProjectDetailPage() {
                     <button
                       type="button"
                       onClick={() => setShowExportDialog(true)}
+                      onMouseEnter={prefetchExportDialog}
+                      onFocus={prefetchExportDialog}
                       className="project-header-link"
                     >
                       Export Results
@@ -147,6 +212,8 @@ export function ProjectDetailPage() {
                     <button
                       type="button"
                       onClick={() => setShowReportDialog(true)}
+                      onMouseEnter={prefetchReportDialog}
+                      onFocus={prefetchReportDialog}
                       className="project-header-link"
                     >
                       Reporting
@@ -160,6 +227,8 @@ export function ProjectDetailPage() {
                         navigate(`/projects/${projectSlug}/pushover`)
                         setShowImportDialog(true)
                       }}
+                      onMouseEnter={prefetchImportDialog}
+                      onFocus={prefetchImportDialog}
                       className="project-header-link"
                     >
                       Load Pushover Curves
@@ -170,6 +239,8 @@ export function ProjectDetailPage() {
                         navigate(`/projects/${projectSlug}/pushover`)
                         setShowImportDialog(true)
                       }}
+                      onMouseEnter={prefetchImportDialog}
+                      onFocus={prefetchImportDialog}
                       className="project-header-link"
                     >
                       Load Results
@@ -177,6 +248,8 @@ export function ProjectDetailPage() {
                     <button
                       type="button"
                       onClick={() => setShowExportDialog(true)}
+                      onMouseEnter={prefetchExportDialog}
+                      onFocus={prefetchExportDialog}
                       className="project-header-link"
                     >
                       Export Results
@@ -184,6 +257,8 @@ export function ProjectDetailPage() {
                     <button
                       type="button"
                       onClick={() => setShowReportDialog(true)}
+                      onMouseEnter={prefetchReportDialog}
+                      onFocus={prefetchReportDialog}
                       className="project-header-link"
                     >
                       Reporting
@@ -246,44 +321,52 @@ export function ProjectDetailPage() {
             </div>
           </div>
         ) : (
-          <Routes>
-            <Route index element={<Navigate to="results" replace />} />
-            <Route path="results" element={<ResultsView projectSlug={projectSlug} />} />
-            <Route path="maxmin" element={<MaxMinView projectSlug={projectSlug} />} />
-            <Route path="comparison" element={<ComparisonView projectSlug={projectSlug} />} />
-            <Route path="elements" element={<ElementResultsView projectSlug={projectSlug} />} />
-            <Route path="foundation" element={<JointResultsView projectSlug={projectSlug} />} />
-            <Route path="pushover" element={<PushoverView projectSlug={projectSlug} />} />
-            <Route path="time-series" element={<TimeSeriesView projectSlug={projectSlug} />} />
-            <Route path="settings" element={<ProjectSettings projectSlug={projectSlug} />} />
-          </Routes>
+          <Suspense fallback={routeFallback}>
+            <Routes>
+              <Route index element={<Navigate to="results" replace />} />
+              <Route path="results" element={<ResultsView projectSlug={projectSlug} />} />
+              <Route path="maxmin" element={<MaxMinView projectSlug={projectSlug} />} />
+              <Route path="comparison" element={<ComparisonView projectSlug={projectSlug} />} />
+              <Route path="elements" element={<ElementResultsView projectSlug={projectSlug} />} />
+              <Route path="foundation" element={<JointResultsView projectSlug={projectSlug} />} />
+              <Route path="pushover" element={<PushoverView projectSlug={projectSlug} />} />
+              <Route path="time-series" element={<TimeSeriesView projectSlug={projectSlug} />} />
+              <Route path="settings" element={<ProjectSettings projectSlug={projectSlug} />} />
+            </Routes>
+          </Suspense>
         )}
       </div>
 
       {/* Import Dialog */}
       {showImportDialog && (
-        <ImportDialog
-          projectSlug={projectSlug}
-          projectName={project.name}
-          onClose={() => setShowImportDialog(false)}
-          onComplete={handleImportComplete}
-        />
+        <Suspense fallback={dialogFallback}>
+          <ImportDialog
+            projectSlug={projectSlug}
+            projectName={project.name}
+            onClose={() => setShowImportDialog(false)}
+            onComplete={handleImportComplete}
+          />
+        </Suspense>
       )}
 
       {/* Export Dialog */}
       {showExportDialog && (
-        <ExportDialog
-          projectSlug={projectSlug}
-          onClose={() => setShowExportDialog(false)}
-        />
+        <Suspense fallback={dialogFallback}>
+          <ExportDialog
+            projectSlug={projectSlug}
+            onClose={() => setShowExportDialog(false)}
+          />
+        </Suspense>
       )}
 
       {/* Report Dialog */}
       {showReportDialog && (
-        <ReportDialog
-          projectSlug={projectSlug}
-          onClose={() => setShowReportDialog(false)}
-        />
+        <Suspense fallback={dialogFallback}>
+          <ReportDialog
+            projectSlug={projectSlug}
+            onClose={() => setShowReportDialog(false)}
+          />
+        </Suspense>
       )}
     </div>
   )

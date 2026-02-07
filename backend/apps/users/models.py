@@ -9,6 +9,7 @@ class User(AbstractUser):
     """
     Custom user model extending Django's AbstractUser.
     """
+
     email = models.EmailField(unique=True)
 
     # Profile fields
@@ -20,8 +21,8 @@ class User(AbstractUser):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        db_table = 'users'
-        ordering = ['-created_at']
+        db_table = "users"
+        ordering = ["-created_at"]
 
     def __str__(self):
         return self.email or self.username

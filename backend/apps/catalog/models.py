@@ -11,28 +11,23 @@ class CatalogProject(models.Model):
     Project entry in the catalog.
     Contains metadata about the project and links to the owner.
     """
+
     name = models.CharField(max_length=255)
     slug = models.SlugField(max_length=255, unique=True)
     description = models.TextField(blank=True)
 
     # Owner
     owner = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name='catalog_projects'
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="catalog_projects"
     )
 
     # Analysis type
     ANALYSIS_TYPE_CHOICES = [
-        ('NLTHA', 'NLTHA'),
-        ('Pushover', 'Pushover'),
-        ('Mixed', 'Mixed'),
+        ("NLTHA", "NLTHA"),
+        ("Pushover", "Pushover"),
+        ("Mixed", "Mixed"),
     ]
-    analysis_type = models.CharField(
-        max_length=50,
-        choices=ANALYSIS_TYPE_CHOICES,
-        default='NLTHA'
-    )
+    analysis_type = models.CharField(max_length=50, choices=ANALYSIS_TYPE_CHOICES, default="NLTHA")
 
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
@@ -40,9 +35,9 @@ class CatalogProject(models.Model):
     last_opened = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        db_table = 'catalog_projects'
-        ordering = ['-created_at']
-        unique_together = ['owner', 'name']
+        db_table = "catalog_projects"
+        ordering = ["-created_at"]
+        unique_together = ["owner", "name"]
 
     def __str__(self) -> str:
         return self.name

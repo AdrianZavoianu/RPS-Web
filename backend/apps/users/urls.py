@@ -6,16 +6,15 @@ from rest_framework_simplejwt.views import TokenRefreshView
 
 from . import views
 
-app_name = 'users'
+app_name = "users"
 
 urlpatterns = [
     # JWT Authentication
-    path('login/', views.CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-    path('logout/', views.LogoutView.as_view(), name='logout'),
-
+    path("login/", views.CustomTokenObtainPairView.as_view(), name="token_obtain_pair"),
+    path("refresh/", TokenRefreshView.as_view(), name="token_refresh"),
+    path("logout/", views.LogoutView.as_view(), name="logout"),
     # User management
-    path('register/', views.RegisterView.as_view(), name='register'),
-    path('profile/', views.ProfileView.as_view(), name='profile'),
-    path('change-password/', views.ChangePasswordView.as_view(), name='change_password'),
+    path("register/", views.RegisterView.as_view(), name="register"),
+    path("profile/", views.ProfileView.as_view(), name="profile"),
+    path("change-password/", views.ChangePasswordView.as_view(), name="change_password"),
 ]

@@ -100,7 +100,10 @@ class ImportPreparationService:
                 for sheet_name, result_labels in self._target_sheets.items():
                     if not self._should_import_any(result_labels, result_types):
                         continue
-                    if sheet_name not in available_sheets and sheet_name != "Vertical Displacements":
+                    if (
+                        sheet_name not in available_sheets
+                        and sheet_name != "Vertical Displacements"
+                    ):
                         continue
 
                     try:
@@ -118,7 +121,9 @@ class ImportPreparationService:
                         sheets_errored.append(f"Fou: {str(exc)[:30]}")
 
                 if "Joint Displacements" in available_sheets:
-                    if result_types is None or "vertical displacements" in {rt.lower() for rt in result_types}:
+                    if result_types is None or "vertical displacements" in {
+                        rt.lower() for rt in result_types
+                    }:
                         try:
                             load_cases = parser.get_load_cases_only("Joint Displacements") or []
                             if load_cases:
@@ -140,7 +145,10 @@ class ImportPreparationService:
 
         max_workers = min(6, len(excel_files) or 1)
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {executor.submit(_scan_file, path): (idx, path) for idx, path in enumerate(excel_files)}
+            futures = {
+                executor.submit(_scan_file, path): (idx, path)
+                for idx, path in enumerate(excel_files)
+            }
             for future in as_completed(futures):
                 idx, file_path = futures[future]
                 if progress_callback:

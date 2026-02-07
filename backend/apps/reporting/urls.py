@@ -3,19 +3,17 @@ from django.urls import path
 
 from .views import GenerateReportView, ReportPreviewView
 
-app_name = 'reporting'
+app_name = "reporting"
 
 urlpatterns = [
     # Generate PDF report
     path(
-        '<slug:project_slug>/reports/generate/',
+        "<slug:project_slug>/reports/generate/",
         GenerateReportView.as_view(),
-        name='generate-report'
+        name="generate-report",
     ),
     # Preview available sections
     path(
-        '<slug:project_slug>/reports/preview/',
-        ReportPreviewView.as_view(),
-        name='report-preview'
+        "<slug:project_slug>/reports/preview/", ReportPreviewView.as_view(), name="report-preview"
     ),
 ]

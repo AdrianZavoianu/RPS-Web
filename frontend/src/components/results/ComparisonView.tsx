@@ -69,6 +69,7 @@ export function ComparisonView({ projectSlug }: ComparisonViewProps) {
     return {
       stories,
       series,
+      result_type: selectedResultType,
       unit: availableTypes?.global_results.find((r) => r.type === selectedResultType)?.unit || '',
       title: `${selectedResultType} ${selectedDirection} - ${selectedMetric} Comparison`,
     }
@@ -232,6 +233,7 @@ export function ComparisonView({ projectSlug }: ComparisonViewProps) {
                     series: comparisonData.series,
                     ratio_column: comparisonData.ratio_column,
                     metric: comparisonData.metric,
+                    result_type: comparisonData.result_type,
                   }}
                   className="h-full"
                 />

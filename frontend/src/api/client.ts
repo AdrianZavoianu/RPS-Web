@@ -120,6 +120,22 @@ class ApiClient {
     return this.normalizeResponse<T>(data)
   }
 
+  async getBlob(endpoint: string, timeoutMs: number = DEFAULT_TIMEOUT_MS): Promise<Blob> {
+    const response = await this.fetchWithTimeout(
+      endpoint,
+      {
+        method: 'GET',
+        headers: this.getHeaders(),
+      },
+      timeoutMs
+    )
+    if (!response.ok) {
+      this.handleUnauthorized(response.status)
+      throw await this.buildHttpError(response)
+    }
+    return response.blob()
+  }
+
   async post<T>(
     endpoint: string,
     data?: unknown,

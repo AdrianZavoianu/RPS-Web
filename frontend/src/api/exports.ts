@@ -16,6 +16,7 @@ export interface ExportJob {
   id: number
   status: 'pending' | 'processing' | 'completed' | 'failed'
   progress: number
+  file_name: string
   download_url: string | null
   error_message: string | null
   created_at: string
@@ -51,6 +52,9 @@ export async function cancelExportJob(
 }
 
 // Download export file
-export function getDownloadUrl(projectSlug: string, jobId: number): string {
-  return `/api/projects/${projectSlug}/exports/${jobId}/download/`
+export async function downloadExportFile(
+  projectSlug: string,
+  jobId: number
+): Promise<Blob> {
+  return apiClient.getBlob(`/projects/${projectSlug}/exports/${jobId}/download/`)
 }

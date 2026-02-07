@@ -32,34 +32,37 @@ class CatalogProjectViewSet(viewsets.ModelViewSet):
     partial_update: PATCH /api/projects/{slug}/
     destroy: DELETE /api/projects/{slug}/
     """
+
     permission_classes = [permissions.IsAuthenticated, IsOwner]
-    lookup_field = 'slug'
+    lookup_field = "slug"
 
     def get_queryset(self):
         """Return projects owned by the current user."""
-        return CatalogProject.objects.filter(
-            owner=self.request.user
-        ).select_related('owner').prefetch_related('project_data')
+        return (
+            CatalogProject.objects.filter(owner=self.request.user)
+            .select_related("owner")
+            .prefetch_related("project_data")
+        )
 
     def get_serializer_class(self):
-        if self.action == 'create':
+        if self.action == "create":
             return CatalogProjectCreateSerializer
-        if self.action in ['retrieve', 'update', 'partial_update']:
+        if self.action in ["retrieve", "update", "partial_update"]:
             return CatalogProjectDetailSerializer
         return CatalogProjectSerializer
 
     def perform_create(self, serializer):
         serializer.save()
 
-    @action(detail=True, methods=['post'])
+    @action(detail=True, methods=["post"])
     def open(self, request, slug=None):
         """Mark project as opened (updates last_opened timestamp)."""
         project = self.get_object()
         project.last_opened = timezone.now()
-        project.save(update_fields=['last_opened'])
-        return Response({'status': 'opened'})
+        project.save(update_fields=["last_opened"])
+        return Response({"status": "opened"})
 
-    @action(detail=True, methods=['post'])
+    @action(detail=True, methods=["post"])
     def duplicate(self, request, slug=None):
         """Create a copy of the project."""
         original = self.get_object()
@@ -82,6 +85,7 @@ class CatalogProjectViewSet(viewsets.ModelViewSet):
 
         # Create empty project data container
         from apps.projects.models import Project
+
         Project.objects.create(catalog_project=new_catalog)
 
         serializer = CatalogProjectDetailSerializer(new_catalog)

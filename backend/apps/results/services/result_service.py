@@ -35,14 +35,14 @@ class ResultDataService:
         """Get project stories ordered by sort_order (top to bottom for display)."""
         if self._story_cache is None:
             self._story_cache = list(
-                Story.objects.filter(project=self.project).order_by('-sort_order')
+                Story.objects.filter(project=self.project).order_by("-sort_order")
             )
         return self._story_cache
 
     def _get_display_name(self, result_type: str, direction: Optional[str]) -> str:
         """Generate display name with configured unit."""
         config = RESULT_TYPE_CONFIG.get(result_type, {})
-        unit = config.get('unit', '')
+        unit = config.get("unit", "")
         if direction:
             return f"{result_type} {direction} ({unit})"
         return f"{result_type} ({unit})"
@@ -50,7 +50,7 @@ class ResultDataService:
     def _apply_multiplier(self, value: float, result_type: str) -> float:
         """Apply configured unit multiplier."""
         config = RESULT_TYPE_CONFIG.get(result_type, {})
-        multiplier = config.get('multiplier', 1)
+        multiplier = config.get("multiplier", 1)
         return value * multiplier
 
     def get_global_results(
@@ -116,7 +116,7 @@ class ResultDataService:
     def get_maxmin_dataset(
         self,
         result_set_id: int,
-        base_result_type: str = 'Drifts',
+        base_result_type: str = "Drifts",
     ) -> Optional[MaxMinDataset]:
         """Get max/min envelope data for a result type."""
         return maxmin_provider.get_maxmin_dataset(
@@ -130,7 +130,7 @@ class ResultDataService:
         result_type: str,
         direction: Optional[str],
         result_set_ids: List[int],
-        metric: str = 'Avg',
+        metric: str = "Avg",
         element_id: Optional[int] = None,
     ) -> Optional[ComparisonDataset]:
         """Get comparison data across multiple result sets."""
@@ -148,7 +148,7 @@ class ResultDataService:
         result_set_id: int,
         result_type: str,
         direction: str,
-        column: str = 'Avg',
+        column: str = "Avg",
     ) -> Optional[Dict[str, Any]]:
         """Get data formatted for profile charts."""
         return global_provider.get_chart_data(
@@ -161,12 +161,12 @@ class ResultDataService:
 
 
 __all__ = [
-    'ResultDataService',
-    'ResultDataset',
-    'ResultDatasetMeta',
-    'MaxMinDataset',
-    'ComparisonDataset',
-    'ComparisonSeries',
-    'RESULT_TYPE_CONFIG',
-    'get_internal_direction',
+    "ResultDataService",
+    "ResultDataset",
+    "ResultDatasetMeta",
+    "MaxMinDataset",
+    "ComparisonDataset",
+    "ComparisonSeries",
+    "RESULT_TYPE_CONFIG",
+    "get_internal_direction",
 ]

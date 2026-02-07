@@ -20,15 +20,15 @@ class PushoverCasesView(ProjectResultsMixin, APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, project_slug):
-        result_set_id = request.query_params.get('result_set_id')
+        result_set_id = request.query_params.get("result_set_id")
         project = self.get_project()
 
         queryset = PushoverCase.objects.filter(project=project)
         if result_set_id:
             queryset = queryset.filter(result_set_id=result_set_id)
 
-        cases = list(queryset.values('id', 'name', 'direction', 'result_set_id'))
-        return Response({'pushover_cases': cases})
+        cases = list(queryset.values("id", "name", "direction", "result_set_id"))
+        return Response({"pushover_cases": cases})
 
 
 class PushoverCurveView(ProjectResultsMixin, APIView):
@@ -45,23 +45,22 @@ class PushoverCurveView(ProjectResultsMixin, APIView):
         project = self.get_project()
 
         case = get_object_or_404(PushoverCase, id=case_id, project=project)
-        points = PushoverCurvePoint.objects.filter(pushover_case=case).order_by('step_number')
+        points = PushoverCurvePoint.objects.filter(pushover_case=case).order_by("step_number")
 
         curve_data = {
-            'case': {
-                'id': case.id,
-                'name': case.name,
-                'direction': case.direction,
+            "case": {
+                "id": case.id,
+                "name": case.name,
+                "direction": case.direction,
             },
-            'points': [
+            "points": [
                 {
-                    'step': p.step_number,
-                    'displacement': p.displacement,
-                    'base_shear': p.base_shear,
+                    "step": p.step_number,
+                    "displacement": p.displacement,
+                    "base_shear": p.base_shear,
                 }
                 for p in points
             ],
         }
 
         return Response(curve_data)
-

@@ -5,6 +5,20 @@ import { ConfirmDialog, AlertDialog } from '../components/common/ConfirmDialog'
 import { getApiErrorMessage } from '../types/errors'
 import type { Project } from '../types'
 
+let projectWorkspacePrefetchStarted = false
+
+function prefetchProjectWorkspace(): void {
+  if (projectWorkspacePrefetchStarted) {
+    return
+  }
+  projectWorkspacePrefetchStarted = true
+  void Promise.all([
+    import('./ProjectDetailPage'),
+    import('../components/results/ResultsView'),
+    import('../components/projects/ProjectBrowserNav'),
+  ])
+}
+
 export function ProjectsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [isCreateOpen, setIsCreateOpen] = useState(false)
@@ -86,6 +100,10 @@ export function ProjectsPage() {
     }
   }
 
+  const handleProjectOpenIntent = () => {
+    prefetchProjectWorkspace()
+  }
+
   return (
     <div className="h-full overflow-auto px-6 pb-6 pt-1">
       {/* Header */}
@@ -141,6 +159,7 @@ export function ProjectsPage() {
               key={project.id}
               project={project}
               onDelete={() => handleDeleteProject(project.slug, project.name)}
+              onOpenIntent={handleProjectOpenIntent}
             />
           ))}
         </div>
@@ -236,7 +255,15 @@ export function ProjectsPage() {
   )
 }
 
-function ProjectCard({ project, onDelete }: { project: Project; onDelete: () => void }) {
+function ProjectCard({
+  project,
+  onDelete,
+  onOpenIntent,
+}: {
+  project: Project
+  onDelete: () => void
+  onOpenIntent: () => void
+}) {
   const createdAt = project.created_at
     ? new Date(project.created_at).toLocaleDateString()
     : '—'
@@ -269,7 +296,12 @@ function ProjectCard({ project, onDelete }: { project: Project; onDelete: () => 
             <span className="project-card-footer-value">{createdAt}</span>
           </div>
           <div className="flex items-center justify-between pt-4">
-            <Link to={`/projects/${project.slug}`} className="project-card-action">
+            <Link
+              to={`/projects/${project.slug}`}
+              className="project-card-action"
+              onMouseEnter={onOpenIntent}
+              onFocus={onOpenIntent}
+            >
               Open
             </Link>
             <button

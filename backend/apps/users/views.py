@@ -21,21 +21,23 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
         data = super().validate(attrs)
         # Add user data to the response
-        data['user'] = {
-            'id': self.user.id,
-            'username': self.user.username,
-            'email': self.user.email,
+        data["user"] = {
+            "id": self.user.id,
+            "username": self.user.username,
+            "email": self.user.email,
         }
         return data
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     """Custom login view that returns user data along with tokens."""
+
     serializer_class = CustomTokenObtainPairSerializer
 
 
 class RegisterView(generics.CreateAPIView):
     """User registration endpoint."""
+
     queryset = User.objects.all()
     permission_classes = [permissions.AllowAny]
     serializer_class = UserCreateSerializer
@@ -43,6 +45,7 @@ class RegisterView(generics.CreateAPIView):
 
 class ProfileView(generics.RetrieveUpdateAPIView):
     """Current user profile endpoint."""
+
     serializer_class = UserSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -52,27 +55,29 @@ class ProfileView(generics.RetrieveUpdateAPIView):
 
 class ChangePasswordView(APIView):
     """Change password endpoint."""
+
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
+        serializer = ChangePasswordSerializer(data=request.data, context={"request": request})
         if serializer.is_valid():
-            request.user.set_password(serializer.validated_data['new_password'])
+            request.user.set_password(serializer.validated_data["new_password"])
             request.user.save()
-            return Response({'message': 'Password changed successfully.'})
+            return Response({"message": "Password changed successfully."})
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class LogoutView(APIView):
     """Logout endpoint - blacklists the refresh token."""
+
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
         try:
-            refresh_token = request.data.get('refresh')
+            refresh_token = request.data.get("refresh")
             if refresh_token:
                 token = RefreshToken(refresh_token)
                 token.blacklist()
-            return Response({'message': 'Successfully logged out.'})
+            return Response({"message": "Successfully logged out."})
         except TokenError:
-            return Response({'error': 'Invalid token.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Invalid token."}, status=status.HTTP_400_BAD_REQUEST)

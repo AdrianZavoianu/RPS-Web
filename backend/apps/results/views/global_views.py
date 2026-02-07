@@ -35,23 +35,23 @@ class GlobalResultsDataView(ProjectResultsMixin, APIView):
     def get(self, request, project_slug):
         params = self.validate_result_params(
             request,
-            ('result_set_id', 'result_type', 'direction'),
+            ("result_set_id", "result_type", "direction"),
         )
         if isinstance(params, Response):
             return params
 
-        is_pushover = request.query_params.get('is_pushover', '').lower() == 'true'
+        is_pushover = request.query_params.get("is_pushover", "").lower() == "true"
 
         service = self.get_result_service()
         dataset = service.get_global_results(
-            result_set_id=int(params['result_set_id']),
-            result_type=params['result_type'],
-            direction=params['direction'],
+            result_set_id=int(params["result_set_id"]),
+            result_type=params["result_type"],
+            direction=params["direction"],
             is_pushover=is_pushover,
         )
 
         if not dataset:
-            return Response({'rows': [], 'load_case_columns': [], 'meta': None})
+            return Response({"rows": [], "load_case_columns": [], "meta": None})
 
         return Response(dataset.to_dict())
 
@@ -71,31 +71,31 @@ class GlobalResultsView(ProjectResultsMixin, APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     RESULT_TYPE_MAP = {
-        'Drifts': (StoryDrift, StoryDriftSerializer),
-        'Accelerations': (StoryAcceleration, StoryAccelerationSerializer),
-        'Forces': (StoryForce, StoryForceSerializer),
-        'Displacements': (StoryDisplacement, StoryDisplacementSerializer),
+        "Drifts": (StoryDrift, StoryDriftSerializer),
+        "Accelerations": (StoryAcceleration, StoryAccelerationSerializer),
+        "Forces": (StoryForce, StoryForceSerializer),
+        "Displacements": (StoryDisplacement, StoryDisplacementSerializer),
     }
 
     def get(self, request, project_slug):
         project = self.get_project()
 
-        result_type = request.query_params.get('result_type', 'Drifts')
-        result_set_id = request.query_params.get('result_set_id')
-        direction = request.query_params.get('direction')
-        category_name = request.query_params.get('category')
+        result_type = request.query_params.get("result_type", "Drifts")
+        result_set_id = request.query_params.get("result_set_id")
+        direction = request.query_params.get("direction")
+        category_name = request.query_params.get("category")
 
         if result_type not in self.RESULT_TYPE_MAP:
             return Response(
-                {'error': f'Invalid result_type: {result_type}'},
+                {"error": f"Invalid result_type: {result_type}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         model_class, serializer_class = self.RESULT_TYPE_MAP[result_type]
 
-        queryset = model_class.objects.filter(
-            story__project=project
-        ).select_related('story', 'load_case', 'result_category')
+        queryset = model_class.objects.filter(story__project=project).select_related(
+            "story", "load_case", "result_category"
+        )
 
         if result_set_id:
             queryset = queryset.filter(result_category__result_set_id=result_set_id)
@@ -106,8 +106,7 @@ class GlobalResultsView(ProjectResultsMixin, APIView):
         if category_name:
             queryset = queryset.filter(result_category__category_name=category_name)
 
-        queryset = queryset.order_by('story_sort_order', 'load_case__name')
+        queryset = queryset.order_by("story_sort_order", "load_case__name")
 
         serializer = serializer_class(queryset, many=True)
         return Response(serializer.data)
-

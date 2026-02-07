@@ -17,16 +17,16 @@ def _build_summary_columns(
         return []
 
     for row in rows:
-        if 'Avg' in row:
+        if "Avg" in row:
             continue
         values = [row.get(lc, 0) for lc in load_case_columns if lc in row]
         if not values:
             continue
-        row['Avg'] = sum(values) / len(values)
-        row['Max'] = max(values)
-        row['Min'] = min(values)
+        row["Avg"] = sum(values) / len(values)
+        row["Max"] = max(values)
+        row["Min"] = min(values)
 
-    return ['Avg', 'Max', 'Min']
+    return ["Avg", "Max", "Min"]
 
 
 def get_joint_results(
@@ -40,30 +40,30 @@ def get_joint_results(
         project=service.project,
         result_set_id=result_set_id,
         result_type=result_type,
-    ).order_by('unique_name')
+    ).order_by("unique_name")
 
     if not cache_entries.exists():
         return None
 
     rows = []
     load_case_set = set()
-    base_type = result_type.replace('_Min', '').replace('_Max', '')
+    base_type = result_type.replace("_Min", "").replace("_Max", "")
 
     for entry in cache_entries:
         row = {
-            'Element': entry.shell_object,
-            'UniqueID': entry.unique_name,
+            "Element": entry.shell_object,
+            "UniqueID": entry.unique_name,
         }
         for lc_name, value in entry.results_matrix.items():
             row[lc_name] = service._apply_multiplier(value, base_type)
             load_case_set.add(lc_name)
 
         if entry.avg_value is not None:
-            row['Avg'] = service._apply_multiplier(entry.avg_value, base_type)
+            row["Avg"] = service._apply_multiplier(entry.avg_value, base_type)
         if entry.max_value is not None:
-            row['Max'] = service._apply_multiplier(entry.max_value, base_type)
+            row["Max"] = service._apply_multiplier(entry.max_value, base_type)
         if entry.min_value is not None:
-            row['Min'] = service._apply_multiplier(entry.min_value, base_type)
+            row["Min"] = service._apply_multiplier(entry.min_value, base_type)
 
         rows.append(row)
 
@@ -83,5 +83,5 @@ def get_joint_results(
         rows=rows,
         load_case_columns=load_case_columns,
         summary_columns=summary_columns,
-        story_column='Element',
+        story_column="Element",
     )

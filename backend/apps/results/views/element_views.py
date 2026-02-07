@@ -24,25 +24,25 @@ class ElementResultsDataView(ProjectResultsMixin, APIView):
     def get(self, request, project_slug):
         params = self.validate_result_params(
             request,
-            ('result_set_id', 'element_id', 'result_type'),
+            ("result_set_id", "element_id", "result_type"),
         )
         if isinstance(params, Response):
             return params
 
-        direction = request.query_params.get('direction')
-        is_pushover = request.query_params.get('is_pushover', '').lower() == 'true'
+        direction = request.query_params.get("direction")
+        is_pushover = request.query_params.get("is_pushover", "").lower() == "true"
 
         service = self.get_result_service()
         dataset = service.get_element_results(
-            result_set_id=int(params['result_set_id']),
-            element_id=int(params['element_id']),
-            result_type=params['result_type'],
+            result_set_id=int(params["result_set_id"]),
+            element_id=int(params["element_id"]),
+            result_type=params["result_type"],
             direction=direction,
             is_pushover=is_pushover,
         )
 
         if not dataset:
-            return Response({'rows': [], 'load_case_columns': [], 'meta': None})
+            return Response({"rows": [], "load_case_columns": [], "meta": None})
 
         return Response(dataset.to_dict())
 
@@ -61,16 +61,15 @@ class ElementListView(ProjectResultsMixin, APIView):
     def get(self, request, project_slug):
         params = self.validate_result_params(
             request,
-            ('result_set_id', 'result_type'),
+            ("result_set_id", "result_type"),
         )
         if isinstance(params, Response):
             return params
 
         service = self.get_result_service()
         elements = service.get_all_elements_for_type(
-            result_set_id=int(params['result_set_id']),
-            result_type=params['result_type'],
+            result_set_id=int(params["result_set_id"]),
+            result_type=params["result_type"],
         )
 
-        return Response({'elements': elements})
-
+        return Response({"elements": elements})

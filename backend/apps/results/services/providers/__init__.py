@@ -9,9 +9,9 @@ from . import (
 )
 
 __all__ = [
-    'comparison_provider',
-    'element_provider',
-    'global_provider',
-    'joint_provider',
-    'maxmin_provider',
+    "comparison_provider",
+    "element_provider",
+    "global_provider",
+    "joint_provider",
+    "maxmin_provider",
 ]

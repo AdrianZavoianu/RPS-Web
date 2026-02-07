@@ -223,6 +223,8 @@ export function ProfileChart({
   // Handle single series ChartData format
   if ('values' in data && 'stories' in data && !('series' in data)) {
     const chartData = data as ChartData
+    const decimals = getResultTypeDecimals(chartData.result_type)
+    const hoverFormat = `%{x:.${decimals}f}`
     return (
       <LazyPlot
         data={[
@@ -235,7 +237,7 @@ export function ProfileChart({
               color: '#4a7d89',
               width: 2,
             },
-            hovertemplate: '%{y}: %{x:.4f}<extra></extra>',
+            hovertemplate: `%{y}: ${hoverFormat}<extra></extra>`,
           },
         ]}
         layout={{
@@ -272,6 +274,8 @@ export function ProfileChart({
   // Handle multi-series ProfileChartData format
   // Desktop style: solid for max, dashed for min
   const profileData = data as ProfileChartData
+  const profileDecimals = getResultTypeDecimals(profileData.result_type)
+  const profileHoverFormat = `%{x:.${profileDecimals}f}`
 
   return (
     <LazyPlot
@@ -286,7 +290,7 @@ export function ProfileChart({
           width: series.name === 'Avg' ? 4 : 2,
           dash: series.name.includes('Min') || series.name === 'Avg' ? 'dash' : 'solid',
         },
-        hovertemplate: `${series.name}<br>%{y}: %{x:.4f}<extra></extra>`,
+        hovertemplate: `${series.name}<br>%{y}: ${profileHoverFormat}<extra></extra>`,
       }))}
       layout={{
         xaxis: {

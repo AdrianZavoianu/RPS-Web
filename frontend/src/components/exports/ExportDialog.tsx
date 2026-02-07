@@ -6,8 +6,8 @@
 import { useState, useEffect } from 'react'
 import clsx from 'clsx'
 import { useResultSets, useAvailableResultTypes } from '../../hooks/useResults'
-import { useStartExport, useExportJob } from '../../hooks/useExports'
-import { getDownloadUrl } from '../../api/exports'
+import { useStartExport, useExportJob, useCancelExport } from '../../hooks/useExports'
+import { downloadExportFile } from '../../api/exports'
 import { getApiErrorMessage } from '../../types/errors'
 
 interface ExportDialogProps {
@@ -30,6 +30,7 @@ export function ExportDialog({ projectSlug, onClose }: ExportDialogProps) {
   const { data: resultSets } = useResultSets(projectSlug)
   const { data: availableTypes } = useAvailableResultTypes(projectSlug)
   const startExport = useStartExport(projectSlug)
+  const cancelExport = useCancelExport(projectSlug)
   const { data: exportJob } = useExportJob(projectSlug, exportJobId)
 
   // Auto-select first result set
@@ -88,10 +89,54 @@ export function ExportDialog({ projectSlug, onClose }: ExportDialogProps) {
     }
   }
 
-  const handleDownload = () => {
-    if (exportJobId) {
-      const url = getDownloadUrl(projectSlug, exportJobId)
-      window.open(url, '_blank')
+  const handleCancelExport = async () => {
+    if (!exportJobId) {
+      onClose()
+      return
+    }
+
+    setExportError(null)
+    try {
+      await cancelExport.mutateAsync(exportJobId)
+      onClose()
+    } catch (error) {
+      const message = getApiErrorMessage(error, 'Failed to cancel export')
+      setExportError(message)
+    }
+  }
+
+  const handleDialogClose = () => {
+    if (step === 'exporting') {
+      void handleCancelExport()
+      return
+    }
+    onClose()
+  }
+
+  const handleDownload = async () => {
+    if (!exportJobId) {
+      setExportError('Export job is missing')
+      return
+    }
+    if (!exportJob?.file_name) {
+      setExportError('Export file metadata is missing')
+      return
+    }
+
+    setExportError(null)
+    try {
+      const fileBlob = await downloadExportFile(projectSlug, exportJobId)
+      const objectUrl = URL.createObjectURL(fileBlob)
+      const link = document.createElement('a')
+      link.href = objectUrl
+      link.download = exportJob.file_name
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(objectUrl)
+    } catch (error) {
+      const message = getApiErrorMessage(error, 'Failed to download export file')
+      setExportError(message)
     }
   }
 
@@ -102,7 +147,8 @@ export function ExportDialog({ projectSlug, onClose }: ExportDialogProps) {
         <div className="dialog-header flex items-center justify-between px-6 py-4 border-b border-border-default">
           <h2 className="text-lg font-semibold text-text-primary">Export Results</h2>
           <button
-            onClick={onClose}
+            onClick={handleDialogClose}
+            disabled={cancelExport.isPending}
             className="text-text-secondary hover:text-text-primary"
           >
             ✕
@@ -241,6 +287,11 @@ export function ExportDialog({ projectSlug, onClose }: ExportDialogProps) {
               <div className="text-sm text-text-muted mt-2">
                 {exportJob?.progress || 0}%
               </div>
+              {exportError && (
+                <div className="rounded border border-error/40 bg-error/10 px-3 py-2 text-sm text-error mt-4">
+                  {exportError}
+                </div>
+              )}
             </div>
           )}
 
@@ -256,6 +307,11 @@ export function ExportDialog({ projectSlug, onClose }: ExportDialogProps) {
                   >
                     Download File
                   </button>
+                  {exportError && (
+                    <div className="rounded border border-error/40 bg-error/10 px-3 py-2 text-sm text-error mt-4">
+                      {exportError}
+                    </div>
+                  )}
                 </>
               ) : (
                 <>
@@ -291,8 +347,15 @@ export function ExportDialog({ projectSlug, onClose }: ExportDialogProps) {
             </>
           )}
           {step === 'exporting' && (
-            <button onClick={onClose} className="btn-secondary px-4 py-2 rounded">
-              Cancel
+            <button
+              onClick={() => void handleCancelExport()}
+              disabled={cancelExport.isPending}
+              className={clsx(
+                'btn-secondary px-4 py-2 rounded',
+                cancelExport.isPending && 'opacity-50 cursor-not-allowed'
+              )}
+            >
+              {cancelExport.isPending ? 'Cancelling...' : 'Cancel'}
             </button>
           )}
           {step === 'complete' && (

@@ -51,6 +51,7 @@ export function useCancelExport(projectSlug: string) {
     mutationFn: (jobId: number) => exportsApi.cancelExportJob(projectSlug, jobId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['exportJobs', projectSlug] })
+      queryClient.invalidateQueries({ queryKey: ['exportJob', projectSlug] })
     },
   })
 }
