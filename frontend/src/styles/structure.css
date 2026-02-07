@@ -1,0 +1,195 @@
+/* Structure.css - Semantic class registry
+   These empty selectors document all semantic class names used in the app.
+   Full styles are defined in index.css within @layer components.
+   Import this file at the root level before index.css.
+*/
+
+/* Buttons */
+.btn {}
+.btn-primary {}
+.btn-secondary {}
+.btn-ghost {}
+
+/* Cards & Inputs */
+.card {}
+.input {}
+
+/* Logo */
+.rps-logo {}
+.rps-icon {}
+
+/* Navigation */
+.nav-button {}
+.nav-button-active {}
+
+/* Page Layout */
+.page-headline {}
+.page-subheadline {}
+.page-body {}
+
+/* Project Header */
+.project-header {}
+.project-header-title {}
+.project-context-tab {}
+.project-context-tab-active {}
+.project-header-link {}
+.project-header-separator {}
+.project-header-icon-button {}
+
+/* Project Browser */
+.project-browser {}
+.project-browser-title {}
+.project-browser-section {}
+.project-browser-section-title {}
+.project-browser-link {}
+.project-browser-link-active {}
+
+/* Browser Items */
+.browser-section {}
+.browser-section-title {}
+.browser-item {}
+.browser-item-active {}
+
+/* Project Cards */
+.project-card {}
+.project-card-title {}
+.project-card-body {}
+.project-stat-label {}
+.project-stat-value {}
+.project-card-divider {}
+.project-card-footer-label {}
+.project-card-footer-value {}
+.project-card-action {}
+.project-card-delete {}
+
+/* Table Styles */
+.table-header {}
+.table-cell {}
+
+/* Import Dialog */
+.import-dialog-content {}
+.import-dialog-wide {}
+.import-dialog-conflict {}
+.import-dialog-header {}
+.import-dialog-title {}
+.import-dialog-close {}
+.import-dialog-body {}
+.import-dialog-footer {}
+.import-config-row {}
+.import-data-row {}
+.import-group {}
+.import-group-title {}
+.import-group-body {}
+.import-group-wide {}
+.import-group-files {}
+.import-group-cases {}
+.import-group-progress {}
+.import-input-row {}
+.import-input {}
+.import-actions {}
+.import-mini-button {}
+.import-list {}
+.import-list-scroll {}
+.import-list-items {}
+.import-list-item {}
+.import-placeholder {}
+.import-checkbox {}
+.import-conflict {}
+.import-warnings {}
+.import-warnings-title {}
+.import-progress-label {}
+.import-progress-track {}
+.import-progress-fill {}
+.import-log {}
+.import-log-line {}
+.import-error {}
+.import-browse-button {}
+.import-conflict-list {}
+.import-conflict-item {}
+.import-conflict-title {}
+
+/* Tree Browser */
+.tree-browser {}
+.tree-header {}
+.tree-content {}
+.tree-item {}
+.tree-item-section {}
+.tree-leaf {}
+.tree-children {}
+.tree-section {}
+.tree-result-set {}
+.tree-category {}
+.tree-category-type {}
+.tree-result-type {}
+
+/* Results View */
+.results-view {}
+.results-sidebar {}
+.results-content {}
+.results-toolbar {}
+.results-data {}
+.results-table-panel {}
+.results-chart-panel {}
+
+/* Results Table */
+.results-table-container {}
+.results-table {}
+.results-table-header {}
+.results-table-header-story {}
+.results-table-header-sortable {}
+.results-table-header-text {}
+.results-table-sort-indicator {}
+.results-table-row {}
+.results-table-cell {}
+.results-table-cell-story {}
+.results-table-story {}
+.results-table-value {}
+.results-table-value-gradient {}
+.results-table-summary {}
+.results-table-summary-avg {}
+.results-table-summary-max {}
+.results-table-summary-min {}
+.results-table-ratio {}
+.results-table-ratio-good {}
+.results-table-ratio-warn {}
+.results-table-ratio-bad {}
+.results-table-empty {}
+
+/* Element Results View */
+.element-results-view {}
+.element-sidebar {}
+.element-toolbar {}
+.element-content {}
+.element-data {}
+
+/* MaxMin View */
+.maxmin-view {}
+.maxmin-sidebar {}
+
+/* MaxMin Display */
+.maxmin-display {}
+.maxmin-tabs {}
+.maxmin-tab {}
+.maxmin-tab-active {}
+.maxmin-plots {}
+.maxmin-plot-section {}
+.maxmin-plot-legend {}
+.maxmin-legend-item {}
+.maxmin-legend-item-selected {}
+.maxmin-legend-static {}
+.maxmin-tables-tab {}
+.maxmin-direction-tables {}
+.maxmin-compact-table {}
+
+/* Comparison View */
+.comparison-view {}
+.comparison-sidebar {}
+
+/* Dialog (Generic) */
+.dialog-overlay {}
+.dialog-content {}
+.dialog-header {}
+.dialog-body {}
+
+/* Report Dialog */
+.report-dialog {}

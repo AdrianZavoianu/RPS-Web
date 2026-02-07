@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RPS Report - {{ project_name }}</title>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <div class="header-left">
+            <span class="project-name">{{ project_name }}</span>
+        </div>
+        <div class="result-set-name">{{ result_set_name }}</div>
+    </div>
+
+    <!-- Sections -->
+    {% for section in sections %}
+    <div class="section">
+        <div class="section-title">{{ section.title }}{% if section.unit %} ({{ section.unit }}){% endif %}</div>
+
+        {% if section.table %}
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Story</th>
+                    {% for col in section.table.columns %}
+                    <th>{{ col|truncatechars:8 }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in section.table.rows %}
+                <tr>
+                    <td>{{ row.story }}</td>
+                    {% for value in row.values %}
+                    <td>{{ value }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
+        {% if section.chart_svg %}
+        <div class="chart-container">
+            {{ section.chart_svg|safe }}
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</body>
+</html>

@@ -1,0 +1,12 @@
+node_modules/
+dist/
+__pycache__/
+*.pyc
+media/
+staticfiles/
+.env
+*.egg-info/
+db.sqlite3
+celerybeat-schedule
+.coverage
+htmlcov/
