@@ -21,6 +21,7 @@ def get_comparison_dataset(
 
     series_list = []
     all_stories = set()
+    story_order = {}
     warnings = []
 
     result_sets = {rs.id: rs.name for rs in ResultSet.objects.filter(id__in=result_set_ids)}
@@ -61,6 +62,9 @@ def get_comparison_dataset(
             if story and metric in row:
                 values[story] = row[metric]
                 all_stories.add(story)
+                row_sort_order = row.get("story_sort_order")
+                if isinstance(row_sort_order, (int, float)):
+                    story_order[story] = int(row_sort_order)
 
         series_list.append(
             ComparisonSeries(
@@ -75,7 +79,10 @@ def get_comparison_dataset(
         return None
 
     rows = []
-    for story in sorted(all_stories):
+    for story in sorted(
+        all_stories,
+        key=lambda name: (-story_order.get(name, -1), name),
+    ):
         row = {"Story": story}
         for series in series_list:
             col_name = f"{series.result_set_name}_{metric}"
@@ -91,8 +98,12 @@ def get_comparison_dataset(
         for row in rows:
             first_val = row.get(first_name)
             last_val = row.get(last_name)
-            if first_val and last_val and first_val != 0:
-                row[ratio_column] = last_val / first_val
+            if first_val is None or last_val is None:
+                continue
+            if first_val == 0:
+                row[ratio_column] = None
+                continue
+            row[ratio_column] = last_val / first_val
 
     return ComparisonDataset(
         result_type=result_type,

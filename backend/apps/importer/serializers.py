@@ -114,6 +114,26 @@ class ImportStartSerializer(serializers.Serializer):
         return value.strip()
 
 
+class PushoverImportStartSerializer(serializers.Serializer):
+    """Serializer for starting pushover import."""
+
+    result_set_name = serializers.CharField(
+        required=False,
+        default="Pushover Results",
+        help_text="Name for the result set when result_set_id is not provided",
+    )
+    result_set_id = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        help_text="Existing result set ID to add pushover curves to",
+    )
+
+    def validate_result_set_name(self, value):
+        if not value or not value.strip():
+            return "Pushover Results"
+        return value.strip()
+
+
 class LoadCaseSelectionSerializer(serializers.Serializer):
     """Serializer for grouped load case display."""
 

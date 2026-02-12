@@ -31,11 +31,17 @@ class ElementResultsDataView(ProjectResultsMixin, APIView):
 
         direction = request.query_params.get("direction")
         is_pushover = request.query_params.get("is_pushover", "").lower() == "true"
+        result_set_id = self.parse_int_param(params["result_set_id"], "result_set_id")
+        if isinstance(result_set_id, Response):
+            return result_set_id
+        element_id = self.parse_int_param(params["element_id"], "element_id")
+        if isinstance(element_id, Response):
+            return element_id
 
         service = self.get_result_service()
         dataset = service.get_element_results(
-            result_set_id=int(params["result_set_id"]),
-            element_id=int(params["element_id"]),
+            result_set_id=result_set_id,
+            element_id=element_id,
             result_type=params["result_type"],
             direction=direction,
             is_pushover=is_pushover,
@@ -66,9 +72,13 @@ class ElementListView(ProjectResultsMixin, APIView):
         if isinstance(params, Response):
             return params
 
+        result_set_id = self.parse_int_param(params["result_set_id"], "result_set_id")
+        if isinstance(result_set_id, Response):
+            return result_set_id
+
         service = self.get_result_service()
         elements = service.get_all_elements_for_type(
-            result_set_id=int(params["result_set_id"]),
+            result_set_id=result_set_id,
             result_type=params["result_type"],
         )
 

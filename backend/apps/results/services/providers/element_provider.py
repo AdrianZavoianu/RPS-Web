@@ -6,31 +6,9 @@ from apps.results.models import ElementResultsCache
 
 from ..datasets import (
     ResultDataset,
-    ResultDatasetMeta,
     get_internal_direction,
 )
-
-
-def _build_summary_columns(
-    rows: List[Dict[str, Any]],
-    load_case_columns: List[str],
-    is_pushover: bool,
-) -> List[str]:
-    """Populate fallback summary columns when aggregates are not precomputed."""
-    if is_pushover or not load_case_columns:
-        return []
-
-    for row in rows:
-        if "Avg" in row:
-            continue
-        values = [row.get(lc, 0) for lc in load_case_columns if lc in row]
-        if not values:
-            continue
-        row["Avg"] = sum(values) / len(values)
-        row["Max"] = max(values)
-        row["Min"] = min(values)
-
-    return ["Avg", "Max", "Min"]
+from .common import build_summary_columns, sort_load_case_columns
 
 
 def get_element_results(
@@ -43,20 +21,41 @@ def get_element_results(
 ) -> Optional[ResultDataset]:
     """Get element-level results from cache."""
     internal_direction = get_internal_direction(result_type, direction) if direction else None
-    cache_type = f"{result_type}_{internal_direction}" if internal_direction else result_type
+    cache_types: List[str] = []
 
-    cache_entries = (
-        ElementResultsCache.objects.filter(
-            project=service.project,
-            result_set_id=result_set_id,
-            result_type=cache_type,
-            element_id=element_id,
+    if internal_direction:
+        cache_types.append(f"{result_type}_{internal_direction}")
+    else:
+        cache_types.append(result_type)
+
+        # Desktop parity: these types are stored with suffix-specific cache keys.
+        if result_type == "ColumnAxials":
+            cache_types.extend(["ColumnAxials_Min", "ColumnAxials_Max"])
+        elif result_type == "ColumnRotations":
+            cache_types.extend(["ColumnRotations_R3", "ColumnRotations_R2"])
+        elif result_type == "BeamRotations":
+            cache_types.append("BeamRotations_R3Plastic")
+
+    cache_entries = None
+    resolved_direction = direction
+    for cache_type in cache_types:
+        candidate_qs = (
+            ElementResultsCache.objects.filter(
+                project=service.project,
+                result_set_id=result_set_id,
+                result_type=cache_type,
+                element_id=element_id,
+            )
+            .select_related("story", "element")
+            .order_by("-story_sort_order")
         )
-        .select_related("story", "element")
-        .order_by("-story_sort_order")
-    )
+        if candidate_qs.exists():
+            cache_entries = candidate_qs
+            if not direction and "_" in cache_type:
+                resolved_direction = cache_type.split("_", 1)[1]
+            break
 
-    if not cache_entries.exists():
+    if cache_entries is None:
         return None
 
     rows = []
@@ -84,15 +83,14 @@ def get_element_results(
     if not rows:
         return None
 
-    load_case_columns = sorted(load_case_set)
-    summary_columns = _build_summary_columns(rows, load_case_columns, is_pushover)
+    load_case_columns = sort_load_case_columns(list(load_case_set))
+    summary_columns = build_summary_columns(rows, load_case_columns, is_pushover)
 
     return ResultDataset(
-        meta=ResultDatasetMeta(
+        meta=service._build_meta(
             result_type=result_type,
-            direction=direction,
+            direction=resolved_direction,
             result_set_id=result_set_id,
-            display_name=service._get_display_name(result_type, direction),
         ),
         rows=rows,
         load_case_columns=load_case_columns,

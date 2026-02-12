@@ -1,6 +1,6 @@
 """Provider functions for global/story-level result data."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from config.result_types import RESULT_TYPE_CONFIG
 
@@ -8,31 +8,9 @@ from apps.results.models import GlobalResultsCache
 
 from ..datasets import (
     ResultDataset,
-    ResultDatasetMeta,
     get_internal_direction,
 )
-
-
-def _build_summary_columns(
-    rows: List[Dict[str, Any]],
-    load_case_columns: List[str],
-    is_pushover: bool,
-) -> List[str]:
-    """Populate fallback summary columns when aggregates are not precomputed."""
-    if is_pushover or not load_case_columns:
-        return []
-
-    for row in rows:
-        if "Avg" in row:
-            continue
-        values = [row.get(lc, 0) for lc in load_case_columns if lc in row]
-        if not values:
-            continue
-        row["Avg"] = sum(values) / len(values)
-        row["Max"] = max(values)
-        row["Min"] = min(values)
-
-    return ["Avg", "Max", "Min"]
+from .common import build_summary_columns, sort_load_case_columns
 
 
 def get_global_results(
@@ -80,15 +58,14 @@ def get_global_results(
     if not rows:
         return None
 
-    load_case_columns = sorted(load_case_set)
-    summary_columns = _build_summary_columns(rows, load_case_columns, is_pushover)
+    load_case_columns = sort_load_case_columns(list(load_case_set))
+    summary_columns = build_summary_columns(rows, load_case_columns, is_pushover)
 
     return ResultDataset(
-        meta=ResultDatasetMeta(
+        meta=service._build_meta(
             result_type=result_type,
             direction=direction,
             result_set_id=result_set_id,
-            display_name=service._get_display_name(result_type, direction),
         ),
         rows=rows,
         load_case_columns=load_case_columns,

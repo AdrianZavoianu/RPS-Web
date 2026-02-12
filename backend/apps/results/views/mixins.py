@@ -1,6 +1,6 @@
 """Shared mixins and discovery views for results endpoints."""
 
-from typing import Sequence
+from typing import List, Sequence
 
 from rest_framework import permissions, status
 from rest_framework.response import Response
@@ -53,7 +53,11 @@ class ProjectResultsMixin(ProjectLookupMixin):
 
     def get_project(self):
         slug = self.kwargs.get("project_slug")
-        return self.get_project_for_slug(slug, create_if_missing=False)
+        return self.get_project_for_slug(
+            slug,
+            create_if_missing=False,
+            user=self.request.user,
+        )
 
     def validate_result_params(self, request, required_fields: Sequence[str]):
         """Validate required query params or return HTTP 400 response."""
@@ -75,6 +79,48 @@ class ProjectResultsMixin(ProjectLookupMixin):
             return Response({"error": message}, status=status.HTTP_400_BAD_REQUEST)
 
         return params
+
+    def parse_int_param(self, value, field_name: str):
+        """Parse integer query/body parameter with user-facing error response."""
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return Response(
+                {"error": f"{field_name} must be an integer"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    def parse_int_list_param(self, value, field_name: str) -> List[int]:
+        """Parse comma-separated integer parameter with user-facing error response."""
+        if value is None or value == "":
+            return Response(
+                {"error": f"{field_name} is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        parts = [part.strip() for part in str(value).split(",")]
+        if not all(parts):
+            return Response(
+                {"error": f"{field_name} must be comma-separated integers"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        parsed: List[int] = []
+        seen = set()
+        try:
+            for part in parts:
+                parsed_value = int(part)
+                if parsed_value in seen:
+                    continue
+                seen.add(parsed_value)
+                parsed.append(parsed_value)
+        except (TypeError, ValueError):
+            return Response(
+                {"error": f"{field_name} must be comma-separated integers"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return parsed
 
     def get_result_service(self):
         """Get ResultDataService for the project."""

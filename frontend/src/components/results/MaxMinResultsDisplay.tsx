@@ -14,10 +14,6 @@ import { getResultTypeDecimals, getResultTypeUnit } from '../../utils/resultConf
 export interface MaxMinResultsDisplayProps {
   data: MaxMinDataset
   resultType: string
-  selectedLoadCases: Set<string>
-  hoveredLoadCase: string | null
-  onSelectionChange: (selected: Set<string>) => void
-  onHoverChange: (loadCase: string | null) => void
 }
 
 type TabId = 'plots' | 'tables'
@@ -27,10 +23,6 @@ const STORY_AXIS_TOP_PADDING = 0.2
 export function MaxMinResultsDisplay({
   data,
   resultType,
-  selectedLoadCases,
-  hoveredLoadCase,
-  onSelectionChange,
-  onHoverChange,
 }: MaxMinResultsDisplayProps) {
   const [activeTab, setActiveTab] = useState<TabId>('plots')
   const directions = data.directions || ['X', 'Y']
@@ -50,16 +42,6 @@ export function MaxMinResultsDisplay({
     return Array.from(lcSet).sort()
   }, [data])
 
-  const toggleLoadCase = useCallback((lc: string) => {
-    const next = new Set(selectedLoadCases)
-    if (next.has(lc)) {
-      next.delete(lc)
-    } else {
-      next.add(lc)
-    }
-    onSelectionChange(next)
-  }, [selectedLoadCases, onSelectionChange])
-
   const unit = useMemo(() => getResultTypeUnit(resultType), [resultType])
   const decimals = useMemo(() => getResultTypeDecimals(resultType), [resultType])
 
@@ -69,15 +51,15 @@ export function MaxMinResultsDisplay({
   }
 
   return (
-    <div className="maxmin-display flex-1 flex flex-col overflow-auto pr-4">
+    <div className="maxmin-display flex-1 flex flex-col overflow-hidden">
       {/* Tab bar */}
-      <div className="maxmin-tabs flex gap-0 border-b border-border-default mb-3">
+      <div className="maxmin-tabs flex gap-0">
         {(['plots', 'tables'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
             className={clsx(
-              'maxmin-tab px-4 py-1.5 text-sm capitalize transition-colors',
+              'maxmin-tab px-4 py-1.5 text-base capitalize transition-colors',
               activeTab === tab
                 ? 'maxmin-tab-active text-accent-primary border-b-2 border-accent-primary font-medium'
                 : 'text-text-secondary hover:text-text-primary'
@@ -96,10 +78,6 @@ export function MaxMinResultsDisplay({
           resultType={resultType}
           unit={unit}
           decimals={decimals}
-          selectedLoadCases={selectedLoadCases}
-          hoveredLoadCase={hoveredLoadCase}
-          onToggle={toggleLoadCase}
-          onHover={onHoverChange}
         />
       ) : (
         <TablesTab
@@ -124,20 +102,58 @@ interface PlotsTabProps {
   resultType: string
   unit: string
   decimals: number
-  selectedLoadCases: Set<string>
-  hoveredLoadCase: string | null
-  onToggle: (lc: string) => void
-  onHover: (lc: string | null) => void
 }
 
 function PlotsTab({
   data, directions, loadCases, resultType, unit, decimals,
-  selectedLoadCases, hoveredLoadCase, onToggle, onHover,
 }: PlotsTabProps) {
+  return (
+    <div className="maxmin-plots flex-1">
+      <div className="flex gap-4 h-[calc(90vh-3rem)]">
+        {directions.map((dir) => (
+          <DirectionPlot
+            key={dir}
+            direction={dir}
+            data={data}
+            loadCases={loadCases}
+            resultType={resultType}
+            unit={unit}
+            decimals={decimals}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* ─── Per-Direction Plot + Legend (independent selection) ─────── */
+
+interface DirectionPlotProps {
+  direction: string
+  data: MaxMinDataset
+  loadCases: string[]
+  resultType: string
+  unit: string
+  decimals: number
+}
+
+function DirectionPlot({ direction, data, loadCases, resultType, unit, decimals }: DirectionPlotProps) {
+  const [selectedLoadCases, setSelectedLoadCases] = useState<Set<string>>(new Set())
+  const [hoveredLoadCase, setHoveredLoadCase] = useState<string | null>(null)
+
   const stories = data.rows.map((r) => String(r['Story']))
 
-  const buildTraces = (direction: string) => {
-    const traces: Array<Record<string, unknown>> = []
+  const toggleLoadCase = useCallback((lc: string) => {
+    setSelectedLoadCases((prev) => {
+      const next = new Set(prev)
+      if (next.has(lc)) next.delete(lc)
+      else next.add(lc)
+      return next
+    })
+  }, [])
+
+  const traces = useMemo(() => {
+    const t: Array<Record<string, unknown>> = []
     const hasSelection = selectedLoadCases.size > 0
 
     loadCases.forEach((lc, idx) => {
@@ -160,7 +176,7 @@ function PlotsTab({
         opacity = 0.25; width = 1.5
       }
 
-      traces.push({
+      t.push({
         type: 'scatter', mode: 'lines',
         name: `${lc} Max`, y: stories,
         x: data.rows.map((r) => r[maxKey] as number),
@@ -169,8 +185,7 @@ function PlotsTab({
         hovertemplate: `${lc} Max<br>%{y}: %{x:.${decimals}f}<extra></extra>`,
       })
 
-      // Plot min values as negative to show envelope symmetry
-      traces.push({
+      t.push({
         type: 'scatter', mode: 'lines',
         name: `${lc} Min`, y: stories,
         x: data.rows.map((r) => {
@@ -190,36 +205,35 @@ function PlotsTab({
         const vals = loadCases.map((lc) => r[`OrigMax_${lc}_${direction}`] as number).filter((v) => v != null)
         return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0
       })
-      // Compute average of absolute min values, then negate for display
       const avgMinRaw = data.rows.map((r) => {
         const vals = loadCases.map((lc) => r[`OrigMin_${lc}_${direction}`] as number).filter((v) => v != null)
         return vals.length ? vals.reduce((a, b) => a + Math.abs(b), 0) / vals.length : 0
       })
       const avgMinDisplay = avgMinRaw.map((v) => -v)
 
-      traces.push({
+      t.push({
         type: 'scatter', mode: 'lines',
         name: 'Avg Max', y: stories, x: avgMax,
         line: { color: '#ffa500', width: 5, dash: 'solid' },
         legendgroup: 'avg', showlegend: false,
         hovertemplate: `Avg Max<br>%{y}: %{x:.${decimals}f}<extra></extra>`,
       })
-      traces.push({
+      t.push({
         type: 'scatter', mode: 'lines',
         name: 'Avg Min', y: stories, x: avgMinDisplay,
         line: { color: '#ffa500', width: 5, dash: 'dash' },
         legendgroup: 'avg', showlegend: false,
         hovertemplate: `Avg Min<br>%{y}: %{customdata:.${decimals}f}<extra></extra>`,
-        customdata: avgMinRaw.map((v) => -v),  // Show actual min values in hover
+        customdata: avgMinRaw.map((v) => -v),
       })
     }
 
-    return traces
-  }
+    return t
+  }, [data, loadCases, direction, decimals, selectedLoadCases, hoveredLoadCase, stories])
 
-  const chartLayout = (direction: string) => ({
+  const layout = useMemo(() => ({
     xaxis: {
-      title: { text: `${resultType} (${unit})`, font: { size: 11, color: '#d1d5db' } },
+      title: { text: `${resultType} (${unit})`, font: { size: 14, color: '#d1d5db' }, standoff: 8 },
       gridcolor: 'rgba(60, 65, 75, 0.3)',
       zerolinecolor: '#4a90d9',
       zerolinewidth: 2,
@@ -228,7 +242,7 @@ function PlotsTab({
       linecolor: '#3a3f4a', linewidth: 1, mirror: true,
     },
     yaxis: {
-      title: { text: 'Story', font: { size: 11, color: '#d1d5db' } },
+      title: { text: 'Story', font: { size: 14, color: '#d1d5db' }, standoff: 8 },
       gridcolor: 'rgba(60, 65, 75, 0.3)',
       tickfont: { size: 10 },
       linecolor: '#3a3f4a', linewidth: 1, mirror: true,
@@ -239,70 +253,61 @@ function PlotsTab({
     },
     paper_bgcolor: '#0a0c10',
     plot_bgcolor: 'rgba(22, 27, 34, 0.5)',
-    font: { color: '#d1d5db', size: 10 },
-    margin: { l: 60, r: 10, t: 25, b: 40 },
+    font: { color: '#d1d5db', size: 11 },
+    margin: { l: 50, r: 5, t: 40, b: 40 },
     showlegend: false,
     hovermode: 'closest' as const,
     autosize: true,
-    title: { text: `${direction} Direction`, font: { size: 13, color: '#d1d5db' }, x: 0.5, y: 0.98 },
-  })
+    title: { text: `${direction} Direction`, font: { size: 14, color: '#d1d5db' }, x: 0.5, y: 0.98 },
+  }), [resultType, unit, stories, direction])
 
   return (
-    <div className="maxmin-plots flex flex-col gap-4 flex-1 overflow-auto">
-      <div className="flex gap-4 flex-1 min-h-0">
-        {directions.map((dir) => (
-          <div key={dir} className="maxmin-plot-section flex flex-1 min-w-0">
-            {/* Chart */}
-            <div className="flex-1 h-[70vh]">
-              <LazyPlot
-                data={buildTraces(dir)}
-                layout={chartLayout(dir)}
-                config={{ displayModeBar: false, responsive: true }}
-                style={{ width: '100%', height: '100%' }}
-                useResizeHandler
-              />
-            </div>
+    <div className="maxmin-plot-section flex flex-1 min-w-0">
+      <div className="flex-1 h-full">
+        <LazyPlot
+          data={traces}
+          layout={layout}
+          config={{ displayModeBar: false, responsive: true }}
+          style={{ width: '100%', height: '100%' }}
+          useResizeHandler
+        />
+      </div>
 
-            {/* External legend */}
-            <div className="maxmin-plot-legend flex flex-col gap-0.5 py-6 pl-1 pr-2 w-[130px] overflow-y-auto">
-              {loadCases.map((lc, idx) => {
-                const color = PROFILE_SERIES_COLORS[idx % PROFILE_SERIES_COLORS.length]
-                const isSelected = selectedLoadCases.has(lc)
-                const isHovered = hoveredLoadCase === lc
-                const hasSelection = selectedLoadCases.size > 0
+      <div className="maxmin-plot-legend flex flex-col gap-0.5 pt-12 pb-6 pl-1 pr-2 w-[110px] overflow-y-auto">
+        {loadCases.map((lc, idx) => {
+          const color = PROFILE_SERIES_COLORS[idx % PROFILE_SERIES_COLORS.length]
+          const isSelected = selectedLoadCases.has(lc)
+          const isHovered = hoveredLoadCase === lc
+          const hasSelection = selectedLoadCases.size > 0
 
-                let itemOpacity = 1
-                if (isHovered) itemOpacity = 1
-                else if (hasSelection && !isSelected) itemOpacity = 0.35
-                else if (hoveredLoadCase && !isHovered) itemOpacity = 0.35
+          let itemOpacity = 1
+          if (isHovered) itemOpacity = 1
+          else if (hasSelection && !isSelected) itemOpacity = 0.35
+          else if (hoveredLoadCase && !isHovered) itemOpacity = 0.35
 
-                return (
-                  <button
-                    key={lc}
-                    className={clsx(
-                      'maxmin-legend-item flex items-center gap-1 text-[11px] cursor-pointer rounded px-1 py-0.5 text-left transition-opacity',
-                      isSelected && 'maxmin-legend-item-selected font-semibold'
-                    )}
-                    style={{ opacity: itemOpacity }}
-                    onClick={() => onToggle(lc)}
-                    onMouseEnter={() => onHover(lc)}
-                    onMouseLeave={() => onHover(null)}
-                  >
-                    <span className="inline-block w-3 shrink-0" style={{ borderTop: `2px solid ${color}` }} />
-                    <span className="inline-block w-3 shrink-0" style={{ borderTop: `2px dashed ${color}` }} />
-                    <span className="text-text-secondary truncate">{lc}</span>
-                  </button>
-                )
-              })}
-              {/* Static Avg entry */}
-              <div className="maxmin-legend-static flex items-center gap-1 text-[11px] px-1 py-0.5 mt-1 border-t border-border-default pt-1">
-                <span className="inline-block w-3 shrink-0" style={{ borderTop: '3px solid #ffa500' }} />
-                <span className="inline-block w-3 shrink-0" style={{ borderTop: '3px dashed #ffa500' }} />
-                <span className="text-text-secondary">Avg</span>
-              </div>
-            </div>
-          </div>
-        ))}
+          return (
+            <button
+              key={lc}
+              className={clsx(
+                'maxmin-legend-item flex items-center gap-1 text-[13px] cursor-pointer rounded px-1 py-0.5 text-left transition-opacity',
+                isSelected && 'maxmin-legend-item-selected font-semibold'
+              )}
+              style={{ opacity: itemOpacity }}
+              onClick={() => toggleLoadCase(lc)}
+              onMouseEnter={() => setHoveredLoadCase(lc)}
+              onMouseLeave={() => setHoveredLoadCase(null)}
+            >
+              <span className="inline-block w-3 shrink-0" style={{ borderTop: `2px solid ${color}` }} />
+              <span className="inline-block w-3 shrink-0" style={{ borderTop: `2px dashed ${color}` }} />
+              <span className="text-text-secondary truncate">{lc}</span>
+            </button>
+          )
+        })}
+        <div className="maxmin-legend-static flex items-center gap-1 text-[13px] px-1 py-0.5 mt-1">
+          <span className="inline-block w-3 shrink-0" style={{ borderTop: '3px solid #ffa500' }} />
+          <span className="inline-block w-3 shrink-0" style={{ borderTop: '3px dashed #ffa500' }} />
+          <span className="text-text-secondary">Avg</span>
+        </div>
       </div>
     </div>
   )
@@ -321,7 +326,7 @@ interface TablesTabProps {
 
 function TablesTab({ data, directions, loadCases, resultType, unit, fmt }: TablesTabProps) {
   return (
-    <div className="maxmin-tables-tab flex flex-col gap-6 flex-1 overflow-auto">
+    <div className="maxmin-tables-tab flex flex-col gap-6 flex-1 overflow-auto pt-4">
       {directions.map((dir) => (
         <DirectionTables
           key={dir}
@@ -433,7 +438,7 @@ interface CompactTableProps {
 
 function CompactTable({ rows, columns, range, resultType, fmt }: CompactTableProps) {
   return (
-    <table className="maxmin-compact-table results-table text-[11px] w-full">
+    <table className="maxmin-compact-table results-table w-full">
       <thead className="sticky top-0 z-10">
         <tr>
           <th className="results-table-header results-table-header-story">Story</th>
@@ -455,7 +460,7 @@ function CompactTable({ rows, columns, range, resultType, fmt }: CompactTablePro
             {columns.map((col) => {
               const val = row[col] as number | null
               const isAvg = col === 'Avg'
-              const bgColor = val != null && range.min !== range.max
+              const textColor = val != null && range.min !== range.max
                 ? getGradientColor(val, range.min, range.max, resultType)
                 : undefined
               return (
@@ -463,11 +468,12 @@ function CompactTable({ rows, columns, range, resultType, fmt }: CompactTablePro
                   key={col}
                   className="results-table-cell"
                   style={{
-                    backgroundColor: bgColor ? `${bgColor.replace('rgb', 'rgba').replace(')', ', 0.25)')}` : undefined,
-                    color: isAvg ? '#ffa500' : undefined,
+                    color: isAvg ? '#ffa500' : textColor,
                   }}
                 >
-                  {fmt(val)}
+                  <span className={isAvg ? 'results-table-summary' : 'results-table-value'}>
+                    {fmt(val)}
+                  </span>
                 </td>
               )
             })}

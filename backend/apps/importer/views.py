@@ -2,6 +2,7 @@
 
 import logging
 from pathlib import Path
+from typing import Optional
 
 from django.conf import settings
 from django.shortcuts import get_object_or_404
@@ -17,10 +18,12 @@ from rest_framework.viewsets import ViewSet
 from core.mixins import ProjectLookupMixin
 from apps.projects.models import Project
 from apps.importer.models import ImportJob
+from apps.results.models import ResultSet
 from apps.importer.serializers import (
     ImportJobSerializer,
     ImportJobCreateSerializer,
     ImportStartSerializer,
+    PushoverImportStartSerializer,
 )
 from apps.importer.services.import_preparation import detect_conflicts
 from apps.importer.tasks import prescan_files_task, process_import_task, import_pushover_curves_task
@@ -44,9 +47,28 @@ class ImportViewSet(ProjectLookupMixin, ViewSet):
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, JSONParser]
 
+    def validate_result_set_for_project(
+        self,
+        project: Project,
+        result_set_id: int,
+        *,
+        expected_analysis_type: Optional[str] = None,
+    ) -> Optional[ResultSet]:
+        """Validate result set ownership (and optional analysis type) for import targets."""
+        result_set = ResultSet.objects.filter(project=project, id=result_set_id).first()
+        if result_set is None:
+            return None
+        if expected_analysis_type and result_set.analysis_type != expected_analysis_type:
+            return None
+        return result_set
+
     def get_project(self, slug: str) -> Project:
         """Get project by slug."""
-        return self.get_project_for_slug(slug, create_if_missing=True)
+        return self.get_project_for_slug(
+            slug,
+            create_if_missing=True,
+            user=self.request.user,
+        )
 
     def get_queryset(self, project: Project):
         """Get import jobs for project."""
@@ -296,8 +318,17 @@ class ImportViewSet(ProjectLookupMixin, ViewSet):
             "result_set_name", "Imported Results"
         )
 
-        if serializer.validated_data.get("result_set_id"):
-            job.job_config["result_set_id"] = serializer.validated_data["result_set_id"]
+        selected_result_set_id = serializer.validated_data.get("result_set_id")
+        if selected_result_set_id is not None:
+            result_set = self.validate_result_set_for_project(project, selected_result_set_id)
+            if result_set is None:
+                return Response(
+                    {"detail": f"Invalid result_set_id for project: {selected_result_set_id}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            job.job_config["result_set_id"] = result_set.id
+        else:
+            job.job_config.pop("result_set_id", None)
 
         job.save()
 
@@ -320,6 +351,7 @@ class ImportViewSet(ProjectLookupMixin, ViewSet):
 
         Request body:
             - result_set_name: Name for the result set (default: 'Pushover Results')
+            - result_set_id: Optional existing result set ID
         """
         project = self.get_project(project_slug)
         job = get_object_or_404(ImportJob, project=project, pk=pk)
@@ -330,11 +362,35 @@ class ImportViewSet(ProjectLookupMixin, ViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        result_set_name = request.data.get("result_set_name", "Pushover Results")
+        serializer = PushoverImportStartSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
 
         # Update job config
-        job.job_config["result_set_name"] = result_set_name
-        job.save()
+        job.job_config["result_set_name"] = serializer.validated_data.get(
+            "result_set_name",
+            "Pushover Results",
+        )
+        result_set_id = serializer.validated_data.get("result_set_id")
+        if result_set_id is not None:
+            result_set = self.validate_result_set_for_project(
+                project,
+                result_set_id,
+                expected_analysis_type="Pushover",
+            )
+            if result_set is None:
+                return Response(
+                    {
+                        "detail": (
+                            "result_set_id must belong to this project "
+                            "and have analysis_type='Pushover'"
+                        )
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            job.job_config["result_set_id"] = result_set.id
+        else:
+            job.job_config.pop("result_set_id", None)
+        job.save(update_fields=["job_config"])
 
         # Start pushover import task
         task = import_pushover_curves_task.delay(job.id)

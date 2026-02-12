@@ -239,8 +239,8 @@ RESULT_TYPE_BASE_MAP = {
     },
     "WallShears": {
         "variants": ("WallShears_V2", "WallShears_V3"),
-        "directions": ["X", "Y"],
-        "internal_directions": {"X": "V2", "Y": "V3"},
+        "directions": ["V2", "V3"],
+        "internal_directions": {"V2": "V2", "V3": "V3"},
         "decimals": 0,
     },
     "QuadRotations": {
@@ -251,20 +251,20 @@ RESULT_TYPE_BASE_MAP = {
     },
     "ColumnShears": {
         "variants": ("ColumnShears_V2", "ColumnShears_V3"),
-        "directions": ["X", "Y"],
-        "internal_directions": {"X": "V2", "Y": "V3"},
+        "directions": ["V2", "V3"],
+        "internal_directions": {"V2": "V2", "V3": "V3"},
         "decimals": 0,
     },
     "ColumnAxials": {
         "variants": ("ColumnAxials",),
-        "directions": None,
-        "internal_directions": {},
+        "directions": ["Min", "Max"],
+        "internal_directions": {"Min": "Min", "Max": "Max"},
         "decimals": 0,
     },
     "ColumnRotations": {
         "variants": ("ColumnRotations_R2", "ColumnRotations_R3"),
-        "directions": ["X", "Y"],
-        "internal_directions": {"X": "R2", "Y": "R3"},
+        "directions": ["R2", "R3"],
+        "internal_directions": {"R2": "R2", "R3": "R3"},
         "decimals": 2,
     },
     "BeamRotations": {

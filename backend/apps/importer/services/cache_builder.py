@@ -361,23 +361,25 @@ class CacheBuilderService:
 
         # Build cache for each element result type
         element_configs = [
-            ("WallShears_V2", WallShear, "force", {"direction": "V2"}),
-            ("WallShears_V3", WallShear, "force", {"direction": "V3"}),
-            ("QuadRotations", QuadRotation, "rotation", {}),
-            ("ColumnShears_V2", ColumnShear, "force", {"direction": "V2"}),
-            ("ColumnShears_V3", ColumnShear, "force", {"direction": "V3"}),
-            ("ColumnAxials", ColumnAxial, "min_axial", {}),
-            ("ColumnRotations_R2", ColumnRotation, "rotation", {"direction": "R2"}),
-            ("ColumnRotations_R3", ColumnRotation, "rotation", {"direction": "R3"}),
-            ("BeamRotations", BeamRotation, "r3_plastic", {}),
+            ("WallShears_V2", WallShear, "force", {"direction": "V2"}, None),
+            ("WallShears_V3", WallShear, "force", {"direction": "V3"}, None),
+            ("QuadRotations", QuadRotation, "max_rotation", {}, "rotation"),
+            ("ColumnShears_V2", ColumnShear, "force", {"direction": "V2"}, None),
+            ("ColumnShears_V3", ColumnShear, "force", {"direction": "V3"}, None),
+            ("ColumnAxials_Min", ColumnAxial, "min_axial", {}, None),
+            ("ColumnAxials_Max", ColumnAxial, "max_axial", {}, None),
+            ("ColumnRotations_R2", ColumnRotation, "max_rotation", {"direction": "R2"}, "rotation"),
+            ("ColumnRotations_R3", ColumnRotation, "max_rotation", {"direction": "R3"}, "rotation"),
+            ("BeamRotations", BeamRotation, "max_r3_plastic", {}, "r3_plastic"),
         ]
 
-        for result_type, model, value_field, filters in element_configs:
+        for result_type, model, value_field, filters, fallback_field in element_configs:
             rows = self._build_element_cache_for_type(
                 result_type=result_type,
                 model=model,
                 value_field=value_field,
                 extra_filters=filters,
+                fallback_field=fallback_field,
             )
             total_rows += rows
 
@@ -389,6 +391,7 @@ class CacheBuilderService:
         model,
         value_field: str,
         extra_filters: Dict,
+        fallback_field: Optional[str] = None,
     ) -> int:
         """Build cache for a specific element result type.
 
@@ -411,6 +414,10 @@ class CacheBuilderService:
             key = (result.element_id, result.story_id)
             load_case_name = result.load_case.name
             value = getattr(result, value_field)
+            if value is None and fallback_field:
+                value = getattr(result, fallback_field)
+            if value is None:
+                continue
 
             element_story_data[key][load_case_name] = value
             element_story_order[key] = result.story_sort_order or result.story.sort_order or 0

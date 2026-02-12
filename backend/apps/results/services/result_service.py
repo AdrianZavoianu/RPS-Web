@@ -15,6 +15,8 @@ from .datasets import (
     get_internal_direction,
 )
 from .providers import (
+    beam_provider,
+    column_provider,
     comparison_provider,
     element_provider,
     global_provider,
@@ -46,6 +48,25 @@ class ResultDataService:
         if direction:
             return f"{result_type} {direction} ({unit})"
         return f"{result_type} ({unit})"
+
+    def _build_meta(
+        self,
+        result_type: str,
+        direction: Optional[str],
+        result_set_id: int,
+        *,
+        display_name: Optional[str] = None,
+        unit: Optional[str] = None,
+    ) -> ResultDatasetMeta:
+        config = RESULT_TYPE_CONFIG.get(result_type, {})
+        resolved_unit = unit if unit is not None else config.get("unit", "")
+        return ResultDatasetMeta(
+            result_type=result_type,
+            direction=direction,
+            result_set_id=result_set_id,
+            display_name=display_name or self._get_display_name(result_type, direction),
+            unit=resolved_unit,
+        )
 
     def _apply_multiplier(self, value: float, result_type: str) -> float:
         """Apply configured unit multiplier."""
@@ -117,12 +138,14 @@ class ResultDataService:
         self,
         result_set_id: int,
         base_result_type: str = "Drifts",
+        element_id: Optional[int] = None,
     ) -> Optional[MaxMinDataset]:
         """Get max/min envelope data for a result type."""
         return maxmin_provider.get_maxmin_dataset(
             service=self,
             result_set_id=result_set_id,
             base_result_type=base_result_type,
+            element_id=element_id,
         )
 
     def get_comparison_dataset(
@@ -157,6 +180,36 @@ class ResultDataService:
             result_type=result_type,
             direction=direction,
             column=column,
+        )
+
+    def get_beam_rotations_plot_data(
+        self,
+        result_set_id: int,
+    ) -> Optional[Dict[str, Any]]:
+        """Get all-beam R3 plastic rotations scatter/histogram data."""
+        return beam_provider.get_beam_rotations_plot_data(
+            service=self,
+            result_set_id=result_set_id,
+        )
+
+    def get_beam_rotations_table_data(
+        self,
+        result_set_id: int,
+    ) -> Optional[Dict[str, Any]]:
+        """Get beam R3 plastic rotations table data."""
+        return beam_provider.get_beam_rotations_table_data(
+            service=self,
+            result_set_id=result_set_id,
+        )
+
+    def get_column_rotations_plot_data(
+        self,
+        result_set_id: int,
+    ) -> Optional[Dict[str, Any]]:
+        """Get all-column rotations scatter/histogram data (R2 and R3)."""
+        return column_provider.get_column_rotations_plot_data(
+            service=self,
+            result_set_id=result_set_id,
         )
 
 

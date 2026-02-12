@@ -280,7 +280,6 @@ export function ImportDialog({
 
   const disableStart =
     !selectedFiles.length ||
-    !resultSetName.trim() ||
     step === 'uploading' ||
     step === 'prescan' ||
     step === 'importing'

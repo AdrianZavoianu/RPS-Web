@@ -95,6 +95,7 @@ export interface ResultDatasetMeta {
   direction: string | null
   result_set_id: number
   display_name: string
+  unit?: string
 }
 
 export interface ResultDataset {
@@ -136,6 +137,65 @@ export interface ChartData {
   direction: string
   column: string
   unit: string
+}
+
+export interface BeamRotationPoint {
+  element: string
+  story: string
+  story_index: number
+  load_case: string
+  rotation: number
+}
+
+export interface ColumnRotationPoint extends BeamRotationPoint {
+  direction: string
+}
+
+export interface HistogramBin {
+  start: number
+  end: number
+  center: number
+  count: number
+}
+
+export interface BeamRotationsPlotData {
+  meta: {
+    result_type: string
+    result_set_id: number
+    unit: string
+    x_label: string
+  }
+  stories: string[]
+  max_points: BeamRotationPoint[]
+  min_points: BeamRotationPoint[]
+  histogram_bins: HistogramBin[]
+}
+
+export interface BeamRotationsTableData {
+  meta: {
+    result_type: string
+    result_set_id: number
+    unit: string
+  }
+  columns: string[]
+  rows: Record<string, unknown>[]
+  fixed_columns: string[]
+  load_case_columns: string[]
+  summary_columns: string[]
+}
+
+export interface ColumnRotationsPlotData {
+  meta: {
+    result_type: string
+    result_set_id: number
+    unit: string
+    x_label: string
+  }
+  stories: string[]
+  directions: string[]
+  max_points: ColumnRotationPoint[]
+  min_points: ColumnRotationPoint[]
+  histogram_bins: HistogramBin[]
 }
 
 export interface ResultTypeInfo {

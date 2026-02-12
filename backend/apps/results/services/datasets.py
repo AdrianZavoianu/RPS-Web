@@ -14,6 +14,7 @@ class ResultDatasetMeta:
     direction: Optional[str]
     result_set_id: int
     display_name: str
+    unit: str = ""
 
 
 @dataclass
@@ -34,6 +35,7 @@ class ResultDataset:
                 "direction": self.meta.direction,
                 "result_set_id": self.meta.result_set_id,
                 "display_name": self.meta.display_name,
+                "unit": self.meta.unit,
             },
             "rows": self.rows,
             "load_case_columns": self.load_case_columns,
@@ -59,6 +61,7 @@ class MaxMinDataset:
                 "direction": self.meta.direction,
                 "result_set_id": self.meta.result_set_id,
                 "display_name": self.meta.display_name,
+                "unit": self.meta.unit,
             },
             "rows": self.rows,
             "directions": self.directions,

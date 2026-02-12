@@ -12,6 +12,8 @@ import type {
   MaxMinParams,
   ComparisonParams,
   ChartDataParams,
+  BeamRotationsParams,
+  ColumnRotationsParams,
 } from '../api/results'
 
 // --- Result Sets ---
@@ -138,6 +140,41 @@ export function useChartData(
   return useQuery({
     queryKey: ['chartData', projectSlug, params],
     queryFn: () => resultsApi.getChartData(projectSlug, params!),
+    enabled: !!projectSlug && !!params,
+  })
+}
+
+// --- Beam Rotations ---
+
+export function useBeamRotationsPlotData(
+  projectSlug: string,
+  params: BeamRotationsParams | null
+) {
+  return useQuery({
+    queryKey: ['beamRotationsPlot', projectSlug, params],
+    queryFn: () => resultsApi.getBeamRotationsPlotData(projectSlug, params!),
+    enabled: !!projectSlug && !!params,
+  })
+}
+
+export function useBeamRotationsTableData(
+  projectSlug: string,
+  params: BeamRotationsParams | null
+) {
+  return useQuery({
+    queryKey: ['beamRotationsTable', projectSlug, params],
+    queryFn: () => resultsApi.getBeamRotationsTableData(projectSlug, params!),
+    enabled: !!projectSlug && !!params,
+  })
+}
+
+export function useColumnRotationsPlotData(
+  projectSlug: string,
+  params: ColumnRotationsParams | null
+) {
+  return useQuery({
+    queryKey: ['columnRotationsPlot', projectSlug, params],
+    queryFn: () => resultsApi.getColumnRotationsPlotData(projectSlug, params!),
     enabled: !!projectSlug && !!params,
   })
 }

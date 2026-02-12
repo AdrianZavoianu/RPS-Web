@@ -9,6 +9,9 @@ import type {
   MaxMinDataset,
   ComparisonDataset,
   ChartData,
+  BeamRotationsPlotData,
+  BeamRotationsTableData,
+  ColumnRotationsPlotData,
   AvailableResultTypes,
   PushoverCase,
   PushoverCurve,
@@ -138,6 +141,7 @@ export async function getJointResults(
 export interface MaxMinParams {
   result_set_id: number
   result_type?: string
+  element_id?: number
 }
 
 export async function getMaxMinData(
@@ -149,6 +153,9 @@ export async function getMaxMinData(
   })
   if (params.result_type) {
     searchParams.set('result_type', params.result_type)
+  }
+  if (params.element_id) {
+    searchParams.set('element_id', params.element_id.toString())
   }
   return apiClient.get<MaxMinDataset>(
     `/projects/${projectSlug}/results/maxmin/?${searchParams.toString()}`
@@ -210,6 +217,52 @@ export async function getChartData(
   }
   return apiClient.get<ChartData>(
     `/projects/${projectSlug}/results/chart/?${searchParams.toString()}`
+  )
+}
+
+// --- Beam Rotations ---
+
+export interface BeamRotationsParams {
+  result_set_id: number
+}
+
+export interface ColumnRotationsParams {
+  result_set_id: number
+}
+
+export async function getBeamRotationsPlotData(
+  projectSlug: string,
+  params: BeamRotationsParams
+): Promise<BeamRotationsPlotData> {
+  const searchParams = new URLSearchParams({
+    result_set_id: params.result_set_id.toString(),
+  })
+  return apiClient.get<BeamRotationsPlotData>(
+    `/projects/${projectSlug}/results/beam-rotations/plot/?${searchParams.toString()}`
+  )
+}
+
+export async function getBeamRotationsTableData(
+  projectSlug: string,
+  params: BeamRotationsParams
+): Promise<BeamRotationsTableData> {
+  const searchParams = new URLSearchParams({
+    result_set_id: params.result_set_id.toString(),
+  })
+  return apiClient.get<BeamRotationsTableData>(
+    `/projects/${projectSlug}/results/beam-rotations/table/?${searchParams.toString()}`
+  )
+}
+
+export async function getColumnRotationsPlotData(
+  projectSlug: string,
+  params: ColumnRotationsParams
+): Promise<ColumnRotationsPlotData> {
+  const searchParams = new URLSearchParams({
+    result_set_id: params.result_set_id.toString(),
+  })
+  return apiClient.get<ColumnRotationsPlotData>(
+    `/projects/${projectSlug}/results/column-rotations/plot/?${searchParams.toString()}`
   )
 }
 

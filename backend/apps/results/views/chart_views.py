@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ..models import TimeSeriesGlobalCache
+from ..services.providers.common import sort_load_case_columns
 from .mixins import ProjectResultsMixin
 
 
@@ -30,10 +31,13 @@ class ChartDataView(ProjectResultsMixin, APIView):
             return params
 
         column = request.query_params.get("column", "Avg")
+        result_set_id = self.parse_int_param(params["result_set_id"], "result_set_id")
+        if isinstance(result_set_id, Response):
+            return result_set_id
 
         service = self.get_result_service()
         chart_data = service.get_chart_data(
-            result_set_id=int(params["result_set_id"]),
+            result_set_id=result_set_id,
             result_type=params["result_type"],
             direction=params["direction"],
             column=column,
@@ -59,26 +63,26 @@ class TimeSeriesDataView(ProjectResultsMixin, APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, project_slug):
-        result_set_id = request.query_params.get("result_set_id")
-        load_case = request.query_params.get("load_case")
-        result_type = request.query_params.get("result_type")
-        direction = request.query_params.get("direction")
+        params = self.validate_result_params(
+            request,
+            ("result_set_id", "load_case", "result_type", "direction"),
+        )
+        if isinstance(params, Response):
+            return params
 
-        if not all([result_set_id, load_case, result_type, direction]):
-            return Response(
-                {"error": "result_set_id, load_case, result_type, and direction are required"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        parsed_result_set_id = self.parse_int_param(params["result_set_id"], "result_set_id")
+        if isinstance(parsed_result_set_id, Response):
+            return parsed_result_set_id
 
         project = self.get_project()
 
         cache_entries = (
             TimeSeriesGlobalCache.objects.filter(
                 project=project,
-                result_set_id=result_set_id,
-                load_case_name=load_case,
-                result_type=result_type,
-                direction=direction,
+                result_set_id=parsed_result_set_id,
+                load_case_name=params["load_case"],
+                result_type=params["result_type"],
+                direction=params["direction"],
             )
             .select_related("story")
             .order_by("-story_sort_order")
@@ -90,9 +94,9 @@ class TimeSeriesDataView(ProjectResultsMixin, APIView):
                     "stories": [],
                     "time_steps": [],
                     "data": {},
-                    "load_case": load_case,
-                    "result_type": result_type,
-                    "direction": direction,
+                    "load_case": params["load_case"],
+                    "result_type": params["result_type"],
+                    "direction": params["direction"],
                 }
             )
 
@@ -113,9 +117,9 @@ class TimeSeriesDataView(ProjectResultsMixin, APIView):
                 "stories": stories,
                 "time_steps": time_steps or [],
                 "data": data,
-                "load_case": load_case,
-                "result_type": result_type,
-                "direction": direction,
+                "load_case": params["load_case"],
+                "result_type": params["result_type"],
+                "direction": params["direction"],
             }
         )
 
@@ -136,8 +140,12 @@ class TimeSeriesLoadCasesView(ProjectResultsMixin, APIView):
 
         queryset = TimeSeriesGlobalCache.objects.filter(project=project)
         if result_set_id:
-            queryset = queryset.filter(result_set_id=result_set_id)
+            parsed_result_set_id = self.parse_int_param(result_set_id, "result_set_id")
+            if isinstance(parsed_result_set_id, Response):
+                return parsed_result_set_id
+            queryset = queryset.filter(result_set_id=parsed_result_set_id)
 
         load_cases = queryset.values_list("load_case_name", flat=True).distinct()
+        sorted_load_cases = sort_load_case_columns(list(load_cases))
 
-        return Response({"load_cases": list(load_cases)})
+        return Response({"load_cases": sorted_load_cases})

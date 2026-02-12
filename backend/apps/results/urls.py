@@ -3,7 +3,10 @@ from django.urls import path
 
 from .views import (
     AvailableResultTypesView,
+    BeamRotationsPlotDataView,
+    BeamRotationsTableDataView,
     ChartDataView,
+    ColumnRotationsPlotDataView,
     ComparisonDataView,
     ComparisonSetViewSet,
     ElementListView,
@@ -79,6 +82,22 @@ urlpatterns = [
     ),
     # Chart data (for building profile plots)
     path("<slug:project_slug>/results/chart/", ChartDataView.as_view(), name="chart-data"),
+    # Beam rotations (all-beam plot/table views)
+    path(
+        "<slug:project_slug>/results/beam-rotations/plot/",
+        BeamRotationsPlotDataView.as_view(),
+        name="beam-rotations-plot-data",
+    ),
+    path(
+        "<slug:project_slug>/results/beam-rotations/table/",
+        BeamRotationsTableDataView.as_view(),
+        name="beam-rotations-table-data",
+    ),
+    path(
+        "<slug:project_slug>/results/column-rotations/plot/",
+        ColumnRotationsPlotDataView.as_view(),
+        name="column-rotations-plot-data",
+    ),
     # --- Pushover ---
     # Pushover cases
     path("<slug:project_slug>/pushover-cases/", PushoverCasesView.as_view(), name="pushover-cases"),

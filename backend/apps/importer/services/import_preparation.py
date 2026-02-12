@@ -145,14 +145,17 @@ class ImportPreparationService:
 
         max_workers = min(6, len(excel_files) or 1)
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                executor.submit(_scan_file, path): (idx, path)
-                for idx, path in enumerate(excel_files)
-            }
+            futures = {executor.submit(_scan_file, path): path for path in excel_files}
+            processed_count = 0
             for future in as_completed(futures):
-                idx, file_path = futures[future]
+                file_path = futures[future]
+                processed_count += 1
                 if progress_callback:
-                    progress_callback(f"Scanning {file_path.name}...", idx, len(excel_files))
+                    progress_callback(
+                        f"Scanning {file_path.name}...",
+                        processed_count,
+                        len(excel_files),
+                    )
                 try:
                     (
                         file_name,
@@ -182,13 +185,13 @@ class ImportPreparationService:
                             progress_callback(
                                 f"  Found: {', '.join(sheets_found[:3])}"
                                 f"{'...' if len(sheets_found) > 3 else ''}",
-                                idx,
+                                processed_count,
                                 len(excel_files),
                             )
                         if sheets_errored:
                             progress_callback(
                                 f"  Error: {sheets_errored[0]}",
-                                idx,
+                                processed_count,
                                 len(excel_files),
                             )
                 except Exception as exc:

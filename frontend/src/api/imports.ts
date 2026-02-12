@@ -89,10 +89,21 @@ export async function startImport(
 export async function startPushoverImport(
   projectSlug: string,
   jobId: number,
-  resultSetName?: string
+  options?: {
+    resultSetName?: string
+    resultSetId?: number
+  }
 ): Promise<StartImportResponse> {
+  const payload: Record<string, string | number> = {}
+  if (options?.resultSetName) {
+    payload.result_set_name = options.resultSetName
+  }
+  if (typeof options?.resultSetId === 'number') {
+    payload.result_set_id = options.resultSetId
+  }
+
   return apiClient.post<StartImportResponse>(
     `/projects/${projectSlug}/imports/${jobId}/start-pushover/`,
-    { result_set_name: resultSetName || 'Pushover Results' }
+    payload
   )
 }

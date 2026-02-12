@@ -2,22 +2,18 @@
 
 import logging
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
-from datetime import datetime
+from typing import Dict, List, Optional, Set
 
 from celery import shared_task
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from django.db import transaction
+from django.utils import timezone
 
-from apps.projects.models import Project, Story, LoadCase, Element
+from apps.projects.models import Project, Story, Element
 from apps.results.models import (
     ResultSet,
     ResultCategory,
-    StoryDrift,
-    StoryAcceleration,
-    StoryForce,
-    StoryDisplacement,
     WallShear,
     QuadRotation,
     ColumnShear,
@@ -35,9 +31,31 @@ from apps.importer.services.import_preparation import (
     ImportPreparationService,
     determine_allowed_load_cases,
 )
+from apps.importer.services.global_aggregation import build_story_index
+from apps.importer.services.global_result_importers import (
+    get_or_create_load_case as _get_or_create_load_case,
+    get_or_create_story as _get_or_create_story,
+    import_story_accelerations as _import_story_accelerations,
+    import_story_displacements as _import_story_displacements,
+    import_story_drifts as _import_story_drifts,
+    import_story_forces as _import_story_forces,
+)
 from apps.importer.services.cache_builder import CacheBuilderService
 
 logger = logging.getLogger(__name__)
+
+
+def _to_float(value) -> Optional[float]:
+    """Convert incoming sheet values to float, returning None for invalid/NaN."""
+    if value is None:
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed != parsed:  # NaN check
+        return None
+    return parsed
 
 
 def send_progress(job_id: int, phase: str, message: str, current: int, total: int):
@@ -101,7 +119,7 @@ def prescan_files_task(self, job_id: int) -> Dict:
     job.status = "scanning"
     job.current_phase = "Scanning files"
     job.celery_task_id = self.request.id
-    job.started_at = datetime.now()
+    job.started_at = timezone.now()
     job.save()
 
     try:
@@ -167,7 +185,7 @@ def process_import_task(self, job_id: int) -> Dict:
     job.status = "processing"
     job.current_phase = "Processing files"
     job.celery_task_id = self.request.id
-    job.started_at = datetime.now()
+    job.started_at = timezone.now()
     job.save()
 
     try:
@@ -176,6 +194,7 @@ def process_import_task(self, job_id: int) -> Dict:
         selected_load_cases = set(config.get("selected_load_cases", []))
         conflict_resolution = config.get("conflict_resolution", {})
         result_set_name = config.get("result_set_name", "Imported Results")
+        result_set_id = config.get("result_set_id")
         prescan = config.get("prescan", {})
         file_load_cases = prescan.get("file_load_cases", {})
         foundation_joints = prescan.get("foundation_joints", [])
@@ -205,6 +224,7 @@ def process_import_task(self, job_id: int) -> Dict:
             selected_load_cases=selected_load_cases,
             conflict_resolution=conflict_resolution,
             result_set_name=result_set_name,
+            result_set_id=result_set_id,
             foundation_joints=foundation_joints,
             progress_callback=progress_callback,
         )
@@ -244,7 +264,7 @@ def process_import_task(self, job_id: int) -> Dict:
         job.status = "completed"
         job.current_phase = "Completed"
         job.import_summary = stats
-        job.completed_at = datetime.now()
+        job.completed_at = timezone.now()
         job.save()
 
         send_complete(
@@ -260,7 +280,7 @@ def process_import_task(self, job_id: int) -> Dict:
         logger.exception(f"Import failed for job {job_id}")
         job.status = "failed"
         job.error_message = str(e)
-        job.completed_at = datetime.now()
+        job.completed_at = timezone.now()
         job.save()
         send_error(job_id, "Import failed", str(e))
         raise
@@ -273,6 +293,7 @@ def _run_import(
     selected_load_cases: Set[str],
     conflict_resolution: Dict,
     result_set_name: str,
+    result_set_id: Optional[int],
     foundation_joints: List[str],
     progress_callback,
 ) -> Dict:
@@ -288,13 +309,18 @@ def _run_import(
         "errors": [],
     }
 
-    # Create or get result set
+    # Reuse an explicitly selected result set when provided, otherwise create/get by name.
     with transaction.atomic():
-        result_set, created = ResultSet.objects.get_or_create(
-            project=project,
-            name=result_set_name,
-            defaults={"analysis_type": "NLTHA"},
-        )
+        if result_set_id is not None:
+            result_set = ResultSet.objects.filter(project=project, id=result_set_id).first()
+            if result_set is None:
+                raise ValueError(f"Result set {result_set_id} not found for project {project.slug}")
+        else:
+            result_set, _ = ResultSet.objects.get_or_create(
+                project=project,
+                name=result_set_name,
+                defaults={"analysis_type": "NLTHA"},
+            )
         stats["result_set_id"] = result_set.id
         job.result_set = result_set
         job.save(update_fields=["result_set"])
@@ -318,7 +344,7 @@ def _run_import(
         if file_name not in file_load_cases:
             continue
 
-        progress_callback(f"Processing {file_name}...", idx, len(files))
+        progress_callback(f"Processing {file_name}...", idx + 1, len(files))
 
         # Determine allowed load cases for this file
         allowed, skipped = determine_allowed_load_cases(
@@ -337,7 +363,7 @@ def _run_import(
                 # Import story drifts
                 if parser.validate_sheet_exists("Story Drifts"):
                     df, load_cases, stories = parser.get_story_drifts()
-                    story_index = _build_story_index(stories)
+                    story_index = build_story_index(stories)
                     _import_story_drifts(
                         project,
                         result_set,
@@ -356,7 +382,7 @@ def _run_import(
                 # Import story accelerations
                 if parser.validate_sheet_exists("Diaphragm Accelerations"):
                     df, load_cases, stories = parser.get_story_accelerations()
-                    story_index = _build_story_index(stories)
+                    story_index = build_story_index(stories)
                     _import_story_accelerations(
                         project,
                         result_set,
@@ -375,7 +401,7 @@ def _run_import(
                 # Import story forces
                 if parser.validate_sheet_exists("Story Forces"):
                     df, load_cases, stories = parser.get_story_forces()
-                    story_index = _build_story_index(stories)
+                    story_index = build_story_index(stories)
                     _import_story_forces(
                         project,
                         result_set,
@@ -394,7 +420,7 @@ def _run_import(
                 # Import story displacements
                 if parser.validate_sheet_exists("Joint Displacements"):
                     df, load_cases, stories = parser.get_joint_displacements()
-                    story_index = _build_story_index(stories)
+                    story_index = build_story_index(stories)
                     if not df.empty:
                         _import_story_displacements(
                             project,
@@ -416,7 +442,7 @@ def _run_import(
                 # Import pier/wall shears
                 if parser.validate_sheet_exists("Pier Forces"):
                     df, load_cases, stories, piers = parser.get_pier_forces()
-                    story_index = _build_story_index(stories)
+                    story_index = build_story_index(stories)
                     if not df.empty:
                         _import_wall_shears(
                             project,
@@ -438,7 +464,7 @@ def _run_import(
                 # Import quad rotations
                 if parser.validate_sheet_exists("Quad Strain Gauge - Rotation"):
                     df, load_cases, stories, piers = parser.get_quad_rotations()
-                    story_index = _build_story_index(stories)
+                    story_index = build_story_index(stories)
                     if not df.empty:
                         _import_quad_rotations(
                             project,
@@ -460,7 +486,7 @@ def _run_import(
                 # Import column forces (shears and axials)
                 if parser.validate_sheet_exists("Element Forces - Columns"):
                     df, load_cases, stories, columns = parser.get_column_forces()
-                    story_index = _build_story_index(stories)
+                    story_index = build_story_index(stories)
                     if not df.empty:
                         _import_column_forces(
                             project,
@@ -482,7 +508,7 @@ def _run_import(
                 # Import column rotations (fiber hinge)
                 if parser.validate_sheet_exists("Fiber Hinge States"):
                     df, load_cases, stories, columns = parser.get_fiber_hinge_states()
-                    story_index = _build_story_index(stories)
+                    story_index = build_story_index(stories)
                     if not df.empty:
                         _import_column_rotations(
                             project,
@@ -504,7 +530,7 @@ def _run_import(
                 # Import beam rotations (hinge states)
                 if parser.validate_sheet_exists("Hinge States"):
                     df, load_cases, stories, beams = parser.get_hinge_states()
-                    story_index = _build_story_index(stories)
+                    story_index = build_story_index(stories)
                     if not df.empty:
                         _import_beam_rotations(
                             project,
@@ -584,395 +610,6 @@ def _run_import(
     return stats
 
 
-def _get_or_create_story(
-    project: Project, story_name: str, sort_order: int, stories_map: Dict
-) -> Story:
-    """Get or create a Story, using cache."""
-    if story_name in stories_map:
-        return stories_map[story_name]
-
-    story, created = Story.objects.get_or_create(
-        project=project,
-        name=story_name,
-        defaults={"sort_order": sort_order},
-    )
-    stories_map[story_name] = story
-    return story
-
-
-def _get_or_create_load_case(project: Project, case_name: str, load_cases_map: Dict) -> LoadCase:
-    """Get or create a LoadCase, using cache."""
-    if case_name in load_cases_map:
-        return load_cases_map[case_name]
-
-    load_case, created = LoadCase.objects.get_or_create(
-        project=project,
-        name=case_name,
-        defaults={"case_type": "Time History"},
-    )
-    load_cases_map[case_name] = load_case
-    return load_case
-
-
-def _parse_numeric(value) -> Optional[float]:
-    """Parse numeric values from Excel rows, returning None for invalid/NaN."""
-    if value is None:
-        return None
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError):
-        return None
-    if parsed != parsed:  # NaN
-        return None
-    return parsed
-
-
-def _normalize_step_type(step_type) -> str:
-    """Normalize step type strings for case-insensitive comparisons."""
-    if step_type is None:
-        return ""
-    return str(step_type).strip().casefold()
-
-
-def _build_story_index(stories: List[str]) -> Dict[str, int]:
-    """Build O(1) story-name -> sort-order lookup for import hot loops."""
-    return {name: idx for idx, name in enumerate(stories)}
-
-
-def _update_bounds_for_step_type(
-    bounds: Dict[str, Optional[float]],
-    max_candidate: Optional[float],
-    min_candidate: Optional[float],
-    step_type: str,
-) -> None:
-    """Update max/min bounds using Step Type semantics."""
-    if step_type == "max":
-        candidate = max_candidate if max_candidate is not None else min_candidate
-        if candidate is not None:
-            bounds["max"] = candidate if bounds["max"] is None else max(bounds["max"], candidate)
-        return
-
-    if step_type == "min":
-        candidate = min_candidate if min_candidate is not None else max_candidate
-        if candidate is not None:
-            bounds["min"] = candidate if bounds["min"] is None else min(bounds["min"], candidate)
-        return
-
-    # Legacy/no-step-type rows: derive both bounds from observed values.
-    for candidate in (max_candidate, min_candidate):
-        if candidate is None:
-            continue
-        bounds["max"] = candidate if bounds["max"] is None else max(bounds["max"], candidate)
-        bounds["min"] = candidate if bounds["min"] is None else min(bounds["min"], candidate)
-
-
-def _aggregate_by_step_type(
-    df,
-    allowed_load_cases: Set[str],
-    key_value_builder: Callable[
-        [Any, str], Iterable[Tuple[Tuple[Any, ...], Optional[float], Optional[float]]]
-    ],
-) -> Dict[Tuple[Any, ...], Dict[str, Optional[float]]]:
-    """Aggregate row values into max/min bounds keyed by result identity."""
-    aggregated: Dict[Tuple[Any, ...], Dict[str, Optional[float]]] = {}
-    has_step_type = "Step Type" in df.columns
-
-    for _, row in df.iterrows():
-        case_name = row.get("Output Case")
-        if case_name not in allowed_load_cases:
-            continue
-
-        step_type = _normalize_step_type(row.get("Step Type", "")) if has_step_type else ""
-        for key, max_candidate, min_candidate in key_value_builder(row, case_name):
-            if max_candidate is None and min_candidate is None:
-                continue
-            bounds = aggregated.setdefault(key, {"max": None, "min": None})
-            _update_bounds_for_step_type(bounds, max_candidate, min_candidate, step_type)
-
-    return aggregated
-
-
-def _resolve_bounds(bounds: Dict[str, Optional[float]]) -> Optional[Tuple[float, float]]:
-    """Resolve aggregated bounds; mirror available side when one side is missing."""
-    max_val = bounds.get("max")
-    min_val = bounds.get("min")
-    if max_val is None and min_val is None:
-        return None
-
-    resolved_max = max_val if max_val is not None else min_val
-    resolved_min = min_val if min_val is not None else max_val
-    if resolved_max is None or resolved_min is None:
-        return None
-    return resolved_max, resolved_min
-
-
-def _import_story_drifts(
-    project: Project,
-    result_set: ResultSet,
-    result_category: ResultCategory,
-    df,
-    load_cases: List[str],
-    story_index: Dict[str, int],
-    allowed_load_cases: Set[str],
-    stories_map: Dict,
-    load_cases_map: Dict,
-):
-    """Import story drift data with Max/Min computation.
-
-    Follows desktop pattern: groups all drift values by story/direction/load_case
-    and computes max_drift and min_drift from all values (signed).
-    """
-    if df.empty:
-        return
-
-    # Collect all drift values per (story, direction, load_case)
-    drift_data: Dict[tuple, List[float]] = {}  # (story, dir, lc) -> [val1, val2, ...]
-    story_meta: Dict[tuple, tuple] = {}  # key -> (story_name, direction, case_name)
-
-    for idx, row in df.iterrows():
-        case_name = row.get("Output Case")
-        if case_name not in allowed_load_cases:
-            continue
-
-        story_name = row.get("Story")
-        direction = row.get("Direction", "X")
-        drift_value = row.get("Drift", 0)
-
-        # Skip non-numeric values
-        if drift_value is None:
-            continue
-        try:
-            drift_float = float(drift_value)
-            # Check for NaN
-            if drift_float != drift_float:  # NaN != NaN is True
-                continue
-        except (ValueError, TypeError):
-            continue
-
-        key = (story_name, direction, case_name)
-
-        if key not in drift_data:
-            drift_data[key] = []
-            story_meta[key] = (story_name, direction, case_name)
-
-        drift_data[key].append(float(drift_value))
-
-    # Build StoryDrift objects with max_drift and min_drift from aggregation
-    objects_to_create = []
-
-    for key, values in drift_data.items():
-        story_name, direction, case_name = story_meta[key]
-
-        if not values:
-            continue
-
-        # Compute aggregates like desktop: max(), min(), abs().max()
-        max_val = max(values)
-        min_val = min(values)
-        abs_max = max(abs(v) for v in values)
-
-        sort_order = story_index.get(story_name, 0)
-        story = _get_or_create_story(project, story_name, sort_order, stories_map)
-        load_case = _get_or_create_load_case(project, case_name, load_cases_map)
-
-        objects_to_create.append(
-            StoryDrift(
-                story=story,
-                load_case=load_case,
-                result_category=result_category,
-                direction=direction,
-                story_sort_order=sort_order,
-                drift=abs_max,  # Primary value (absolute max for envelope display)
-                max_drift=max_val,  # Maximum value (positive peak)
-                min_drift=min_val,  # Minimum value (negative peak)
-            )
-        )
-
-    if objects_to_create:
-        StoryDrift.objects.bulk_create(objects_to_create, ignore_conflicts=True)
-
-
-def _import_story_accelerations(
-    project: Project,
-    result_set: ResultSet,
-    result_category: ResultCategory,
-    df,
-    load_cases: List[str],
-    story_index: Dict[str, int],
-    allowed_load_cases: Set[str],
-    stories_map: Dict,
-    load_cases_map: Dict,
-):
-    """Import story acceleration data using Step Type Max/Min rows.
-
-    Supports both ETABS layouts:
-    1) Split rows: Max rows contain only Max UX/UY, Min rows contain only Min UX/UY.
-    2) Combined rows: a single row can contain both Max UX/UY and Min UX/UY values.
-    """
-    if df.empty:
-        return
-
-    def acceleration_items(row: Any, case_name: str):
-        story_name = row.get("Story")
-        for direction, max_col, min_col in [
-            ("UX", "Max UX", "Min UX"),
-            ("UY", "Max UY", "Min UY"),
-        ]:
-            yield (
-                (story_name, case_name, direction),
-                _parse_numeric(row.get(max_col)),
-                _parse_numeric(row.get(min_col)),
-            )
-
-    accel_data = _aggregate_by_step_type(df, allowed_load_cases, acceleration_items)
-
-    objects_to_create = []
-
-    for (story_name, case_name, direction), bounds in accel_data.items():
-        resolved_bounds = _resolve_bounds(bounds)
-        if resolved_bounds is None:
-            continue
-        resolved_max, resolved_min = resolved_bounds
-
-        sort_order = story_index.get(story_name, 0)
-        story = _get_or_create_story(project, story_name, sort_order, stories_map)
-        load_case = _get_or_create_load_case(project, case_name, load_cases_map)
-
-        objects_to_create.append(
-            StoryAcceleration(
-                story=story,
-                load_case=load_case,
-                result_category=result_category,
-                direction=direction,
-                story_sort_order=sort_order,
-                acceleration=max(abs(resolved_max), abs(resolved_min)),
-                max_acceleration=resolved_max,
-                min_acceleration=resolved_min,
-            )
-        )
-
-    if objects_to_create:
-        StoryAcceleration.objects.bulk_create(objects_to_create, ignore_conflicts=True)
-
-
-def _import_story_forces(
-    project: Project,
-    result_set: ResultSet,
-    result_category: ResultCategory,
-    df,
-    load_cases: List[str],
-    story_index: Dict[str, int],
-    allowed_load_cases: Set[str],
-    stories_map: Dict,
-    load_cases_map: Dict,
-):
-    """Import story force data with Max/Min from Step Type rows.
-
-    Story Forces sheet has Step Type = Max and Min rows per (Story, Output Case, Location).
-    Combines both to populate max_force/min_force fields.
-    """
-    if df.empty:
-        return
-
-    def force_items(row: Any, case_name: str):
-        story_name = row.get("Story")
-        location = row.get("Location", "Top")
-        for direction in ["VX", "VY"]:
-            value = _parse_numeric(row.get(direction))
-            yield (story_name, case_name, location, direction), value, value
-
-    force_data = _aggregate_by_step_type(df, allowed_load_cases, force_items)
-
-    objects_to_create = []
-
-    for (story_name, case_name, location, direction), vals in force_data.items():
-        resolved_bounds = _resolve_bounds(vals)
-        if resolved_bounds is None:
-            continue
-        resolved_max, resolved_min = resolved_bounds
-
-        abs_envelope = max(abs(resolved_max), abs(resolved_min))
-
-        sort_order = story_index.get(story_name, 0)
-        story = _get_or_create_story(project, story_name, sort_order, stories_map)
-        load_case = _get_or_create_load_case(project, case_name, load_cases_map)
-
-        objects_to_create.append(
-            StoryForce(
-                story=story,
-                load_case=load_case,
-                result_category=result_category,
-                direction=direction,
-                location=location,
-                story_sort_order=sort_order,
-                force=abs_envelope,
-                max_force=resolved_max,
-                min_force=resolved_min,
-            )
-        )
-
-    if objects_to_create:
-        StoryForce.objects.bulk_create(objects_to_create, ignore_conflicts=True)
-
-
-def _import_story_displacements(
-    project: Project,
-    result_set: ResultSet,
-    result_category: ResultCategory,
-    df,
-    load_cases: List[str],
-    story_index: Dict[str, int],
-    allowed_load_cases: Set[str],
-    stories_map: Dict,
-    load_cases_map: Dict,
-):
-    """Import story displacement data with Max/Min from Step Type rows.
-
-    Joint Displacements sheet has Step Type = Max and Min rows.
-    Combines both to populate max_displacement/min_displacement fields.
-    """
-    if df.empty:
-        return
-
-    def displacement_items(row: Any, case_name: str):
-        story_name = row.get("Story")
-        for direction, col_name in [("UX", "Ux"), ("UY", "Uy")]:
-            value = _parse_numeric(row.get(col_name))
-            yield (story_name, case_name, direction), value, value
-
-    displ_data = _aggregate_by_step_type(df, allowed_load_cases, displacement_items)
-
-    objects_to_create = []
-
-    for (story_name, case_name, direction), vals in displ_data.items():
-        resolved_bounds = _resolve_bounds(vals)
-        if resolved_bounds is None:
-            continue
-        resolved_max, resolved_min = resolved_bounds
-
-        abs_envelope = max(abs(resolved_max), abs(resolved_min))
-
-        sort_order = story_index.get(story_name, 0)
-        story = _get_or_create_story(project, story_name, sort_order, stories_map)
-        load_case = _get_or_create_load_case(project, case_name, load_cases_map)
-
-        objects_to_create.append(
-            StoryDisplacement(
-                story=story,
-                load_case=load_case,
-                result_category=result_category,
-                direction=direction,
-                story_sort_order=sort_order,
-                displacement=abs_envelope,
-                max_displacement=resolved_max,
-                min_displacement=resolved_min,
-            )
-        )
-
-    if objects_to_create:
-        StoryDisplacement.objects.bulk_create(objects_to_create, ignore_conflicts=True)
-
-
 def _get_or_create_element(
     project: Project,
     element_type: str,
@@ -1016,53 +653,63 @@ def _import_wall_shears(
     if df.empty:
         return
 
-    objects_to_create = []
+    # Desktop parity: use Bottom location only and aggregate per story/pier/load case.
+    shear_stats: Dict[tuple, Dict[str, float]] = {}
 
-    for idx, row in df.iterrows():
+    for _, row in df.iterrows():
         case_name = row.get("Output Case")
         if case_name not in allowed_load_cases:
             continue
 
+        location = str(row.get("Location", "")).strip().lower()
+        if location != "bottom":
+            continue
+
         story_name = row.get("Story")
         pier_name = row.get("Pier")
-        location = row.get("Location", "Top")
+        if not story_name or not pier_name:
+            continue
 
+        for direction in ("V2", "V3"):
+            value = _to_float(row.get(direction))
+            if value is None:
+                continue
+
+            key = (story_name, pier_name, case_name, direction)
+            current = shear_stats.get(key)
+            if current is None:
+                shear_stats[key] = {
+                    "max": value,
+                    "min": value,
+                    "abs_max": abs(value),
+                }
+                continue
+
+            current["max"] = max(current["max"], value)
+            current["min"] = min(current["min"], value)
+            current["abs_max"] = max(current["abs_max"], abs(value))
+
+    objects_to_create = []
+    for (story_name, pier_name, case_name, direction), stats in shear_stats.items():
         sort_order = story_index.get(story_name, 0)
         story = _get_or_create_story(project, story_name, sort_order, stories_map)
         load_case = _get_or_create_load_case(project, case_name, load_cases_map)
-        element = _get_or_create_element(project, "Pier", pier_name, pier_name, story, elements_map)
+        element = _get_or_create_element(project, "Wall", pier_name, pier_name, story, elements_map)
 
-        # Import V2 (typically shear in local 2 direction)
-        v2 = row.get("V2", 0)
-        if v2:
-            objects_to_create.append(
-                WallShear(
-                    element=element,
-                    story=story,
-                    load_case=load_case,
-                    result_category=result_category,
-                    direction="V2",
-                    location=location,
-                    story_sort_order=sort_order,
-                    force=v2,
-                )
+        objects_to_create.append(
+            WallShear(
+                element=element,
+                story=story,
+                load_case=load_case,
+                result_category=result_category,
+                direction=direction,
+                location="Bottom",
+                story_sort_order=sort_order,
+                force=stats["abs_max"],
+                max_force=stats["max"],
+                min_force=stats["min"],
             )
-
-        # Import V3
-        v3 = row.get("V3", 0)
-        if v3:
-            objects_to_create.append(
-                WallShear(
-                    element=element,
-                    story=story,
-                    load_case=load_case,
-                    result_category=result_category,
-                    direction="V3",
-                    location=location,
-                    story_sort_order=sort_order,
-                    force=v3,
-                )
-            )
+        )
 
     if objects_to_create:
         WallShear.objects.bulk_create(objects_to_create, ignore_conflicts=True)
@@ -1087,7 +734,7 @@ def _import_quad_rotations(
 
     objects_to_create = []
 
-    for idx, row in df.iterrows():
+    for _, row in df.iterrows():
         case_name = row.get("Output Case")
         if case_name not in allowed_load_cases:
             continue
@@ -1096,38 +743,52 @@ def _import_quad_rotations(
         quad_name = row.get("Name", "")
         property_name = row.get("PropertyName", "")
         direction = row.get("Direction", "Pier")
-        step_type = row.get("Step Type", "")
+        step_type_raw = row.get("Step Type", row.get("StepType", ""))
+        normalized_step_type = str(step_type_raw).strip().lower()
+        if normalized_step_type in {"nan", "none"}:
+            normalized_step_type = ""
+        if normalized_step_type not in {"max", "min"}:
+            # Preserve backward compatibility for legacy rows with blank step type.
+            if normalized_step_type != "":
+                continue
 
-        # Only import Max values
-        if step_type != "Max":
+        if not story_name or not property_name:
             continue
 
         sort_order = story_index.get(story_name, 0)
         story = _get_or_create_story(project, story_name, sort_order, stories_map)
         load_case = _get_or_create_load_case(project, case_name, load_cases_map)
         element = _get_or_create_element(
-            project, "Wall", property_name, quad_name, story, elements_map
+            project, "Quad", property_name, property_name, story, elements_map
         )
 
-        rotation = row.get("Rotation", 0)
-        max_rotation = row.get("MaxRotation", None)
-        min_rotation = row.get("MinRotation", None)
+        max_rotation = _to_float(row.get("MaxRotation"))
+        min_rotation = _to_float(row.get("MinRotation"))
+        rotation = _to_float(row.get("Rotation"))
+        if rotation is None:
+            if normalized_step_type == "max":
+                rotation = max_rotation
+            elif normalized_step_type == "min":
+                rotation = min_rotation
+            else:
+                rotation = max_rotation if max_rotation is not None else min_rotation
+        if rotation is None:
+            continue
 
-        if rotation:
-            objects_to_create.append(
-                QuadRotation(
-                    element=element,
-                    story=story,
-                    load_case=load_case,
-                    result_category=result_category,
-                    quad_name=quad_name,
-                    direction=direction,
-                    story_sort_order=sort_order,
-                    rotation=rotation,
-                    max_rotation=max_rotation,
-                    min_rotation=min_rotation,
-                )
+        objects_to_create.append(
+            QuadRotation(
+                element=element,
+                story=story,
+                load_case=load_case,
+                result_category=result_category,
+                quad_name=str(quad_name),
+                direction=str(direction or "Pier"),
+                story_sort_order=sort_order,
+                rotation=rotation,
+                max_rotation=max_rotation,
+                min_rotation=min_rotation,
             )
+        )
 
     if objects_to_create:
         QuadRotation.objects.bulk_create(objects_to_create, ignore_conflicts=True)
@@ -1150,10 +811,11 @@ def _import_column_forces(
     if df.empty:
         return
 
-    shear_objects = []
-    axial_objects = []
+    # Desktop parity: aggregate per story/column/case and keep max/min envelopes.
+    shear_stats: Dict[tuple, Dict[str, float]] = {}
+    axial_stats: Dict[tuple, Dict[str, float]] = {}
 
-    for idx, row in df.iterrows():
+    for _, row in df.iterrows():
         case_name = row.get("Output Case")
         if case_name not in allowed_load_cases:
             continue
@@ -1161,61 +823,92 @@ def _import_column_forces(
         story_name = row.get("Story")
         column_name = row.get("Column", "")
         unique_name = row.get("Unique Name", column_name)
-        location = row.get("Location", "Top")
+        location_value = row.get("Location", None)
+        raw_location = str(location_value).strip() if location_value is not None else ""
+        location = raw_location if raw_location in {"Top", "Bottom"} else ""
+        if not story_name or not column_name:
+            continue
 
+        for direction in ("V2", "V3"):
+            value = _to_float(row.get(direction))
+            if value is None:
+                continue
+
+            shear_key = (story_name, column_name, unique_name, case_name, direction)
+            current_shear = shear_stats.get(shear_key)
+            if current_shear is None:
+                shear_stats[shear_key] = {
+                    "max": value,
+                    "min": value,
+                    "abs_max": abs(value),
+                    "location": location,
+                }
+            else:
+                current_shear["max"] = max(current_shear["max"], value)
+                current_shear["min"] = min(current_shear["min"], value)
+                current_shear["abs_max"] = max(current_shear["abs_max"], abs(value))
+
+        axial_value = _to_float(row.get("P"))
+        if axial_value is None:
+            continue
+
+        axial_key = (story_name, column_name, unique_name, case_name)
+        current_axial = axial_stats.get(axial_key)
+        if current_axial is None:
+            axial_stats[axial_key] = {
+                "min": axial_value,
+                "max": axial_value,
+                "location": location,
+            }
+        else:
+            current_axial["min"] = min(current_axial["min"], axial_value)
+            current_axial["max"] = max(current_axial["max"], axial_value)
+
+    shear_objects = []
+    for (story_name, column_name, _unique_name, case_name, direction), stats in shear_stats.items():
         sort_order = story_index.get(story_name, 0)
         story = _get_or_create_story(project, story_name, sort_order, stories_map)
         load_case = _get_or_create_load_case(project, case_name, load_cases_map)
         element = _get_or_create_element(
-            project, "Column", column_name, unique_name, story, elements_map
+            project, "Column", column_name, column_name, story, elements_map
         )
 
-        # Import V2 shear
-        v2 = row.get("V2", 0)
-        if v2:
-            shear_objects.append(
-                ColumnShear(
-                    element=element,
-                    story=story,
-                    load_case=load_case,
-                    result_category=result_category,
-                    direction="V2",
-                    location=location,
-                    story_sort_order=sort_order,
-                    force=v2,
-                )
+        shear_objects.append(
+            ColumnShear(
+                element=element,
+                story=story,
+                load_case=load_case,
+                result_category=result_category,
+                direction=direction,
+                location=str(stats.get("location", "")),
+                story_sort_order=sort_order,
+                force=stats["abs_max"],
+                max_force=stats["max"],
+                min_force=stats["min"],
             )
+        )
 
-        # Import V3 shear
-        v3 = row.get("V3", 0)
-        if v3:
-            shear_objects.append(
-                ColumnShear(
-                    element=element,
-                    story=story,
-                    load_case=load_case,
-                    result_category=result_category,
-                    direction="V3",
-                    location=location,
-                    story_sort_order=sort_order,
-                    force=v3,
-                )
-            )
+    axial_objects = []
+    for (story_name, column_name, _unique_name, case_name), stats in axial_stats.items():
+        sort_order = story_index.get(story_name, 0)
+        story = _get_or_create_story(project, story_name, sort_order, stories_map)
+        load_case = _get_or_create_load_case(project, case_name, load_cases_map)
+        element = _get_or_create_element(
+            project, "Column", column_name, column_name, story, elements_map
+        )
 
-        # Import axial (P column)
-        p = row.get("P", 0)
-        if p:
-            axial_objects.append(
-                ColumnAxial(
-                    element=element,
-                    story=story,
-                    load_case=load_case,
-                    result_category=result_category,
-                    location=location,
-                    story_sort_order=sort_order,
-                    min_axial=p,  # Single value, min/max computed later if needed
-                )
+        axial_objects.append(
+            ColumnAxial(
+                element=element,
+                story=story,
+                load_case=load_case,
+                result_category=result_category,
+                location=str(stats.get("location", "")),
+                story_sort_order=sort_order,
+                min_axial=stats["min"],
+                max_axial=stats["max"],
             )
+        )
 
     if shear_objects:
         ColumnShear.objects.bulk_create(shear_objects, ignore_conflicts=True)
@@ -1240,9 +933,10 @@ def _import_column_rotations(
     if df.empty:
         return
 
-    objects_to_create = []
+    # Desktop parity: aggregate Max/Min/absolute per story/column/case/direction.
+    rotation_stats: Dict[tuple, Dict[str, float]] = {}
 
-    for idx, row in df.iterrows():
+    for _, row in df.iterrows():
         case_name = row.get("Output Case")
         if case_name not in allowed_load_cases:
             continue
@@ -1250,48 +944,49 @@ def _import_column_rotations(
         story_name = row.get("Story")
         column_name = row.get("Frame/Wall", "")
         unique_name = row.get("Unique Name", column_name)
-        step_type = row.get("Step Type", "")
-
-        # Only import Max values
-        if step_type != "Max":
+        if not story_name or not column_name:
             continue
 
+        for direction in ("R2", "R3"):
+            value = _to_float(row.get(direction))
+            if value is None:
+                continue
+
+            key = (story_name, column_name, unique_name, case_name, direction)
+            current = rotation_stats.get(key)
+            if current is None:
+                rotation_stats[key] = {
+                    "max": value,
+                    "min": value,
+                    "abs_max": abs(value),
+                }
+            else:
+                current["max"] = max(current["max"], value)
+                current["min"] = min(current["min"], value)
+                current["abs_max"] = max(current["abs_max"], abs(value))
+
+    objects_to_create = []
+    for (story_name, column_name, _unique_name, case_name, direction), stats in rotation_stats.items():
         sort_order = story_index.get(story_name, 0)
         story = _get_or_create_story(project, story_name, sort_order, stories_map)
         load_case = _get_or_create_load_case(project, case_name, load_cases_map)
         element = _get_or_create_element(
-            project, "Column", column_name, unique_name, story, elements_map
+            project, "Column", column_name, column_name, story, elements_map
         )
 
-        # Import R2 rotation
-        r2 = row.get("R2", 0)
-        if r2:
-            objects_to_create.append(
-                ColumnRotation(
-                    element=element,
-                    story=story,
-                    load_case=load_case,
-                    result_category=result_category,
-                    direction="R2",
-                    story_sort_order=sort_order,
-                    rotation=r2,
-                )
+        objects_to_create.append(
+            ColumnRotation(
+                element=element,
+                story=story,
+                load_case=load_case,
+                result_category=result_category,
+                direction=direction,
+                story_sort_order=sort_order,
+                rotation=stats["abs_max"],
+                max_rotation=stats["max"],
+                min_rotation=stats["min"],
             )
-
-        # Import R3 rotation
-        r3 = row.get("R3", 0)
-        if r3:
-            objects_to_create.append(
-                ColumnRotation(
-                    element=element,
-                    story=story,
-                    load_case=load_case,
-                    result_category=result_category,
-                    direction="R3",
-                    story_sort_order=sort_order,
-                    rotation=r3,
-                )
-            )
+        )
 
     if objects_to_create:
         ColumnRotation.objects.bulk_create(objects_to_create, ignore_conflicts=True)
@@ -1317,21 +1012,28 @@ def _import_beam_rotations(
     objects_to_create = []
 
     for idx, row in df.iterrows():
-        case_name = row.get("Output Case")
+        case_name = row.get("Output Case", row.get("OutputCase"))
         if case_name not in allowed_load_cases:
             continue
 
         story_name = row.get("Story")
-        beam_name = row.get("Frame/Wall", "")
-        unique_name = row.get("Unique Name", beam_name)
-        step_type = row.get("Step Type", "")
+        beam_name = row.get("Frame/Wall", row.get("FrameWall", ""))
+        unique_name = row.get("Unique Name", row.get("UniqueName", beam_name))
+        step_type_raw = row.get("Step Type", row.get("StepType", ""))
+        step_type_normalized = str(step_type_raw).strip().lower()
+        if step_type_normalized in {"nan", "none"}:
+            step_type_normalized = ""
         hinge = row.get("Hinge", "")
-        generated_hinge = row.get("Generated Hinge", "")
-        rel_dist = row.get("Rel Dist", None)
+        generated_hinge = row.get("Generated Hinge", row.get("GeneratedHinge", ""))
+        rel_dist = row.get("Rel Dist", row.get("RelDist", None))
 
-        # Only import Max values
-        if step_type != "Max":
-            continue
+        if step_type_normalized in {"max", "min"}:
+            step_type = step_type_normalized.title()
+        elif step_type_normalized == "":
+            step_type = ""
+        else:
+            # Preserve non-standard step labels instead of dropping source rows.
+            step_type = str(step_type_raw).strip()
 
         sort_order = story_index.get(story_name, 0)
         story = _get_or_create_story(project, story_name, sort_order, stories_map)
@@ -1341,22 +1043,27 @@ def _import_beam_rotations(
         )
 
         # Import R3 Plastic rotation
-        r3_plastic = row.get("R3 Plastic", 0)
-        if r3_plastic:
-            objects_to_create.append(
-                BeamRotation(
-                    element=element,
-                    story=story,
-                    load_case=load_case,
-                    result_category=result_category,
-                    step_type=step_type,
-                    hinge=str(hinge) if hinge else "",
-                    generated_hinge=str(generated_hinge) if generated_hinge else "",
-                    rel_dist=rel_dist,
-                    story_sort_order=sort_order,
-                    r3_plastic=r3_plastic,
-                )
+        r3_plastic_raw = row.get("R3 Plastic", row.get("R3Plastic", None))
+        if r3_plastic_raw is None:
+            continue
+        try:
+            r3_plastic = float(r3_plastic_raw)
+        except (TypeError, ValueError):
+            continue
+        objects_to_create.append(
+            BeamRotation(
+                element=element,
+                story=story,
+                load_case=load_case,
+                result_category=result_category,
+                step_type=step_type,
+                hinge=str(hinge) if hinge else "",
+                generated_hinge=str(generated_hinge) if generated_hinge else "",
+                rel_dist=rel_dist,
+                story_sort_order=sort_order,
+                r3_plastic=r3_plastic,
             )
+        )
 
     if objects_to_create:
         BeamRotation.objects.bulk_create(objects_to_create, ignore_conflicts=True)
@@ -1464,13 +1171,14 @@ def import_pushover_curves_task(self, job_id: int) -> Dict:
     job.status = "processing"
     job.current_phase = "Importing pushover curves"
     job.celery_task_id = self.request.id
-    job.started_at = datetime.now()
+    job.started_at = timezone.now()
     job.save()
 
     try:
         config = job.job_config
         files = [Path(f) for f in job.files]
         result_set_name = config.get("result_set_name", "Pushover Results")
+        result_set_id = config.get("result_set_id")
 
         project = job.project
         stats = {
@@ -1495,17 +1203,29 @@ def import_pushover_curves_task(self, job_id: int) -> Dict:
 
         # Create or get result set
         with transaction.atomic():
-            result_set, created = ResultSet.objects.get_or_create(
-                project=project,
-                name=result_set_name,
-                defaults={"analysis_type": "Pushover"},
-            )
+            if result_set_id is not None:
+                result_set = ResultSet.objects.filter(project=project, id=result_set_id).first()
+                if result_set is None:
+                    raise ValueError(
+                        f"Result set {result_set_id} not found for project {project.slug}"
+                    )
+            else:
+                result_set, _ = ResultSet.objects.get_or_create(
+                    project=project,
+                    name=result_set_name,
+                    defaults={"analysis_type": "Pushover"},
+                )
+
+            if result_set.analysis_type != "Pushover":
+                raise ValueError(
+                    f"Result set {result_set.id} has analysis_type={result_set.analysis_type}; expected Pushover"
+                )
             stats["result_set_id"] = result_set.id
             job.result_set = result_set
             job.save(update_fields=["result_set"])
 
         for idx, file_path in enumerate(files):
-            progress_callback(f"Processing {file_path.name}...", idx, len(files))
+            progress_callback(f"Processing {file_path.name}...", idx + 1, len(files))
 
             try:
                 with ExcelParser(str(file_path)) as parser:
@@ -1566,7 +1286,7 @@ def import_pushover_curves_task(self, job_id: int) -> Dict:
         job.status = "completed"
         job.current_phase = "Completed"
         job.import_summary = stats
-        job.completed_at = datetime.now()
+        job.completed_at = timezone.now()
         job.save()
 
         send_complete(
@@ -1583,7 +1303,7 @@ def import_pushover_curves_task(self, job_id: int) -> Dict:
         logger.exception(f"Pushover import failed for job {job_id}")
         job.status = "failed"
         job.error_message = str(e)
-        job.completed_at = datetime.now()
+        job.completed_at = timezone.now()
         job.save()
         send_error(job_id, "Pushover import failed", str(e))
         raise

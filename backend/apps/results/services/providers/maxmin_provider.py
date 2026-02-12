@@ -6,6 +6,7 @@ from config.result_types import RESULT_TYPE_CONFIG
 
 from apps.results.models import (
     AbsoluteMaxMinDrift,
+    ElementResultsCache,
     ResultCategory,
     ResultSet,
     StoryAcceleration,
@@ -14,7 +15,7 @@ from apps.results.models import (
     StoryForce,
 )
 
-from ..datasets import MaxMinDataset, ResultDatasetMeta
+from ..datasets import MaxMinDataset
 
 
 RAW_MODEL_MAP = {
@@ -24,13 +25,40 @@ RAW_MODEL_MAP = {
     "Displacements": (StoryDisplacement, "displacement", "max_displacement", "min_displacement"),
 }
 
+# Element types that support per-element maxmin from cache
+ELEMENT_MAXMIN_CONFIG = {
+    "ColumnShears": {
+        "directions": ["V2", "V3"],
+        "unit": "kN",
+        "multiplier": 1.0,
+    },
+    "ColumnAxials": {
+        "directions": ["Min", "Max"],
+        "unit": "kN",
+        "multiplier": 1.0,
+    },
+    "ColumnRotations": {
+        "directions": ["R2", "R3"],
+        "unit": "%",
+        "multiplier": 100.0,
+    },
+    "WallShears": {
+        "directions": ["V2", "V3"],
+        "unit": "kN",
+        "multiplier": 1.0,
+    },
+}
+
 
 def get_maxmin_dataset(
     service,
     result_set_id: int,
     base_result_type: str = "Drifts",
+    element_id: Optional[int] = None,
 ) -> Optional[MaxMinDataset]:
     """Get max/min envelope data for a result type."""
+    if element_id and base_result_type in ELEMENT_MAXMIN_CONFIG:
+        return _get_element_maxmin(service, result_set_id, base_result_type, element_id)
     if base_result_type == "Drifts":
         result = _get_drift_maxmin(service, result_set_id)
         if result is None:
@@ -76,11 +104,12 @@ def _get_drift_maxmin(service, result_set_id: int) -> Optional[MaxMinDataset]:
         rows.append(row)
 
     return MaxMinDataset(
-        meta=ResultDatasetMeta(
+        meta=service._build_meta(
             result_type="MaxMin_Drifts",
             direction=None,
             result_set_id=result_set_id,
             display_name="Max/Min Drifts (%)",
+            unit="%",
         ),
         rows=rows,
         directions=("X", "Y"),
@@ -177,11 +206,97 @@ def _get_generic_maxmin(
         rows.append(row)
 
     return MaxMinDataset(
-        meta=ResultDatasetMeta(
+        meta=service._build_meta(
             result_type=f"MaxMin_{base_result_type}",
             direction=None,
             result_set_id=result_set_id,
             display_name=f'Max/Min {base_result_type} ({config.get("unit", "")})',
+            unit=config.get("unit", ""),
+        ),
+        rows=rows,
+        directions=tuple(directions),
+        source_type=base_result_type,
+    )
+
+
+def _get_element_maxmin(
+    service,
+    result_set_id: int,
+    base_result_type: str,
+    element_id: int,
+) -> Optional[MaxMinDataset]:
+    """Build max/min envelope for a specific element from ElementResultsCache.
+
+    Fetches all direction variants for the element, then for each story
+    computes absolute max across all load cases per direction.
+    """
+    config = ELEMENT_MAXMIN_CONFIG[base_result_type]
+    directions = config["directions"]
+    unit = config["unit"]
+    multiplier = config["multiplier"]
+
+    story_data: Dict[str, Dict[str, float]] = {}
+    story_order: Dict[str, int] = {}
+
+    for ui_dir in directions:
+        cache_type = f"{base_result_type}_{ui_dir}"
+        entries = (
+            ElementResultsCache.objects.filter(
+                project=service.project,
+                result_set_id=result_set_id,
+                result_type=cache_type,
+                element_id=element_id,
+            )
+            .select_related("story")
+            .order_by("-story_sort_order")
+        )
+
+        for entry in entries:
+            story_name = entry.story.name
+            if story_name not in story_data:
+                story_data[story_name] = {}
+                story_order[story_name] = entry.story_sort_order or 0
+
+            for lc_name, value in entry.results_matrix.items():
+                scaled = value * multiplier
+                col_prefix = f"{lc_name}_{ui_dir}"
+                key_max = f"OrigMax_{col_prefix}"
+                key_min = f"OrigMin_{col_prefix}"
+
+                orig_max = scaled if scaled >= 0 else 0
+                orig_min = scaled if scaled < 0 else 0
+
+                if key_max in story_data[story_name]:
+                    story_data[story_name][key_max] = max(
+                        story_data[story_name][key_max], orig_max
+                    )
+                    story_data[story_name][key_min] = min(
+                        story_data[story_name][key_min], orig_min
+                    )
+                else:
+                    story_data[story_name][key_max] = orig_max
+                    story_data[story_name][key_min] = orig_min
+
+                story_data[story_name][f"Max_{col_prefix}"] = max(
+                    abs(story_data[story_name][key_max]),
+                    abs(story_data[story_name][key_min]),
+                )
+
+    if not story_data:
+        return None
+
+    rows = []
+    for story_name in sorted(story_data.keys(), key=lambda s: -story_order.get(s, 0)):
+        row = {"Story": story_name, **story_data[story_name]}
+        rows.append(row)
+
+    return MaxMinDataset(
+        meta=service._build_meta(
+            result_type=f"MaxMin_{base_result_type}",
+            direction=None,
+            result_set_id=result_set_id,
+            display_name=f"Max/Min {base_result_type} ({unit})",
+            unit=unit,
         ),
         rows=rows,
         directions=tuple(directions),

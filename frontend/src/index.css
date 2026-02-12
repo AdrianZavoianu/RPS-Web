@@ -912,9 +912,24 @@ body {
     @apply bg-bg-hover;
   }
 
-  .maxmin-compact-table .results-table-cell,
+  .maxmin-compact-table {
+    font-size: 12px;
+  }
+
   .maxmin-compact-table .results-table-header {
-    @apply px-2 py-0.5 text-[11px];
+    padding: 3px 3px;
+    font-size: 14px !important;
+    font-weight: 600;
+    min-width: 40px;
+  }
+
+  .maxmin-compact-table .results-table-header-story {
+    min-width: 42px;
+    width: 42px;
+  }
+
+  .maxmin-compact-table .results-table-cell {
+    padding: 2px 3px;
   }
 
   @media (max-width: 900px) {

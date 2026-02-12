@@ -100,8 +100,19 @@ export function useStartImport(projectSlug: string) {
 export function useStartPushoverImport(projectSlug: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ jobId, resultSetName }: { jobId: number; resultSetName?: string }) =>
-      importsApi.startPushoverImport(projectSlug, jobId, resultSetName),
+    mutationFn: ({
+      jobId,
+      resultSetName,
+      resultSetId,
+    }: {
+      jobId: number
+      resultSetName?: string
+      resultSetId?: number
+    }) =>
+      importsApi.startPushoverImport(projectSlug, jobId, {
+        resultSetName,
+        resultSetId,
+      }),
     onSuccess: (_, { jobId }) => {
       queryClient.invalidateQueries({ queryKey: ['importJob', projectSlug, jobId] })
       queryClient.invalidateQueries({ queryKey: ['resultSets', projectSlug] })

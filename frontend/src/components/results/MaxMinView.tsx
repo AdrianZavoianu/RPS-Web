@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect } from 'react'
+
 import clsx from 'clsx'
 import { useResultSets, useMaxMinData, useAvailableResultTypes } from '../../hooks/useResults'
 import { MaxMinResultsDisplay } from './MaxMinResultsDisplay'
@@ -17,9 +18,6 @@ interface MaxMinViewProps {
 export function MaxMinView({ projectSlug }: MaxMinViewProps) {
   const [selectedResultSetId, setSelectedResultSetId] = useState<number | null>(null)
   const [selectedResultType, setSelectedResultType] = useState<GlobalResultType>('Drifts')
-  const [selectedLoadCases, setSelectedLoadCases] = useState<Set<string>>(new Set())
-  const [hoveredLoadCase, setHoveredLoadCase] = useState<string | null>(null)
-
   const { data: resultSets, isLoading: resultSetsLoading } = useResultSets(projectSlug)
   const { data: availableTypes } = useAvailableResultTypes(projectSlug)
 
@@ -29,12 +27,6 @@ export function MaxMinView({ projectSlug }: MaxMinViewProps) {
       setSelectedResultSetId(resultSets[0].id)
     }
   }, [resultSets, selectedResultSetId])
-
-  // Clear selection state when result type changes
-  useEffect(() => {
-    setSelectedLoadCases(new Set())
-    setHoveredLoadCase(null)
-  }, [selectedResultType, selectedResultSetId])
 
   const { data: maxMinData, isLoading: maxMinLoading } = useMaxMinData(
     projectSlug,
@@ -97,15 +89,8 @@ export function MaxMinView({ projectSlug }: MaxMinViewProps) {
       <div className="maxmin-content flex-1 flex flex-col overflow-hidden">
         {selectedResultSetId ? (
           <>
-            {/* Toolbar */}
-            <div className="maxmin-toolbar flex items-center px-3 py-2 border-b border-border-default bg-bg-secondary">
-              <div className="text-sm text-text-primary">
-                {selectedResultType} - Max/Min Envelope
-              </div>
-            </div>
-
             {/* Data Display */}
-            <div className="maxmin-data flex-1 overflow-auto p-2">
+            <div className="maxmin-data flex-1 flex flex-col overflow-hidden">
               {maxMinLoading ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-text-secondary">Loading max/min data...</div>
@@ -114,10 +99,6 @@ export function MaxMinView({ projectSlug }: MaxMinViewProps) {
                 <MaxMinResultsDisplay
                   data={maxMinData}
                   resultType={selectedResultType}
-                  selectedLoadCases={selectedLoadCases}
-                  hoveredLoadCase={hoveredLoadCase}
-                  onSelectionChange={setSelectedLoadCases}
-                  onHoverChange={setHoveredLoadCase}
                 />
               ) : (
                 <div className="flex items-center justify-center h-full">

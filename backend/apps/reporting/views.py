@@ -16,7 +16,11 @@ class ProjectReportsMixin(ProjectLookupMixin):
 
     def get_project(self):
         slug = self.kwargs.get("project_slug")
-        return self.get_project_for_slug(slug, create_if_missing=False)
+        return self.get_project_for_slug(
+            slug,
+            create_if_missing=False,
+            user=self.request.user,
+        )
 
 
 class GenerateReportView(ProjectReportsMixin, APIView):
