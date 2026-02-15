@@ -42,4 +42,10 @@ urlpatterns = [
         ImportViewSet.as_view({"post": "start_pushover"}),
         name="import-start-pushover",
     ),
+    # Start pushover global results import
+    path(
+        "<slug:project_slug>/imports/<int:pk>/start-pushover-results/",
+        ImportViewSet.as_view({"post": "start_pushover_results"}),
+        name="import-start-pushover-results",
+    ),
 ]

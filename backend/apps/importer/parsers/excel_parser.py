@@ -783,11 +783,12 @@ class ExcelParser:
 
             for case_name in pushover_cases:
                 direction = self.detect_pushover_direction(case_name)
+                if direction == "Unknown":
+                    continue
 
-                # Get roof displacements for this case
+                # Keep desktop behavior: work from ordered per-case rows, then normalize
+                # displacements by the first point before matching with shear rows.
                 case_displ = displ_df[displ_df["Output Case"] == case_name].copy()
-
-                # Get base shear for this case (bottom location of base story)
                 case_force = force_df[
                     (force_df["Output Case"] == case_name)
                     & (force_df["Story"] == base_story)
@@ -797,44 +798,92 @@ class ExcelParser:
                 if case_displ.empty or case_force.empty:
                     continue
 
-                # Group by step number to get max displacement per step
-                step_groups = case_displ.groupby("Step Number")
+                disp_steps = pd.to_numeric(case_displ["Step Number"], errors="coerce").tolist()
+                shear_steps = pd.to_numeric(case_force["Step Number"], errors="coerce").tolist()
 
-                for step_num, step_df in step_groups:
-                    # Get displacement based on direction
-                    ux = step_df["Ux"].abs().max() if "Ux" in step_df.columns else 0
-                    uy = step_df["Uy"].abs().max() if "Uy" in step_df.columns else 0
+                if direction == "XY":
+                    ux_vals = (
+                        pd.to_numeric(case_displ["Ux"], errors="coerce").tolist()
+                        if "Ux" in case_displ.columns
+                        else [0.0] * len(case_displ)
+                    )
+                    uy_vals = (
+                        pd.to_numeric(case_displ["Uy"], errors="coerce").tolist()
+                        if "Uy" in case_displ.columns
+                        else [0.0] * len(case_displ)
+                    )
+                    displacements = [
+                        math.sqrt((ux_val**2) + (uy_val**2))
+                        for ux_val, uy_val in zip(ux_vals, uy_vals)
+                    ]
+                elif direction == "X":
+                    displacements = (
+                        pd.to_numeric(case_displ["Ux"], errors="coerce").tolist()
+                        if "Ux" in case_displ.columns
+                        else [0.0] * len(case_displ)
+                    )
+                else:  # direction == "Y"
+                    displacements = (
+                        pd.to_numeric(case_displ["Uy"], errors="coerce").tolist()
+                        if "Uy" in case_displ.columns
+                        else [0.0] * len(case_displ)
+                    )
 
-                    if direction == "X":
-                        displacement = ux
-                    elif direction == "Y":
-                        displacement = uy
-                    elif direction == "XY":
-                        displacement = math.sqrt(ux**2 + uy**2)
-                    else:
-                        displacement = max(ux, uy)
+                if direction == "XY":
+                    vx_vals = (
+                        pd.to_numeric(case_force["VX"], errors="coerce").abs().tolist()
+                        if "VX" in case_force.columns
+                        else [0.0] * len(case_force)
+                    )
+                    vy_vals = (
+                        pd.to_numeric(case_force["VY"], errors="coerce").abs().tolist()
+                        if "VY" in case_force.columns
+                        else [0.0] * len(case_force)
+                    )
+                    shears = [
+                        math.sqrt((vx_val**2) + (vy_val**2))
+                        for vx_val, vy_val in zip(vx_vals, vy_vals)
+                    ]
+                elif direction == "X":
+                    shears = (
+                        pd.to_numeric(case_force["VX"], errors="coerce").abs().tolist()
+                        if "VX" in case_force.columns
+                        else [0.0] * len(case_force)
+                    )
+                else:  # direction == "Y"
+                    shears = (
+                        pd.to_numeric(case_force["VY"], errors="coerce").abs().tolist()
+                        if "VY" in case_force.columns
+                        else [0.0] * len(case_force)
+                    )
 
-                    # Get base shear for this step
-                    step_force = case_force[case_force["Step Number"] == step_num]
-                    if step_force.empty:
+                # Desktop parity: merge displacement/shear by aligned row index and same step id.
+                point_count = min(
+                    len(disp_steps), len(displacements), len(shear_steps), len(shears)
+                )
+                for idx in range(point_count):
+                    disp_step = disp_steps[idx]
+                    shear_step = shear_steps[idx]
+                    displacement = displacements[idx]
+                    base_shear = shears[idx]
+
+                    if (
+                        pd.isna(disp_step)
+                        or pd.isna(shear_step)
+                        or pd.isna(displacement)
+                        or pd.isna(base_shear)
+                    ):
                         continue
 
-                    vx = step_force["VX"].abs().max() if "VX" in step_force.columns else 0
-                    vy = step_force["VY"].abs().max() if "VY" in step_force.columns else 0
-
-                    if direction == "X":
-                        base_shear = vx
-                    elif direction == "Y":
-                        base_shear = vy
-                    elif direction == "XY":
-                        base_shear = math.sqrt(vx**2 + vy**2)
-                    else:
-                        base_shear = max(vx, vy)
+                    disp_step_int = int(disp_step)
+                    shear_step_int = int(shear_step)
+                    if disp_step_int != shear_step_int:
+                        continue
 
                     results.append(
                         {
                             "Case": case_name,
-                            "Step": int(step_num),
+                            "Step": disp_step_int,
                             "Displacement": float(displacement),
                             "BaseShear": float(base_shear),
                             "Direction": direction,
@@ -847,12 +896,23 @@ class ExcelParser:
             result_df = pd.DataFrame(results)
             result_df = result_df.sort_values(["Case", "Step"]).reset_index(drop=True)
 
-            # Normalize displacement (subtract initial value so curve starts at 0)
-            for case_name in pushover_cases:
+            # Normalize each case by subtracting the displacement at step 0 (if present).
+            # If step 0 is missing, fall back to the first available step.
+            for case_name in result_df["Case"].unique():
                 case_mask = result_df["Case"] == case_name
-                if case_mask.any():
-                    initial_disp = result_df.loc[case_mask, "Displacement"].iloc[0]
-                    result_df.loc[case_mask, "Displacement"] -= initial_disp
+                case_rows = result_df.loc[case_mask]
+                if case_rows.empty:
+                    continue
+
+                step_zero_rows = case_rows[case_rows["Step"] == 0]
+                reference_displacement = (
+                    step_zero_rows["Displacement"].iloc[0]
+                    if not step_zero_rows.empty
+                    else case_rows["Displacement"].iloc[0]
+                )
+                result_df.loc[case_mask, "Displacement"] = (
+                    result_df.loc[case_mask, "Displacement"] - reference_displacement
+                )
 
             return result_df, pushover_cases
 

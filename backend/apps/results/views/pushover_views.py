@@ -45,7 +45,12 @@ class PushoverCurveView(ProjectResultsMixin, APIView):
         project = self.get_project()
 
         case = get_object_or_404(PushoverCase, id=case_id, project=project)
-        points = PushoverCurvePoint.objects.filter(pushover_case=case).order_by("step_number")
+        points = list(PushoverCurvePoint.objects.filter(pushover_case=case).order_by("step_number"))
+
+        reference_displacement = 0.0
+        if points:
+            step_zero_point = next((p for p in points if p.step_number == 0), points[0])
+            reference_displacement = float(step_zero_point.displacement)
 
         curve_data = {
             "case": {
@@ -56,7 +61,7 @@ class PushoverCurveView(ProjectResultsMixin, APIView):
             "points": [
                 {
                     "step": p.step_number,
-                    "displacement": p.displacement,
+                    "displacement": float(p.displacement) - reference_displacement,
                     "base_shear": p.base_shear,
                 }
                 for p in points
