@@ -3,15 +3,18 @@
  * Replicates the desktop RPS tree browser structure exactly
  */
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import clsx from 'clsx'
 import {
   useResultSets,
   useAvailableResultTypes,
   useElementsForType,
   useTimeSeriesLoadCases,
+  useComparisonSets,
+  useDeleteComparisonSet,
+  usePushoverCases,
 } from '../../hooks/useResults'
-import type { ResultSet } from '../../types'
+import type { ResultSet, ComparisonSet, PushoverCase } from '../../types'
 
 // Tree node selection data
 export interface TreeSelection {
@@ -27,7 +30,12 @@ export interface TreeSelection {
     | 'beam_rotations_plot'
     | 'beam_rotations_table'
     | 'pushover_curve'
+    | 'pushover_all_curves'
     | 'pushover_global'
+    | 'comparison_global'
+    | 'comparison_element'
+    | 'comparison_joint'
+    | 'comparison_beam_rotations'
   resultSetId: number
   category: 'Envelopes' | 'Time-Series'
   categoryType?: 'Global' | 'Elements' | 'Joints'
@@ -36,6 +44,10 @@ export interface TreeSelection {
   elementType?: string
   elementId?: number
   loadCaseName?: string
+  // Comparison-specific fields
+  comparisonSetId?: number
+  comparisonSetName?: string
+  resultSetIds?: number[]
 }
 
 interface ResultsTreeBrowserProps {
@@ -58,6 +70,16 @@ const ICONS = {
   branchLast: '└',   // Last branch prefix
 }
 
+const isResultSetBranchKey = (key: string, resultSetId: number) =>
+  key.startsWith(`${resultSetId}-`) || key.startsWith(`push-${resultSetId}-`)
+
+const getComparisonRootKey = (comparisonSetId: number) => `comp-${comparisonSetId}`
+
+const isComparisonBranchKey = (key: string, comparisonSetId: number) => {
+  const rootKey = getComparisonRootKey(comparisonSetId)
+  return key === rootKey || key.startsWith(`${rootKey}-`)
+}
+
 export function ResultsTreeBrowser({
   projectSlug,
   onSelect,
@@ -65,6 +87,7 @@ export function ResultsTreeBrowser({
 }: ResultsTreeBrowserProps) {
   const { data: resultSets, isLoading } = useResultSets(projectSlug)
   const { data: availableTypes } = useAvailableResultTypes(projectSlug)
+  const [hasAutoSelectedInitial, setHasAutoSelectedInitial] = useState(false)
 
   // Expanded state tracking
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['NLTHA']))
@@ -82,26 +105,93 @@ export function ResultsTreeBrowser({
     }
   }, [resultSets])
 
+  const collapseToActiveSet = useCallback((activeResultSetId: number | null, activeComparisonSetId: number | null) => {
+    setExpandedResultSets(
+      activeResultSetId !== null
+        ? new Set<number>([activeResultSetId])
+        : new Set<number>()
+    )
+
+    setExpandedCategories((prev) => {
+      if (activeResultSetId === null) return new Set<string>()
+
+      const next = new Set<string>()
+      for (const key of prev) {
+        if (isResultSetBranchKey(key, activeResultSetId)) next.add(key)
+      }
+      return next
+    })
+
+    setExpandedCategoryTypes((prev) => {
+      const next = new Set<string>()
+
+      if (activeResultSetId !== null) {
+        for (const key of prev) {
+          if (isResultSetBranchKey(key, activeResultSetId)) next.add(key)
+        }
+      }
+
+      if (activeComparisonSetId !== null) {
+        for (const key of prev) {
+          if (isComparisonBranchKey(key, activeComparisonSetId)) next.add(key)
+        }
+        next.add(getComparisonRootKey(activeComparisonSetId))
+      }
+
+      return next
+    })
+
+    setExpandedResultTypes((prev) => {
+      const next = new Set<string>()
+
+      if (activeResultSetId !== null) {
+        for (const key of prev) {
+          if (isResultSetBranchKey(key, activeResultSetId)) next.add(key)
+        }
+      }
+
+      if (activeComparisonSetId !== null) {
+        for (const key of prev) {
+          if (isComparisonBranchKey(key, activeComparisonSetId)) next.add(key)
+        }
+      }
+
+      return next
+    })
+  }, [])
+
+  const handleSelect = useCallback((selection: TreeSelection) => {
+    const hasComparisonSetId =
+      typeof selection.comparisonSetId === 'number' && selection.comparisonSetId > 0
+    const activeComparisonSetId = hasComparisonSetId ? selection.comparisonSetId! : null
+    const activeResultSetId =
+      !hasComparisonSetId && selection.resultSetId > 0 ? selection.resultSetId : null
+
+    collapseToActiveSet(activeResultSetId, activeComparisonSetId)
+    onSelect(selection)
+  }, [collapseToActiveSet, onSelect])
+
   // Auto-expand first result set
   useEffect(() => {
-    if (nlthaResultSets.length && expandedResultSets.size === 0) {
-      const firstId = nlthaResultSets[0].id
-      setExpandedResultSets(new Set([firstId]))
-      setExpandedCategories(new Set([`${firstId}-Envelopes`]))
-      setExpandedCategoryTypes(new Set([`${firstId}-Envelopes-Global`]))
-      setExpandedResultTypes(new Set([`${firstId}-Drifts`]))
+    if (!nlthaResultSets.length || hasAutoSelectedInitial) return
 
-      // Auto-select first result
-      onSelect({
-        type: 'global_result',
-        resultSetId: firstId,
-        category: 'Envelopes',
-        categoryType: 'Global',
-        resultType: 'Drifts',
-        direction: 'X',
-      })
-    }
-  }, [expandedResultSets.size, nlthaResultSets, onSelect])
+    const firstId = nlthaResultSets[0].id
+    setExpandedResultSets(new Set([firstId]))
+    setExpandedCategories(new Set([`${firstId}-Envelopes`]))
+    setExpandedCategoryTypes(new Set([`${firstId}-Envelopes-Global`]))
+    setExpandedResultTypes(new Set([`${firstId}-Drifts`]))
+
+    // Auto-select first result
+    handleSelect({
+      type: 'global_result',
+      resultSetId: firstId,
+      category: 'Envelopes',
+      categoryType: 'Global',
+      resultType: 'Drifts',
+      direction: 'X',
+    })
+    setHasAutoSelectedInitial(true)
+  }, [hasAutoSelectedInitial, handleSelect, nlthaResultSets])
 
   const toggleSection = (section: string) => {
     setExpandedSections((prev) => {
@@ -113,12 +203,16 @@ export function ResultsTreeBrowser({
   }
 
   const toggleResultSet = (id: number) => {
-    setExpandedResultSets((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+    if (expandedResultSets.has(id)) {
+      setExpandedResultSets((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+      return
+    }
+
+    collapseToActiveSet(id, null)
   }
 
   const toggleCategory = (key: string) => {
@@ -148,6 +242,32 @@ export function ResultsTreeBrowser({
     })
   }
 
+  const globalResults = availableTypes?.global_results || [
+    { type: 'Drifts', directions: ['X', 'Y'] },
+    { type: 'Accelerations', directions: ['X', 'Y'] },
+    { type: 'Forces', directions: ['X', 'Y'] },
+    { type: 'Displacements', directions: ['X', 'Y'] },
+  ]
+
+  const handleResultSetRootClick = useCallback((resultSetId: number) => {
+    const firstGlobal = globalResults.find((rt) => rt.directions && rt.directions.length > 0)
+    const resultType = firstGlobal?.type || 'Drifts'
+    const direction = firstGlobal?.directions?.[0] || 'X'
+
+    handleSelect({
+      type: 'global_result',
+      resultSetId,
+      category: 'Envelopes',
+      categoryType: 'Global',
+      resultType,
+      direction,
+    })
+
+    setExpandedCategories(new Set([`${resultSetId}-Envelopes`]))
+    setExpandedCategoryTypes(new Set([`${resultSetId}-Envelopes-Global`]))
+    setExpandedResultTypes(new Set([`${resultSetId}-${resultType}`]))
+  }, [globalResults, handleSelect])
+
   const isSelected = (rsId: number, rt: string, dir: string) => {
     return (
       currentSelection?.resultSetId === rsId &&
@@ -155,13 +275,6 @@ export function ResultsTreeBrowser({
       currentSelection?.direction === dir
     )
   }
-
-  const globalResults = availableTypes?.global_results || [
-    { type: 'Drifts', directions: ['X', 'Y'] },
-    { type: 'Accelerations', directions: ['X', 'Y'] },
-    { type: 'Forces', directions: ['X', 'Y'] },
-    { type: 'Displacements', directions: ['X', 'Y'] },
-  ]
 
   if (isLoading) {
     return (
@@ -208,14 +321,64 @@ export function ResultsTreeBrowser({
                 expandedCategories={expandedCategories}
                 expandedCategoryTypes={expandedCategoryTypes}
                 expandedResultTypes={expandedResultTypes}
-                onToggleResultSet={() => toggleResultSet(rs.id)}
+                onToggleResultSet={() => handleResultSetRootClick(rs.id)}
                 onToggleCategory={toggleCategory}
                 onToggleCategoryType={toggleCategoryType}
                 onToggleResultType={toggleResultType}
-                onSelect={onSelect}
+                onSelect={handleSelect}
                 isSelected={isSelected}
               />
             ))}
+
+            {/* Comparisons Section - always rendered at the end of NLTHA subtree */}
+            <ComparisonsSectionNode
+              projectSlug={projectSlug}
+              availableTypes={availableTypes}
+              currentSelection={currentSelection}
+              isExpanded={expandedSections.has('Comparisons')}
+              onToggleSection={() => toggleSection('Comparisons')}
+              expandedCategoryTypes={expandedCategoryTypes}
+              expandedResultTypes={expandedResultTypes}
+              onToggleCategoryType={toggleCategoryType}
+              onToggleResultType={toggleResultType}
+              onSelect={handleSelect}
+              onToggleComparisonSet={(csKey: string, defaultSelection: TreeSelection | null) => {
+                const comparisonSetId = Number(csKey.replace('comp-', ''))
+                if (!Number.isFinite(comparisonSetId) || comparisonSetId <= 0) return
+
+                collapseToActiveSet(null, comparisonSetId)
+
+                if (!defaultSelection) {
+                  setExpandedCategoryTypes(new Set([getComparisonRootKey(comparisonSetId)]))
+                  setExpandedResultTypes(new Set())
+                  return
+                }
+
+                handleSelect(defaultSelection)
+
+                const rootKey = getComparisonRootKey(comparisonSetId)
+                if (defaultSelection.type === 'comparison_global') {
+                  setExpandedCategoryTypes(new Set([rootKey, `${rootKey}-Global`]))
+                  setExpandedResultTypes(new Set([`${rootKey}-${defaultSelection.resultType}`]))
+                  return
+                }
+
+                if (defaultSelection.type === 'comparison_joint') {
+                  setExpandedCategoryTypes(new Set([rootKey, `${rootKey}-Joints`]))
+                  setExpandedResultTypes(new Set())
+                  return
+                }
+
+                if (defaultSelection.type === 'comparison_beam_rotations') {
+                  setExpandedCategoryTypes(new Set([rootKey, `${rootKey}-Elements`]))
+                  setExpandedResultTypes(new Set())
+                  return
+                }
+
+                setExpandedCategoryTypes(new Set([rootKey]))
+                setExpandedResultTypes(new Set())
+              }}
+            />
           </TreeSection>
         )}
 
@@ -230,14 +393,23 @@ export function ResultsTreeBrowser({
             {pushoverResultSets.map((rs) => (
               <PushoverResultSetNode
                 key={rs.id}
+                projectSlug={projectSlug}
                 resultSet={rs}
+                currentSelection={currentSelection}
                 isExpanded={expandedResultSets.has(rs.id)}
                 onToggle={() => toggleResultSet(rs.id)}
-                onSelect={onSelect}
+                expandedCategories={expandedCategories}
+                expandedCategoryTypes={expandedCategoryTypes}
+                expandedResultTypes={expandedResultTypes}
+                onToggleCategory={toggleCategory}
+                onToggleCategoryType={toggleCategoryType}
+                onToggleResultType={toggleResultType}
+                onSelect={handleSelect}
               />
             ))}
           </TreeSection>
         )}
+
       </div>
     </div>
   )
@@ -978,20 +1150,54 @@ function NLTHAResultSetNode({
   )
 }
 
-// Pushover Result Set Node (simplified)
+// Pushover Result Set Node (enhanced with direction groups)
 interface PushoverResultSetNodeProps {
+  projectSlug: string
   resultSet: ResultSet
+  currentSelection: TreeSelection | null
   isExpanded: boolean
   onToggle: () => void
+  expandedCategories: Set<string>
+  expandedCategoryTypes: Set<string>
+  expandedResultTypes: Set<string>
+  onToggleCategory: (key: string) => void
+  onToggleCategoryType: (key: string) => void
+  onToggleResultType: (key: string) => void
   onSelect: (selection: TreeSelection) => void
 }
 
 function PushoverResultSetNode({
+  projectSlug,
   resultSet,
+  currentSelection,
   isExpanded,
   onToggle,
+  expandedCategories,
+  expandedCategoryTypes,
+  expandedResultTypes,
+  onToggleCategory,
+  onToggleCategoryType,
+  onToggleResultType,
   onSelect,
 }: PushoverResultSetNodeProps) {
+  const { data: casesData } = usePushoverCases(projectSlug, isExpanded ? resultSet.id : undefined)
+  const pushoverCases = casesData?.pushover_cases ?? []
+
+  // Group cases by direction
+  const directionGroups = useMemo(() => {
+    const groups = new Map<string, PushoverCase[]>()
+    for (const pc of pushoverCases) {
+      const dir = pc.direction || 'Unknown'
+      if (!groups.has(dir)) groups.set(dir, [])
+      groups.get(dir)!.push(pc)
+    }
+    return groups
+  }, [pushoverCases])
+
+  const curvesKey = `push-${resultSet.id}-curves`
+  const globalKey = `push-${resultSet.id}-global`
+  const PUSHOVER_GLOBAL_TYPES = ['Drifts', 'Forces', 'Displacements']
+
   return (
     <div className="tree-result-set">
       <button
@@ -1004,32 +1210,642 @@ function PushoverResultSetNode({
 
       {isExpanded && (
         <div className="tree-children ml-3">
-          <TreeLeafNode
-            label="Curves"
+          {/* Curves Section */}
+          <button
+            onClick={() => onToggleCategory(curvesKey)}
+            className="tree-item w-full text-left flex items-center gap-1 py-1 px-2 rounded hover:bg-bg-hover transition-colors"
+          >
+            <span className="text-text-muted text-[13px]">{ICONS.category}</span>
+            <span className="text-text-secondary">Curves</span>
+          </button>
+          {expandedCategories.has(curvesKey) && (
+            <div className="tree-children ml-3">
+              {Array.from(directionGroups.entries()).map(([dir, cases]) => {
+                const dirKey = `push-${resultSet.id}-curves-${dir}`
+                return (
+                  <div key={dir}>
+                    <button
+                      onClick={() => onToggleCategoryType(dirKey)}
+                      className="tree-item w-full text-left flex items-center gap-1 py-1 px-2 rounded hover:bg-bg-hover transition-colors"
+                    >
+                      <span className="text-text-muted text-[13px]">{ICONS.categoryType}</span>
+                      <span className="text-text-secondary">{dir} Direction</span>
+                    </button>
+                    {expandedCategoryTypes.has(dirKey) && (
+                      <div className="tree-children ml-3">
+                        {cases.map((pc) => (
+                          <TreeLeafNode
+                            key={pc.id}
+                            label={pc.name}
+                            icon={ICONS.resultType}
+                            isSelected={
+                              currentSelection?.type === 'pushover_curve' &&
+                              currentSelection?.resultSetId === resultSet.id &&
+                              currentSelection?.direction === String(pc.id)
+                            }
+                            onClick={() =>
+                              onSelect({
+                                type: 'pushover_curve',
+                                resultSetId: resultSet.id,
+                                category: 'Envelopes',
+                                resultType: 'PushoverCurve',
+                                direction: String(pc.id),
+                              })
+                            }
+                          />
+                        ))}
+                        <TreeLeafNode
+                          label={`All ${dir} Curves`}
+                          icon={ICONS.resultType}
+                          isSelected={
+                            currentSelection?.type === 'pushover_all_curves' &&
+                            currentSelection?.resultSetId === resultSet.id &&
+                            currentSelection?.direction === dir
+                          }
+                          onClick={() =>
+                            onSelect({
+                              type: 'pushover_all_curves',
+                              resultSetId: resultSet.id,
+                              category: 'Envelopes',
+                              resultType: 'PushoverCurve',
+                              direction: dir,
+                            })
+                          }
+                        />
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+              {pushoverCases.length === 0 && (
+                <div className="text-text-muted text-[13px] px-2 py-1">No curves imported</div>
+              )}
+            </div>
+          )}
+
+          {/* Global Results Section */}
+          <button
+            onClick={() => onToggleCategory(globalKey)}
+            className="tree-item w-full text-left flex items-center gap-1 py-1 px-2 rounded hover:bg-bg-hover transition-colors"
+          >
+            <span className="text-text-muted text-[13px]">{ICONS.category}</span>
+            <span className="text-text-secondary">Global Results</span>
+          </button>
+          {expandedCategories.has(globalKey) && (
+            <div className="tree-children ml-3">
+              {PUSHOVER_GLOBAL_TYPES.map((rt) => {
+                const rtKey = `push-${resultSet.id}-${rt}`
+                return (
+                  <div key={rt}>
+                    <button
+                      onClick={() => onToggleResultType(rtKey)}
+                      className="tree-item w-full text-left flex items-center gap-1 py-1 px-2 rounded hover:bg-bg-hover transition-colors"
+                    >
+                      <span className="text-text-muted text-[13px]">{ICONS.resultType}</span>
+                      <span className="text-text-secondary">{rt}</span>
+                    </button>
+                    {expandedResultTypes.has(rtKey) && (
+                      <div className="tree-children ml-3">
+                        {['X', 'Y'].map((dir) => (
+                          <TreeLeafNode
+                            key={dir}
+                            label={dir}
+                            icon={ICONS.resultType}
+                            isSelected={
+                              currentSelection?.type === 'pushover_global' &&
+                              currentSelection?.resultSetId === resultSet.id &&
+                              currentSelection?.resultType === rt &&
+                              currentSelection?.direction === dir
+                            }
+                            onClick={() =>
+                              onSelect({
+                                type: 'pushover_global',
+                                resultSetId: resultSet.id,
+                                category: 'Envelopes',
+                                resultType: rt,
+                                direction: dir,
+                              })
+                            }
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Comparisons Section
+const COMP_GLOBAL_TYPES = ['Drifts', 'Accelerations', 'Forces', 'Displacements']
+const COMP_ELEMENT_TYPE_MAP: Record<string, { group: string; label: string; directions: string[] }> = {
+  WallShears: { group: 'Walls', label: 'Shears', directions: ['V2', 'V3'] },
+  ColumnShears: { group: 'Columns', label: 'Shears', directions: ['V2', 'V3'] },
+  ColumnAxials: { group: 'Columns', label: 'Axials', directions: ['Min', 'Max'] },
+  ColumnRotations: { group: 'Columns', label: 'Rotations', directions: ['R2', 'R3'] },
+}
+// BeamRotations handled separately as aggregate overlay (not per-element)
+const COMP_BEAM_ROTATIONS = 'BeamRotations'
+const COMP_JOINT_TYPES = ['SoilPressures', 'VerticalDisplacements']
+const COMP_JOINT_LABELS: Record<string, string> = {
+  SoilPressures: 'Soil Pressures',
+  VerticalDisplacements: 'Vertical Displacements',
+}
+
+interface ComparisonsSectionNodeProps {
+  projectSlug: string
+  availableTypes: {
+    global_results: Array<{ type: string; directions: string[] | null }>
+    element_results: Array<{ type: string; directions: string[] | null }>
+    joint_results: Array<{ type: string; directions?: string[] | null }>
+  } | undefined
+  currentSelection: TreeSelection | null
+  isExpanded: boolean
+  onToggleSection: () => void
+  expandedCategoryTypes: Set<string>
+  expandedResultTypes: Set<string>
+  onToggleCategoryType: (key: string) => void
+  onToggleResultType: (key: string) => void
+  onSelect: (selection: TreeSelection) => void
+  onToggleComparisonSet: (csKey: string, defaultSelection: TreeSelection | null) => void
+}
+
+function ComparisonsSectionNode({
+  projectSlug,
+  availableTypes,
+  currentSelection,
+  isExpanded,
+  onToggleSection,
+  expandedCategoryTypes,
+  expandedResultTypes,
+  onToggleCategoryType,
+  onToggleResultType,
+  onSelect,
+  onToggleComparisonSet,
+}: ComparisonsSectionNodeProps) {
+  const { data: comparisonSets } = useComparisonSets(projectSlug)
+  const deleteMutation = useDeleteComparisonSet(projectSlug)
+
+  if (!comparisonSets?.length) return null
+
+  return (
+    <TreeSection
+      label="Comparisons"
+      icon={ICONS.section}
+      isExpanded={isExpanded}
+      onToggle={onToggleSection}
+    >
+      {comparisonSets.map((cs) => (
+        <ComparisonSetNode
+          key={cs.id}
+          comparisonSet={cs}
+          projectSlug={projectSlug}
+          availableTypes={availableTypes}
+          currentSelection={currentSelection}
+          expandedCategoryTypes={expandedCategoryTypes}
+          expandedResultTypes={expandedResultTypes}
+          onToggleCategoryType={onToggleCategoryType}
+          onToggleResultType={onToggleResultType}
+          onSelect={onSelect}
+          onDelete={() => deleteMutation.mutate(cs.id)}
+          onToggleComparisonSet={onToggleComparisonSet}
+        />
+      ))}
+    </TreeSection>
+  )
+}
+
+interface ComparisonSetNodeProps {
+  comparisonSet: ComparisonSet
+  projectSlug: string
+  availableTypes: ComparisonsSectionNodeProps['availableTypes']
+  currentSelection: TreeSelection | null
+  expandedCategoryTypes: Set<string>
+  expandedResultTypes: Set<string>
+  onToggleCategoryType: (key: string) => void
+  onToggleComparisonSet: (csKey: string, defaultSelection: TreeSelection | null) => void
+  onToggleResultType: (key: string) => void
+  onSelect: (selection: TreeSelection) => void
+  onDelete: () => void
+}
+
+function ComparisonSetNode({
+  comparisonSet: cs,
+  projectSlug,
+  availableTypes,
+  currentSelection,
+  expandedCategoryTypes,
+  expandedResultTypes,
+  onToggleCategoryType,
+  onToggleComparisonSet,
+  onToggleResultType,
+  onSelect,
+  onDelete,
+}: ComparisonSetNodeProps) {
+  const csKey = `comp-${cs.id}`
+  const isExpanded = expandedCategoryTypes.has(csKey)
+
+  const globalTypes = cs.result_types.filter((t) => COMP_GLOBAL_TYPES.includes(t))
+  const elementTypes = cs.result_types.filter((t) => t in COMP_ELEMENT_TYPE_MAP)
+  const jointTypes = cs.result_types.filter((t) => COMP_JOINT_TYPES.includes(t))
+  const hasBeamRotations = cs.result_types.includes(COMP_BEAM_ROTATIONS)
+
+  const hasGlobal = globalTypes.length > 0
+  const hasElements = elementTypes.length > 0 || hasBeamRotations
+  const hasJoints = jointTypes.length > 0
+
+  // Build element groups
+  const elementGroups = useMemo(() => {
+    const groups: Record<string, Array<{ type: string; label: string; directions: string[] }>> = {}
+    for (const t of elementTypes) {
+      const info = COMP_ELEMENT_TYPE_MAP[t]
+      if (!info) continue
+      if (!groups[info.group]) groups[info.group] = []
+      groups[info.group].push({ type: t, label: info.label, directions: info.directions })
+    }
+    return groups
+  }, [elementTypes])
+
+  const makeSelection = (
+    type: TreeSelection['type'],
+    resultType: string,
+    direction: string,
+    elementId?: number,
+    elementType?: string,
+  ): TreeSelection => ({
+    type,
+    resultSetId: -1,
+    category: 'Envelopes',
+    resultType,
+    direction,
+    comparisonSetId: cs.id,
+    comparisonSetName: cs.name,
+    resultSetIds: cs.result_set_ids,
+    elementId,
+    elementType,
+  })
+
+  const isCompSelected = (type: string, resultType: string, direction: string, elementId?: number) =>
+    currentSelection?.comparisonSetId === cs.id &&
+    currentSelection?.type === type &&
+    currentSelection?.resultType === resultType &&
+    currentSelection?.direction === direction &&
+    (elementId === undefined || currentSelection?.elementId === elementId)
+
+  const getDefaultSelection = (): TreeSelection | null => {
+    const firstGlobalType = globalTypes[0]
+    if (firstGlobalType) {
+      const dirs = availableTypes?.global_results.find((r) => r.type === firstGlobalType)?.directions || ['X', 'Y']
+      return makeSelection('comparison_global', firstGlobalType, dirs[0] || 'X')
+    }
+
+    if (hasBeamRotations) {
+      return {
+        type: 'comparison_beam_rotations',
+        resultSetId: -1,
+        category: 'Envelopes',
+        resultType: 'BeamRotations',
+        direction: '',
+        comparisonSetId: cs.id,
+        comparisonSetName: cs.name,
+        resultSetIds: cs.result_set_ids,
+      }
+    }
+
+    if (jointTypes.length > 0) {
+      return makeSelection('comparison_joint', jointTypes[0], '')
+    }
+
+    return null
+  }
+
+  return (
+    <div className="tree-comparison-set">
+      <div className="flex items-center group">
+        <button
+          onClick={() => onToggleComparisonSet(csKey, getDefaultSelection())}
+          className="tree-item flex-1 text-left flex items-center gap-1 py-1 px-2 rounded hover:bg-bg-hover transition-colors"
+        >
+          <span className="text-accent-primary text-[13px]">{ICONS.category}</span>
+          <span className="text-text-secondary font-medium">{cs.name}</span>
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete() }}
+          className="text-text-muted hover:text-red-400 text-xs px-1 opacity-0 group-hover:opacity-100 transition-opacity"
+          title="Delete comparison set"
+        >
+          &times;
+        </button>
+      </div>
+
+      {isExpanded && (
+        <div className="tree-children ml-3">
+          {/* Global */}
+          {hasGlobal && (
+            <TreeCategoryTypeNode
+              label="Global"
+              icon={ICONS.categoryType}
+              isExpanded={expandedCategoryTypes.has(`${csKey}-Global`)}
+              onToggle={() => onToggleCategoryType(`${csKey}-Global`)}
+            >
+              {globalTypes.map((rt) => {
+                const dirs = availableTypes?.global_results.find((r) => r.type === rt)?.directions || ['X', 'Y']
+                const rtKey = `${csKey}-${rt}`
+                return (
+                  <ComparisonResultTypeNode
+                    key={rt}
+                    label={rt}
+                    directions={dirs}
+                    isExpanded={expandedResultTypes.has(rtKey)}
+                    onToggle={() => onToggleResultType(rtKey)}
+                    onSelectDirection={(dir) => onSelect(makeSelection('comparison_global', rt, dir))}
+                    isSelected={(dir) => isCompSelected('comparison_global', rt, dir)}
+                  />
+                )
+              })}
+            </TreeCategoryTypeNode>
+          )}
+
+          {/* Elements */}
+          {hasElements && (
+            <TreeCategoryTypeNode
+              label="Elements"
+              icon={ICONS.categoryType}
+              isExpanded={expandedCategoryTypes.has(`${csKey}-Elements`)}
+              onToggle={() => onToggleCategoryType(`${csKey}-Elements`)}
+            >
+              {Object.entries(elementGroups).map(([groupName, types]) => (
+                <ComparisonElementGroupNode
+                  key={groupName}
+                  groupName={groupName}
+                  types={types}
+                  csKey={csKey}
+                  projectSlug={projectSlug}
+                  resultSetIds={cs.result_set_ids}
+                  csId={cs.id}
+                  csName={cs.name}
+                  currentSelection={currentSelection}
+                  expandedCategoryTypes={expandedCategoryTypes}
+                  expandedResultTypes={expandedResultTypes}
+                  onToggleCategoryType={onToggleCategoryType}
+                  onToggleResultType={onToggleResultType}
+                  onSelect={onSelect}
+                />
+              ))}
+              {hasBeamRotations && (
+                <TreeLeafNode
+                  label="Beams — All Rotations"
+                  icon={ICONS.resultType}
+                  onClick={() =>
+                    onSelect({
+                      type: 'comparison_beam_rotations',
+                      resultSetId: -1,
+                      category: 'Envelopes',
+                      resultType: 'BeamRotations',
+                      direction: '',
+                      comparisonSetId: cs.id,
+                      comparisonSetName: cs.name,
+                      resultSetIds: cs.result_set_ids,
+                    })
+                  }
+                  isSelected={
+                    currentSelection?.comparisonSetId === cs.id &&
+                    currentSelection?.type === 'comparison_beam_rotations'
+                  }
+                />
+              )}
+            </TreeCategoryTypeNode>
+          )}
+
+          {/* Joints */}
+          {hasJoints && (
+            <TreeCategoryTypeNode
+              label="Joints"
+              icon={ICONS.categoryType}
+              isExpanded={expandedCategoryTypes.has(`${csKey}-Joints`)}
+              onToggle={() => onToggleCategoryType(`${csKey}-Joints`)}
+            >
+              {jointTypes.map((jt) => (
+                <TreeLeafNode
+                  key={jt}
+                  label={COMP_JOINT_LABELS[jt] || jt}
+                  icon={ICONS.resultType}
+                  onClick={() => onSelect(makeSelection('comparison_joint', jt, ''))}
+                  isSelected={isCompSelected('comparison_joint', jt, '')}
+                />
+              ))}
+            </TreeCategoryTypeNode>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Element group node within a comparison set tree
+interface ComparisonElementGroupNodeProps {
+  groupName: string
+  types: Array<{ type: string; label: string; directions: string[] }>
+  csKey: string
+  projectSlug: string
+  resultSetIds: number[]
+  csId: number
+  csName: string
+  currentSelection: TreeSelection | null
+  expandedCategoryTypes: Set<string>
+  expandedResultTypes: Set<string>
+  onToggleCategoryType: (key: string) => void
+  onToggleResultType: (key: string) => void
+  onSelect: (selection: TreeSelection) => void
+}
+
+function ComparisonElementGroupNode({
+  groupName,
+  types,
+  csKey,
+  projectSlug,
+  resultSetIds,
+  csId,
+  csName,
+  currentSelection,
+  expandedCategoryTypes,
+  expandedResultTypes,
+  onToggleCategoryType,
+  onToggleResultType,
+  onSelect,
+}: ComparisonElementGroupNodeProps) {
+  const groupKey = `${csKey}-Elements-${groupName}`
+
+  // Fetch elements using first result set
+  const firstRsId = resultSetIds[0]
+  const firstType = types[0]?.type
+  const { data: elementsData } = useElementsForType(
+    projectSlug,
+    firstRsId && firstType ? { result_set_id: firstRsId, result_type: firstType } : null
+  )
+  const elements = useMemo(
+    () => [...(elementsData?.elements || [])].sort((a, b) => naturalCompare(a.name, b.name)),
+    [elementsData]
+  )
+
+  return (
+    <TreeCategoryTypeNode
+      label={groupName}
+      icon={ICONS.resultType}
+      isExpanded={expandedCategoryTypes.has(groupKey)}
+      onToggle={() => onToggleCategoryType(groupKey)}
+    >
+      {types.map((typeInfo) => {
+        const typeKey = `${groupKey}-${typeInfo.type}`
+
+        // Types with no directions (e.g. BeamRotations) — per-element leaves directly
+        if (typeInfo.directions.length === 0) {
+          return (
+            <TreeCategoryTypeNode
+              key={typeInfo.type}
+              label={typeInfo.label}
+              icon={ICONS.resultType}
+              isExpanded={expandedCategoryTypes.has(typeKey)}
+              onToggle={() => onToggleCategoryType(typeKey)}
+            >
+              {elements.map((element, idx) => {
+                const isLast = idx === elements.length - 1
+                return (
+                  <TreeLeafNode
+                    key={element.id}
+                    label={`${isLast ? ICONS.branchLast : ICONS.branch} ${element.name}`}
+                    onClick={() =>
+                      onSelect({
+                        type: 'comparison_element',
+                        resultSetId: -1,
+                        category: 'Envelopes',
+                        resultType: typeInfo.type,
+                        direction: '',
+                        elementId: element.id,
+                        elementType: groupName.slice(0, -1),
+                        comparisonSetId: csId,
+                        comparisonSetName: csName,
+                        resultSetIds,
+                      })
+                    }
+                    isSelected={
+                      currentSelection?.comparisonSetId === csId &&
+                      currentSelection?.type === 'comparison_element' &&
+                      currentSelection?.resultType === typeInfo.type &&
+                      currentSelection?.elementId === element.id
+                    }
+                  />
+                )
+              })}
+            </TreeCategoryTypeNode>
+          )
+        }
+
+        // Types with directions - show per-element with direction leaves
+        return (
+          <TreeCategoryTypeNode
+            key={typeInfo.type}
+            label={typeInfo.label}
             icon={ICONS.resultType}
-            onClick={() =>
-              onSelect({
-                type: 'pushover_curve',
-                resultSetId: resultSet.id,
-                category: 'Envelopes',
-                resultType: 'PushoverCurve',
-                direction: 'X',
-              })
-            }
-          />
-          <TreeLeafNode
-            label="Global Results"
-            icon={ICONS.resultType}
-            onClick={() =>
-              onSelect({
-                type: 'pushover_global',
-                resultSetId: resultSet.id,
-                category: 'Envelopes',
-                resultType: 'Drifts',
-                direction: 'X',
-              })
-            }
-          />
+            isExpanded={expandedCategoryTypes.has(typeKey)}
+            onToggle={() => onToggleCategoryType(typeKey)}
+          >
+            {elements.map((element, idx) => {
+              const elKey = `${typeKey}-${element.id}`
+              const isLast = idx === elements.length - 1
+              return (
+                <TreeCategoryTypeNode
+                  key={element.id}
+                  label={`${isLast ? ICONS.branchLast : ICONS.branch} ${element.name}`}
+                  icon={ICONS.resultType}
+                  isExpanded={expandedResultTypes.has(elKey)}
+                  onToggle={() => onToggleResultType(elKey)}
+                >
+                  {typeInfo.directions.map((dir, dirIdx) => (
+                    <TreeLeafNode
+                      key={dir}
+                      label={`${dirIdx < typeInfo.directions.length - 1 ? ICONS.branch : ICONS.branchLast} ${dir}`}
+                      onClick={() =>
+                        onSelect({
+                          type: 'comparison_element',
+                          resultSetId: -1,
+                          category: 'Envelopes',
+                          resultType: typeInfo.type,
+                          direction: dir,
+                          elementId: element.id,
+                          elementType: groupName.slice(0, -1),
+                          comparisonSetId: csId,
+                          comparisonSetName: csName,
+                          resultSetIds,
+                        })
+                      }
+                      isSelected={
+                        currentSelection?.comparisonSetId === csId &&
+                        currentSelection?.type === 'comparison_element' &&
+                        currentSelection?.resultType === typeInfo.type &&
+                        currentSelection?.direction === dir &&
+                        currentSelection?.elementId === element.id
+                      }
+                    />
+                  ))}
+                </TreeCategoryTypeNode>
+              )
+            })}
+          </TreeCategoryTypeNode>
+        )
+      })}
+    </TreeCategoryTypeNode>
+  )
+}
+
+// Comparison result type node with direction leaves (no MaxMin)
+interface ComparisonResultTypeNodeProps {
+  label: string
+  directions: string[]
+  isExpanded: boolean
+  onToggle: () => void
+  onSelectDirection: (direction: string) => void
+  isSelected: (direction: string) => boolean
+}
+
+function ComparisonResultTypeNode({
+  label,
+  directions,
+  isExpanded,
+  onToggle,
+  onSelectDirection,
+  isSelected,
+}: ComparisonResultTypeNodeProps) {
+  return (
+    <div className="tree-result-type">
+      <button
+        onClick={onToggle}
+        className="tree-item w-full text-left flex items-center gap-1 py-1 px-2 rounded hover:bg-bg-hover transition-colors"
+      >
+        <span className="text-text-muted text-[13px]">{ICONS.resultType}</span>
+        <span className="text-text-secondary text-[15px]">{label}</span>
+      </button>
+      {isExpanded && (
+        <div className="tree-children ml-4">
+          {directions.map((dir, idx) => (
+            <button
+              key={dir}
+              onClick={() => onSelectDirection(dir)}
+              className={clsx(
+                'tree-item tree-leaf w-full text-left py-1 px-2 rounded text-[15px] transition-colors',
+                isSelected(dir)
+                  ? 'bg-accent-primary/15 text-accent-secondary'
+                  : 'text-text-muted hover:bg-bg-hover hover:text-text-secondary'
+              )}
+            >
+              {idx < directions.length - 1 ? ICONS.branch : ICONS.branchLast} {dir} Direction
+            </button>
+          ))}
         </div>
       )}
     </div>

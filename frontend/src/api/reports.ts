@@ -7,6 +7,7 @@ import { apiClient } from './client'
 export interface ReportSection {
   result_type: string
   direction: string
+  category?: string
   include_table?: boolean
   include_chart?: boolean
 }
@@ -54,6 +55,54 @@ export async function generateReport(
   request: GenerateReportRequest
 ): Promise<Blob> {
   return apiClient.postBlob(`/projects/${projectSlug}/reports/generate/`, request)
+}
+
+// --- Section data types for live preview ---
+
+export interface SectionTableRow {
+  label_columns: string[]
+  values: string[]
+}
+
+export interface SectionTableData {
+  label_headers: string[]
+  columns: string[]
+  rows: SectionTableRow[]
+}
+
+export interface SectionData {
+  title: string
+  result_type: string
+  direction: string | null
+  category: string
+  unit: string
+  table: SectionTableData | null
+  chart_svg: string | null
+}
+
+export interface SectionDataResponse {
+  project_name: string
+  result_set_name: string
+  sections: SectionData[]
+}
+
+export interface SectionDataRequest {
+  result_set_id: number
+  sections: ReportSection[]
+  project_name?: string
+}
+
+/**
+ * Fetch structured section data for live A4 preview
+ */
+export async function getReportSectionData(
+  projectSlug: string,
+  request: SectionDataRequest
+): Promise<SectionDataResponse> {
+  return apiClient.post<SectionDataResponse>(
+    `/projects/${projectSlug}/reports/sections/`,
+    request
+  )
 }
 
 /**

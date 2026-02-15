@@ -17,7 +17,10 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "rps.settings.development")
 django_asgi_app = get_asgi_application()
 
 # Import websocket routing after Django setup
-from apps.importer.routing import websocket_urlpatterns  # noqa: E402
+from apps.importer.routing import websocket_urlpatterns as importer_websocket_patterns  # noqa: E402
+from apps.exporter.routing import websocket_urlpatterns as exporter_websocket_patterns  # noqa: E402
+
+websocket_urlpatterns = [*importer_websocket_patterns, *exporter_websocket_patterns]
 
 application = ProtocolTypeRouter(
     {

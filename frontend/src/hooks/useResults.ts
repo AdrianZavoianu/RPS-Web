@@ -2,7 +2,7 @@
  * React Query hooks for results data
  */
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as resultsApi from '../api/results'
 import type {
   GlobalResultsParams,
@@ -131,6 +131,37 @@ export function useComparisonData(
   })
 }
 
+// --- Comparison Sets ---
+
+export function useComparisonSets(projectSlug: string) {
+  return useQuery({
+    queryKey: ['comparisonSets', projectSlug],
+    queryFn: () => resultsApi.getComparisonSets(projectSlug),
+    enabled: !!projectSlug,
+  })
+}
+
+export function useCreateComparisonSet(projectSlug: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (data: Parameters<typeof resultsApi.createComparisonSet>[1]) =>
+      resultsApi.createComparisonSet(projectSlug, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['comparisonSets', projectSlug] })
+    },
+  })
+}
+
+export function useDeleteComparisonSet(projectSlug: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => resultsApi.deleteComparisonSet(projectSlug, id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['comparisonSets', projectSlug] })
+    },
+  })
+}
+
 // --- Chart Data ---
 
 export function useChartData(
@@ -197,7 +228,51 @@ export function usePushoverCurve(projectSlug: string, caseId: number | null) {
   })
 }
 
+export function useAllPushoverCurves(
+  projectSlug: string,
+  resultSetId: number | undefined,
+  direction: string | null
+) {
+  const { data: casesData } = usePushoverCases(projectSlug, resultSetId)
+  const filteredCases = (casesData?.pushover_cases ?? []).filter(
+    (pc) => pc.direction === direction
+  )
+
+  const curveQueries = useQueries({
+    queries: filteredCases.map((pc) => ({
+      queryKey: ['pushoverCurve', projectSlug, pc.id],
+      queryFn: () => resultsApi.getPushoverCurve(projectSlug, pc.id),
+      enabled: !!projectSlug && !!direction,
+    })),
+  })
+
+  const isLoading = curveQueries.some((q) => q.isLoading)
+  const curves = curveQueries
+    .map((q, idx) => {
+      if (!q.data) return null
+      return {
+        name: filteredCases[idx].name,
+        points: q.data.points,
+      }
+    })
+    .filter((c): c is NonNullable<typeof c> => c !== null)
+
+  return { curves, isLoading }
+}
+
 // --- Time-Series ---
+
+export function useTimeSeriesAllTypes(
+  projectSlug: string,
+  params: resultsApi.TimeSeriesAllTypesParams | null
+) {
+  return useQuery({
+    queryKey: ['timeSeriesAllTypes', projectSlug, params],
+    queryFn: () => resultsApi.getTimeSeriesAllTypes(projectSlug, params!),
+    enabled: !!projectSlug && !!params,
+    staleTime: 10 * 60 * 1000,
+  })
+}
 
 export function useTimeSeriesLoadCases(projectSlug: string, resultSetId?: number) {
   return useQuery({

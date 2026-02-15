@@ -8,6 +8,8 @@ import type {
   ResultDataset,
   MaxMinDataset,
   ComparisonDataset,
+  ComparisonSet,
+  ComparisonSetCreate,
   ChartData,
   BeamRotationsPlotData,
   BeamRotationsTableData,
@@ -194,6 +196,23 @@ export async function getComparisonData(
   )
 }
 
+// --- Comparison Sets CRUD ---
+
+export async function getComparisonSets(projectSlug: string): Promise<ComparisonSet[]> {
+  return apiClient.get<ComparisonSet[]>(`/projects/${projectSlug}/comparison-sets/`)
+}
+
+export async function createComparisonSet(
+  projectSlug: string,
+  data: ComparisonSetCreate
+): Promise<ComparisonSet> {
+  return apiClient.post<ComparisonSet>(`/projects/${projectSlug}/comparison-sets/`, data)
+}
+
+export async function deleteComparisonSet(projectSlug: string, id: number): Promise<void> {
+  return apiClient.delete(`/projects/${projectSlug}/comparison-sets/${id}/`)
+}
+
 // --- Chart Data ---
 
 export interface ChartDataParams {
@@ -293,7 +312,27 @@ export async function getPushoverCurve(
 
 // --- Time-Series ---
 
-import type { TimeSeriesData } from '../types'
+import type { TimeSeriesData, TimeSeriesAllTypesData } from '../types'
+
+export interface TimeSeriesAllTypesParams {
+  result_set_id: number
+  load_case: string
+  direction: string
+}
+
+export async function getTimeSeriesAllTypes(
+  projectSlug: string,
+  params: TimeSeriesAllTypesParams
+): Promise<TimeSeriesAllTypesData> {
+  const searchParams = new URLSearchParams({
+    result_set_id: params.result_set_id.toString(),
+    load_case: params.load_case,
+    direction: params.direction,
+  })
+  return apiClient.get<TimeSeriesAllTypesData>(
+    `/projects/${projectSlug}/results/time-series/all-types/?${searchParams.toString()}`
+  )
+}
 
 export interface TimeSeriesParams {
   result_set_id: number

@@ -3,7 +3,7 @@
  * Allows users to export results in various formats
  */
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import clsx from 'clsx'
 import { useResultSets, useAvailableResultTypes } from '../../hooks/useResults'
 import { useStartExport, useExportJob, useCancelExport } from '../../hooks/useExports'
@@ -20,7 +20,9 @@ type ExportStep = 'configure' | 'exporting' | 'complete'
 export function ExportDialog({ projectSlug, onClose }: ExportDialogProps) {
   const [step, setStep] = useState<ExportStep>('configure')
   const [selectedResultSetId, setSelectedResultSetId] = useState<number | null>(null)
-  const [selectedResultTypes, setSelectedResultTypes] = useState<string[]>([])
+  const [selectedGlobalTypes, setSelectedGlobalTypes] = useState<string[]>([])
+  const [selectedElementTypes, setSelectedElementTypes] = useState<string[]>([])
+  const [selectedJointTypes, setSelectedJointTypes] = useState<string[]>([])
   const [selectedDirections, setSelectedDirections] = useState<string[]>(['X', 'Y'])
   const [format, setFormat] = useState<'excel' | 'csv'>('excel')
   const [includeSummary, setIncludeSummary] = useState(true)
@@ -40,27 +42,33 @@ export function ExportDialog({ projectSlug, onClose }: ExportDialogProps) {
     }
   }, [resultSets, selectedResultSetId])
 
-  // Auto-select all result types
+  // Auto-select all available types on load
   useEffect(() => {
-    if (availableTypes?.global_results.length && selectedResultTypes.length === 0) {
-      setSelectedResultTypes(availableTypes.global_results.map((rt) => rt.type))
-    }
-  }, [availableTypes, selectedResultTypes])
+    if (!availableTypes) return
+    const noSelections =
+      selectedGlobalTypes.length === 0 &&
+      selectedElementTypes.length === 0 &&
+      selectedJointTypes.length === 0
+    if (!noSelections) return
+
+    setSelectedGlobalTypes(availableTypes.global_results.map((rt) => rt.type))
+    setSelectedElementTypes(availableTypes.element_results.map((rt) => rt.type))
+    setSelectedJointTypes(availableTypes.joint_results.map((rt) => rt.type))
+  }, [availableTypes, selectedGlobalTypes, selectedElementTypes, selectedJointTypes])
 
   // Check export job status
   useEffect(() => {
-    if (exportJob?.status === 'completed') {
-      setStep('complete')
-    } else if (exportJob?.status === 'failed') {
+    if (exportJob?.status === 'completed' || exportJob?.status === 'failed') {
       setStep('complete')
     }
   }, [exportJob])
 
-  const toggleResultType = (type: string) => {
-    setSelectedResultTypes((prev) =>
-      prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
-    )
-  }
+  const toggleType = useCallback(
+    (type: string, list: string[], setter: (v: string[]) => void) => {
+      setter(list.includes(type) ? list.filter((t) => t !== type) : [...list, type])
+    },
+    []
+  )
 
   const toggleDirection = (dir: string) => {
     setSelectedDirections((prev) =>
@@ -68,15 +76,22 @@ export function ExportDialog({ projectSlug, onClose }: ExportDialogProps) {
     )
   }
 
+  const hasAnySelection =
+    selectedGlobalTypes.length > 0 ||
+    selectedElementTypes.length > 0 ||
+    selectedJointTypes.length > 0
+
   const handleStartExport = async () => {
-    if (!selectedResultSetId || selectedResultTypes.length === 0) return
+    if (!selectedResultSetId || !hasAnySelection) return
 
     setExportError(null)
     setStep('exporting')
     try {
       const job = await startExport.mutateAsync({
         result_set_id: selectedResultSetId,
-        result_types: selectedResultTypes,
+        result_types: selectedGlobalTypes,
+        element_types: selectedElementTypes,
+        joint_types: selectedJointTypes,
         directions: selectedDirections,
         format,
         include_summary: includeSummary,
@@ -158,7 +173,7 @@ export function ExportDialog({ projectSlug, onClose }: ExportDialogProps) {
         {/* Body */}
         <div className="dialog-body flex-1 overflow-auto p-6">
           {step === 'configure' && (
-            <div className="space-y-6">
+            <div className="space-y-5">
               {exportError && (
                 <div className="rounded border border-error/40 bg-error/10 px-3 py-2 text-sm text-error">
                   {exportError}
@@ -183,50 +198,84 @@ export function ExportDialog({ projectSlug, onClose }: ExportDialogProps) {
                 </select>
               </div>
 
-              {/* Result Types */}
-              <div>
-                <label className="block text-sm font-medium text-text-secondary mb-2">
+              {/* Result Types — Categorized */}
+              <div className="space-y-4">
+                <label className="block text-sm font-medium text-text-secondary">
                   Result Types
                 </label>
-                <div className="space-y-2">
-                  {availableTypes?.global_results.map((rt) => (
-                    <label
-                      key={rt.type}
-                      className="flex items-center gap-2 cursor-pointer"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedResultTypes.includes(rt.type)}
-                        onChange={() => toggleResultType(rt.type)}
-                        className="w-4 h-4 rounded border-border-default bg-bg-primary checked:bg-accent-primary"
-                      />
-                      <span className="text-sm text-text-primary">{rt.type}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
 
-              {/* Directions */}
-              <div>
-                <label className="block text-sm font-medium text-text-secondary mb-2">
-                  Directions
-                </label>
-                <div className="flex gap-2">
-                  {['X', 'Y'].map((dir) => (
-                    <label
-                      key={dir}
-                      className="flex items-center gap-2 cursor-pointer"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedDirections.includes(dir)}
-                        onChange={() => toggleDirection(dir)}
-                        className="w-4 h-4 rounded border-border-default bg-bg-primary checked:bg-accent-primary"
-                      />
-                      <span className="text-sm text-text-primary">{dir}</span>
-                    </label>
-                  ))}
-                </div>
+                {/* Global Results */}
+                {availableTypes && availableTypes.global_results.length > 0 && (
+                  <CategorySection
+                    label="Global Results"
+                    types={availableTypes.global_results.map((rt) => rt.type)}
+                    selected={selectedGlobalTypes}
+                    onToggle={(t) =>
+                      toggleType(t, selectedGlobalTypes, setSelectedGlobalTypes)
+                    }
+                    onSelectAll={() =>
+                      setSelectedGlobalTypes(
+                        availableTypes.global_results.map((rt) => rt.type)
+                      )
+                    }
+                    onSelectNone={() => setSelectedGlobalTypes([])}
+                  >
+                    {/* Directions inline for global */}
+                    <div className="flex items-center gap-3 mt-2 ml-6">
+                      <span className="text-xs text-text-muted">Directions:</span>
+                      {['X', 'Y'].map((dir) => (
+                        <label
+                          key={dir}
+                          className="flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedDirections.includes(dir)}
+                            onChange={() => toggleDirection(dir)}
+                            className="w-3.5 h-3.5 rounded border-border-default bg-bg-primary checked:bg-accent-primary"
+                          />
+                          <span className="text-xs text-text-primary">{dir}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </CategorySection>
+                )}
+
+                {/* Element Results */}
+                {availableTypes && availableTypes.element_results.length > 0 && (
+                  <CategorySection
+                    label="Element Results"
+                    types={availableTypes.element_results.map((rt) => rt.type)}
+                    selected={selectedElementTypes}
+                    onToggle={(t) =>
+                      toggleType(t, selectedElementTypes, setSelectedElementTypes)
+                    }
+                    onSelectAll={() =>
+                      setSelectedElementTypes(
+                        availableTypes.element_results.map((rt) => rt.type)
+                      )
+                    }
+                    onSelectNone={() => setSelectedElementTypes([])}
+                  />
+                )}
+
+                {/* Joint Results */}
+                {availableTypes && availableTypes.joint_results.length > 0 && (
+                  <CategorySection
+                    label="Joint Results"
+                    types={availableTypes.joint_results.map((rt) => rt.type)}
+                    selected={selectedJointTypes}
+                    onToggle={(t) =>
+                      toggleType(t, selectedJointTypes, setSelectedJointTypes)
+                    }
+                    onSelectAll={() =>
+                      setSelectedJointTypes(
+                        availableTypes.joint_results.map((rt) => rt.type)
+                      )
+                    }
+                    onSelectNone={() => setSelectedJointTypes([])}
+                  />
+                )}
               </div>
 
               {/* Format */}
@@ -335,10 +384,10 @@ export function ExportDialog({ projectSlug, onClose }: ExportDialogProps) {
               </button>
               <button
                 onClick={handleStartExport}
-                disabled={!selectedResultSetId || selectedResultTypes.length === 0}
+                disabled={!selectedResultSetId || !hasAnySelection}
                 className={clsx(
                   'btn-primary px-4 py-2 rounded',
-                  (!selectedResultSetId || selectedResultTypes.length === 0) &&
+                  (!selectedResultSetId || !hasAnySelection) &&
                     'opacity-50 cursor-not-allowed'
                 )}
               >
@@ -365,6 +414,62 @@ export function ExportDialog({ projectSlug, onClose }: ExportDialogProps) {
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+/* ---------- Category Section ---------- */
+
+interface CategorySectionProps {
+  label: string
+  types: string[]
+  selected: string[]
+  onToggle: (type: string) => void
+  onSelectAll: () => void
+  onSelectNone: () => void
+  children?: React.ReactNode
+}
+
+function CategorySection({
+  label,
+  types,
+  selected,
+  onToggle,
+  onSelectAll,
+  onSelectNone,
+  children,
+}: CategorySectionProps) {
+  const allSelected = types.length > 0 && types.every((t) => selected.includes(t))
+  const noneSelected = types.every((t) => !selected.includes(t))
+
+  return (
+    <div className="rounded border border-border-default bg-bg-primary/50 p-3">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-semibold text-text-secondary uppercase tracking-wide">
+          {label}
+        </span>
+        <button
+          type="button"
+          onClick={allSelected ? onSelectNone : onSelectAll}
+          className="text-[11px] text-accent-primary hover:underline"
+        >
+          {allSelected ? 'None' : 'All'}
+        </button>
+      </div>
+      <div className="space-y-1.5">
+        {types.map((type) => (
+          <label key={type} className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={selected.includes(type)}
+              onChange={() => onToggle(type)}
+              className="w-3.5 h-3.5 rounded border-border-default bg-bg-primary checked:bg-accent-primary"
+            />
+            <span className="text-sm text-text-primary">{type}</span>
+          </label>
+        ))}
+      </div>
+      {!noneSelected && children}
     </div>
   )
 }

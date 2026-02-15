@@ -12,6 +12,7 @@ from apps.results.models import (
     StoryForce,
 )
 
+from .bulk_writes import bulk_create_strict
 from .global_aggregation import aggregate_by_step_type, parse_numeric, resolve_bounds
 
 
@@ -115,7 +116,17 @@ def import_story_drifts(
         )
 
     if objects_to_create:
-        StoryDrift.objects.bulk_create(objects_to_create, ignore_conflicts=True)
+        bulk_create_strict(
+            StoryDrift,
+            objects_to_create,
+            context="story drifts import",
+            key_builder=lambda row: (
+                row.story_id,
+                row.load_case_id,
+                row.result_category_id,
+                row.direction,
+            ),
+        )
 
 
 def import_story_accelerations(
@@ -172,7 +183,17 @@ def import_story_accelerations(
         )
 
     if objects_to_create:
-        StoryAcceleration.objects.bulk_create(objects_to_create, ignore_conflicts=True)
+        bulk_create_strict(
+            StoryAcceleration,
+            objects_to_create,
+            context="story accelerations import",
+            key_builder=lambda row: (
+                row.story_id,
+                row.load_case_id,
+                row.result_category_id,
+                row.direction,
+            ),
+        )
 
 
 def import_story_forces(
@@ -226,7 +247,18 @@ def import_story_forces(
         )
 
     if objects_to_create:
-        StoryForce.objects.bulk_create(objects_to_create, ignore_conflicts=True)
+        bulk_create_strict(
+            StoryForce,
+            objects_to_create,
+            context="story forces import",
+            key_builder=lambda row: (
+                row.story_id,
+                row.load_case_id,
+                row.result_category_id,
+                row.direction,
+                row.location,
+            ),
+        )
 
 
 def import_story_displacements(
@@ -278,4 +310,14 @@ def import_story_displacements(
         )
 
     if objects_to_create:
-        StoryDisplacement.objects.bulk_create(objects_to_create, ignore_conflicts=True)
+        bulk_create_strict(
+            StoryDisplacement,
+            objects_to_create,
+            context="story displacements import",
+            key_builder=lambda row: (
+                row.story_id,
+                row.load_case_id,
+                row.result_category_id,
+                row.direction,
+            ),
+        )

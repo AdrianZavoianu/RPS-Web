@@ -6,6 +6,36 @@ from apps.results.models import ResultSet
 
 from ..datasets import ComparisonDataset, ComparisonSeries
 
+JOINT_RESULT_TYPES = {
+    "SoilPressures",
+    "SoilPressures_Min",
+    "SoilPressures_Max",
+    "VerticalDisplacements",
+    "VerticalDisplacements_Min",
+    "VerticalDisplacements_Max",
+}
+
+
+def _fetch_dataset(service, rs_id, result_type, direction, element_id):
+    """Route to the correct provider based on result type."""
+    if element_id:
+        return service.get_element_results(
+            result_set_id=rs_id,
+            element_id=element_id,
+            result_type=result_type,
+            direction=direction,
+        )
+    if result_type in JOINT_RESULT_TYPES:
+        return service.get_joint_results(
+            result_set_id=rs_id,
+            result_type=result_type,
+        )
+    return service.get_global_results(
+        result_set_id=rs_id,
+        result_type=result_type,
+        direction=direction,
+    )
+
 
 def get_comparison_dataset(
     service,
@@ -29,19 +59,7 @@ def get_comparison_dataset(
     for rs_id in result_set_ids:
         rs_name = result_sets.get(rs_id, f"ResultSet {rs_id}")
 
-        if element_id:
-            dataset = service.get_element_results(
-                result_set_id=rs_id,
-                element_id=element_id,
-                result_type=result_type,
-                direction=direction,
-            )
-        else:
-            dataset = service.get_global_results(
-                result_set_id=rs_id,
-                result_type=result_type,
-                direction=direction,
-            )
+        dataset = _fetch_dataset(service, rs_id, result_type, direction, element_id)
 
         if not dataset or metric not in dataset.summary_columns:
             series_list.append(
@@ -56,9 +74,10 @@ def get_comparison_dataset(
             warnings.append(f"Missing data for {rs_name}")
             continue
 
+        row_key = dataset.story_column or "Story"
         values = {}
         for row in dataset.rows:
-            story = row.get("Story")
+            story = row.get(row_key)
             if story and metric in row:
                 values[story] = row[metric]
                 all_stories.add(story)

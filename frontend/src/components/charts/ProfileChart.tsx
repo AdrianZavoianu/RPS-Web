@@ -323,7 +323,7 @@ export function ProfileChart({
   )
 }
 
-// --- Pushover Curve Chart ---
+// --- Pushover Curve Charts ---
 
 interface PushoverCurveChartProps {
   points: { displacement: number; base_shear: number }[]
@@ -333,6 +333,7 @@ interface PushoverCurveChartProps {
 
 export function PushoverCurveChart({
   points,
+  caseName,
   height,
 }: PushoverCurveChartProps) {
   const displacements = points.map((p) => p.displacement)
@@ -343,38 +344,52 @@ export function PushoverCurveChart({
       data={[
         {
           type: 'scatter',
-          mode: 'lines',
+          mode: 'lines+markers',
+          name: caseName,
           x: displacements,
           y: shears,
           line: {
             color: '#4a7d89',
             width: 2,
           },
-          hovertemplate: 'D: %{x:.2f} mm<br>V: %{y:.0f} kN<extra></extra>',
+          marker: {
+            color: '#4a7d89',
+            size: 6,
+          },
+          hovertemplate: `${caseName}<br>D: %{x:.2f} mm<br>V: %{y:.0f} kN<extra></extra>`,
         },
       ]}
       layout={{
         xaxis: {
-          title: { text: 'mm', font: { size: 10 } },
-          gridcolor: '#2c313a',
+          title: { text: 'Displacement (mm)', font: { size: 14, color: '#d1d5db' }, standoff: 8 },
+          gridcolor: 'rgba(60, 65, 75, 0.3)',
+          gridwidth: 1,
           zerolinecolor: '#4a7d89',
           zerolinewidth: 1,
           rangemode: 'tozero',
           tickfont: { size: 10 },
+          linecolor: '#3a3f4a',
+          linewidth: 1,
+          mirror: true,
         },
         yaxis: {
-          title: { text: 'kN', font: { size: 10 } },
-          gridcolor: '#2c313a',
+          title: { text: 'Base Shear (kN)', font: { size: 14, color: '#d1d5db' }, standoff: 8 },
+          gridcolor: 'rgba(60, 65, 75, 0.3)',
+          gridwidth: 1,
           zerolinecolor: '#4a7d89',
           zerolinewidth: 1,
           rangemode: 'tozero',
           tickfont: { size: 10 },
+          linecolor: '#3a3f4a',
+          linewidth: 1,
+          mirror: true,
         },
         paper_bgcolor: '#0a0c10',
-        plot_bgcolor: '#0f1419',
+        plot_bgcolor: 'rgba(22, 27, 34, 0.5)',
         font: { color: '#d1d5db', size: 11 },
-        margin: { l: 50, r: 10, t: 10, b: 30 },
+        margin: { l: 65, r: 15, t: 2, b: 45 },
         showlegend: false,
+        hovermode: 'closest',
         autosize: true,
       }}
       config={{
@@ -384,5 +399,94 @@ export function PushoverCurveChart({
       style={{ width: '100%', height: height || '100%' }}
       useResizeHandler
     />
+  )
+}
+
+// --- Pushover Multi-Curve Overlay Chart ---
+
+const PUSHOVER_MULTI_COLORS = [
+  '#4a7d89', '#e07a5f', '#81b29a', '#f2cc8f', '#3d405b',
+  '#7209b7', '#f72585', '#4cc9f0', '#f4a261', '#2a9d8f',
+]
+
+export interface PushoverMultiCurveData {
+  name: string
+  points: { displacement: number; base_shear: number }[]
+}
+
+interface PushoverMultiCurveChartProps {
+  curves: PushoverMultiCurveData[]
+  height?: number
+}
+
+export function PushoverMultiCurveChart({
+  curves,
+}: PushoverMultiCurveChartProps) {
+  const traces: Plotly.Data[] = curves.map((curve, idx) => ({
+    type: 'scatter' as const,
+    mode: 'lines' as const,
+    name: curve.name,
+    x: curve.points.map((p) => p.displacement),
+    y: curve.points.map((p) => p.base_shear),
+    line: {
+      color: PUSHOVER_MULTI_COLORS[idx % PUSHOVER_MULTI_COLORS.length],
+      width: 2,
+    },
+    hovertemplate: `${curve.name}<br>D: %{x:.2f} mm<br>V: %{y:.0f} kN<extra></extra>`,
+  }))
+
+  const legendItems = curves.map((curve, idx) => ({
+    name: curve.name,
+    color: PUSHOVER_MULTI_COLORS[idx % PUSHOVER_MULTI_COLORS.length],
+  }))
+
+  return (
+    <div className="flex flex-col h-full w-full">
+      <div className="flex-1 min-h-0">
+        <LazyPlot
+          data={traces}
+          layout={{
+            xaxis: {
+              title: { text: 'Displacement (mm)', font: { size: 14, color: '#d1d5db' }, standoff: 8 },
+              gridcolor: 'rgba(60, 65, 75, 0.3)',
+              gridwidth: 1,
+              zerolinecolor: '#4a7d89',
+              zerolinewidth: 1,
+              rangemode: 'tozero',
+              tickfont: { size: 10 },
+              linecolor: '#3a3f4a',
+              linewidth: 1,
+              mirror: true,
+            },
+            yaxis: {
+              title: { text: 'Base Shear (kN)', font: { size: 14, color: '#d1d5db' }, standoff: 8 },
+              gridcolor: 'rgba(60, 65, 75, 0.3)',
+              gridwidth: 1,
+              zerolinecolor: '#4a7d89',
+              zerolinewidth: 1,
+              rangemode: 'tozero',
+              tickfont: { size: 10 },
+              linecolor: '#3a3f4a',
+              linewidth: 1,
+              mirror: true,
+            },
+            paper_bgcolor: '#0a0c10',
+            plot_bgcolor: 'rgba(22, 27, 34, 0.5)',
+            font: { color: '#d1d5db', size: 11 },
+            margin: { l: 65, r: 15, t: 2, b: 45 },
+            showlegend: false,
+            hovermode: 'closest',
+            autosize: true,
+          }}
+          config={{
+            displayModeBar: false,
+            responsive: true,
+          }}
+          style={{ width: '100%', height: '100%' }}
+          useResizeHandler
+        />
+      </div>
+      <ChartLegend items={legendItems} />
+    </div>
   )
 }

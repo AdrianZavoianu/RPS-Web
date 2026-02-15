@@ -85,6 +85,7 @@ class ImportPreparationService:
         """Prescan a provided list of Excel files."""
         result = PrescanResult(files_scanned=len(excel_files))
         foundation_seen: Set[str] = set()
+        result_types_lower = {rt.lower() for rt in result_types} if result_types else None
 
         def _scan_file(
             file_path: Path,
@@ -98,7 +99,7 @@ class ImportPreparationService:
 
             try:
                 for sheet_name, result_labels in self._target_sheets.items():
-                    if not self._should_import_any(result_labels, result_types):
+                    if not self._should_import_any(result_labels, result_types_lower):
                         continue
                     if (
                         sheet_name not in available_sheets
@@ -121,11 +122,11 @@ class ImportPreparationService:
                         sheets_errored.append(f"Fou: {str(exc)[:30]}")
 
                 if "Joint Displacements" in available_sheets:
-                    if result_types is None or "vertical displacements" in {
-                        rt.lower() for rt in result_types
-                    }:
+                    if result_types_lower is None or "vertical displacements" in result_types_lower:
                         try:
-                            load_cases = parser.get_load_cases_only("Joint Displacements") or []
+                            load_cases = load_cases_by_sheet.get("Joint Displacements")
+                            if load_cases is None:
+                                load_cases = parser.get_load_cases_only("Joint Displacements") or []
                             if load_cases:
                                 load_cases_by_sheet["Vertical Displacements"] = load_cases
                                 sheets_found.append(f"Vertical Displacements({len(load_cases)})")
@@ -200,10 +201,9 @@ class ImportPreparationService:
 
         return result
 
-    def _should_import_any(self, labels: Iterable[str], result_types: Optional[Set[str]]) -> bool:
-        if not result_types:
+    def _should_import_any(self, labels: Iterable[str], result_types_lower: Optional[Set[str]]) -> bool:
+        if not result_types_lower:
             return True
-        result_types_lower = {rt.lower() for rt in result_types}
         for label in labels:
             if label.strip().lower() in result_types_lower:
                 return True

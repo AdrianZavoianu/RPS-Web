@@ -79,8 +79,17 @@ export interface ResultCategory {
 export interface ComparisonSet {
   id: number
   name: string
-  base_result_set: number
-  compare_result_set: number
+  description: string
+  result_set_ids: number[]
+  result_types: string[]
+  created_at: string
+}
+
+export interface ComparisonSetCreate {
+  name: string
+  description?: string
+  result_set_ids: number[]
+  result_types: string[]
 }
 
 // --- Result Data Types (from API) ---
@@ -315,4 +324,12 @@ export interface TimeSeriesData {
   result_type: string
   direction: string
   load_case: string
+}
+
+export interface TimeSeriesAllTypesData {
+  stories: string[]
+  time_steps: number[]
+  types: Record<string, Record<string, number[]>>  // result_type -> story -> values
+  load_case: string
+  direction: string
 }

@@ -8,10 +8,10 @@ interface BeamRotationsTableProps {
 }
 
 export function BeamRotationsTable({ data }: BeamRotationsTableProps) {
-  const columns = data.columns || []
-  const rows = data.rows || []
-  const loadCaseColumns = data.load_case_columns || []
-  const summaryColumns = data.summary_columns || []
+  const columns = data.columns
+  const rows = data.rows
+  const loadCaseColumns = data.load_case_columns
+  const summaryColumns = data.summary_columns
 
   const numericRange = useMemo(() => {
     const values: number[] = []

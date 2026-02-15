@@ -12,6 +12,7 @@ from celery.result import AsyncResult
 from core.mixins import ProjectLookupMixin
 from .models import ExportJob
 from .serializers import ExportJobSerializer, ExportRequestSerializer
+from .progress_events import send_error as send_export_error
 from .tasks import process_export_job
 
 
@@ -52,6 +53,8 @@ class ExportJobListView(ExportProjectMixin, APIView):
             export_config={
                 "result_set_id": data["result_set_id"],
                 "result_types": data.get("result_types", []),
+                "element_types": data.get("element_types", []),
+                "joint_types": data.get("joint_types", []),
                 "directions": data.get("directions", ["X", "Y"]),
                 "include_summary": data.get("include_summary", True),
             },
@@ -88,6 +91,7 @@ class ExportJobDetailView(ExportProjectMixin, APIView):
             job.status = "failed"
             job.error_message = "Cancelled by user"
             job.save(update_fields=["status", "error_message"])
+            send_export_error(job.id, "Export cancelled", "Cancelled by user")
 
         return Response(status=status.HTTP_204_NO_CONTENT)
 

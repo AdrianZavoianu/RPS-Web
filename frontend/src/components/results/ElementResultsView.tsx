@@ -121,8 +121,23 @@ export function ElementResultsView({ projectSlug }: ElementResultsViewProps) {
       : null
   )
   const elements = useMemo(() => elementsData?.elements ?? [], [elementsData])
+  const elementResultTypes = useMemo(() => availableTypes?.element_results ?? [], [availableTypes])
+  const directions = useMemo(() => {
+    if (!selectedResultType) {
+      return null
+    }
+    return (
+      elementResultTypes.find((resultTypeInfo) => resultTypeInfo.type === selectedResultType)?.directions ?? null
+    )
+  }, [elementResultTypes, selectedResultType])
 
-  const elementResultTypes = availableTypes?.element_results || []
+  // Reset sync state on selection changes that alter visible rows/series.
+  const resetSyncState = useCallback(() => {
+    setSelectedLoadCases(new Set())
+    setHoveredLoadCase(null)
+    setSelectedRows(new Set())
+    setHoveredRow(null)
+  }, [])
 
   // Auto-select first available element result type
   useEffect(() => {
@@ -131,12 +146,6 @@ export function ElementResultsView({ projectSlug }: ElementResultsViewProps) {
     }
   }, [elementResultTypes, selectedResultType])
 
-  const directions = selectedResultType
-    ? availableTypes?.element_results.find(
-        (r) => r.type === selectedResultType
-      )?.directions || null
-    : null
-
   // Auto-select first element
   useEffect(() => {
     if (elements.length && !selectedElementId) {
@@ -144,28 +153,25 @@ export function ElementResultsView({ projectSlug }: ElementResultsViewProps) {
     }
   }, [elements, selectedElementId])
 
-  // Auto-select first direction when result type changes
+  // Keep selected direction valid for the currently selected result type.
   useEffect(() => {
-    if (directions?.length) {
-      setSelectedDirection(directions[0])
-    } else {
-      setSelectedDirection(null)
+    if (!directions?.length) {
+      if (selectedDirection !== null) {
+        setSelectedDirection(null)
+      }
+      return
     }
-  }, [selectedResultType, directions?.length])
+
+    if (!selectedDirection || !directions.includes(selectedDirection)) {
+      setSelectedDirection(directions[0])
+    }
+  }, [directions, selectedDirection])
 
   // Reset element + sync state when result type changes
   useEffect(() => {
     setSelectedElementId(null)
     resetSyncState()
-  }, [selectedResultType])
-
-  // Reset sync state on element/direction change
-  const resetSyncState = useCallback(() => {
-    setSelectedLoadCases(new Set())
-    setHoveredLoadCase(null)
-    setSelectedRows(new Set())
-    setHoveredRow(null)
-  }, [])
+  }, [selectedResultType, resetSyncState])
 
   useEffect(() => {
     resetSyncState()

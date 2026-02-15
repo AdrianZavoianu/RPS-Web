@@ -191,6 +191,21 @@
 /* Comparison View */
 .comparison-view {}
 .comparison-sidebar {}
+.comparison-table-panel {}
+.comparison-chart-panel {}
+.comparison-metric-toggle {}
+
+/* Comparison Set Dialog */
+.comparison-dialog-content {}
+.comparison-dialog-inputs {}
+.comparison-dialog-selection {}
+.comparison-dialog-sets {}
+.comparison-dialog-types {}
+.comparison-dialog-list {}
+.comparison-dialog-type-grid {}
+
+/* Comparison Tree */
+.tree-comparison-set {}
 
 /* Dialog (Generic) */
 .dialog-overlay {}
@@ -198,5 +213,30 @@
 .dialog-header {}
 .dialog-body {}
 
+/* Time Series View */
+.ts-toolbar {}
+.ts-plots-row {}
+.ts-profile-plot {}
+.ts-base-plot {}
+.ts-controls {}
+
 /* Report Dialog */
 .report-dialog {}
+
+/* Report Preview */
+.report-preview-area {}
+.report-page {}
+.report-page-header {}
+.report-page-header-left {}
+.report-page-logo {}
+.report-page-project-name {}
+.report-page-result-set {}
+.report-page-content {}
+.report-page-footer {}
+.report-section {}
+.report-section-title {}
+.report-top10-label {}
+.report-data-table {}
+.report-label-header {}
+.report-label-cell {}
+.report-chart {}

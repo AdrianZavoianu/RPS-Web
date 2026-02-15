@@ -1,49 +1,68 @@
 /**
  * Pushover View component
  * Displays pushover curves (displacement vs base shear) for pushover analysis cases
+ * Supports single curve display and all-curves overlay per direction
  */
 
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
-import { useResultSets, usePushoverCases, usePushoverCurve, useGlobalResults, useAvailableResultTypes } from '../../hooks/useResults'
-import { PushoverCurveChart } from '../charts/ProfileChart'
+import { useResultSets, usePushoverCases, usePushoverCurve, useGlobalResults, useAvailableResultTypes, useAllPushoverCurves } from '../../hooks/useResults'
+import { PushoverCurveChart, PushoverMultiCurveChart } from '../charts/ProfileChart'
 import { ResultsTable } from './ResultsTable'
 import { ProjectBrowserNav } from '../projects/ProjectBrowserNav'
-import type { GlobalResultType } from '../../types'
+import type { GlobalResultType, PushoverCase } from '../../types'
 
 interface PushoverViewProps {
   projectSlug: string
 }
 
+type CurveSelectionMode = 'single' | 'all'
+
+/** Group pushover cases by direction */
+function groupByDirection(cases: PushoverCase[]): Map<string, PushoverCase[]> {
+  const groups = new Map<string, PushoverCase[]>()
+  for (const pc of cases) {
+    const dir = pc.direction || 'Unknown'
+    if (!groups.has(dir)) groups.set(dir, [])
+    groups.get(dir)!.push(pc)
+  }
+  return groups
+}
+
 export function PushoverView({ projectSlug }: PushoverViewProps) {
   const [selectedResultSetId, setSelectedResultSetId] = useState<number | null>(null)
   const [selectedCaseId, setSelectedCaseId] = useState<number | null>(null)
+  const [curveSelectionMode, setCurveSelectionMode] = useState<CurveSelectionMode>('single')
+  const [allCurvesDirection, setAllCurvesDirection] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'curves' | 'results'>('curves')
   const [selectedResultType, setSelectedResultType] = useState<GlobalResultType>('Drifts')
   const [selectedDirection, setSelectedDirection] = useState<string>('X')
 
   // Get pushover result sets only
   const { data: allResultSets, isLoading: resultSetsLoading } = useResultSets(projectSlug)
-  const pushoverResultSets = allResultSets?.filter((rs) => rs.analysis_type === 'Pushover') || []
-
-  // Auto-select first pushover result set
-  if (pushoverResultSets.length && !selectedResultSetId) {
-    setSelectedResultSetId(pushoverResultSets[0].id)
-  }
+  const pushoverResultSets = useMemo(
+    () => allResultSets?.filter((rs) => rs.analysis_type === 'Pushover') ?? [],
+    [allResultSets]
+  )
 
   // Get pushover cases for selected result set
   const { data: casesData } = usePushoverCases(projectSlug, selectedResultSetId || undefined)
-  const pushoverCases = casesData?.pushover_cases || []
+  const pushoverCases = useMemo(() => casesData?.pushover_cases ?? [], [casesData])
 
-  // Auto-select first case
-  if (pushoverCases.length && !selectedCaseId) {
-    setSelectedCaseId(pushoverCases[0].id)
-  }
+  // Group cases by direction
+  const directionGroups = useMemo(() => groupByDirection(pushoverCases), [pushoverCases])
 
-  // Get curve data for selected case
+  // Get curve data for selected case (single mode)
   const { data: curveData, isLoading: curveLoading } = usePushoverCurve(
     projectSlug,
-    selectedCaseId
+    curveSelectionMode === 'single' ? selectedCaseId : null
+  )
+
+  // Get all curves for a direction (all mode)
+  const { curves: allCurves, isLoading: allCurvesLoading } = useAllPushoverCurves(
+    projectSlug,
+    selectedResultSetId || undefined,
+    curveSelectionMode === 'all' ? allCurvesDirection : null
   )
 
   // Get available result types
@@ -63,9 +82,84 @@ export function PushoverView({ projectSlug }: PushoverViewProps) {
   )
 
   // Get directions for selected result type
-  const directions = availableTypes?.global_results.find(
-    (r) => r.type === selectedResultType
-  )?.directions || ['X', 'Y']
+  const directions = useMemo(() => {
+    const availableDirections = availableTypes?.global_results.find(
+      (resultTypeInfo) => resultTypeInfo.type === selectedResultType
+    )?.directions
+    return availableDirections && availableDirections.length ? availableDirections : ['X', 'Y']
+  }, [availableTypes, selectedResultType])
+
+  useEffect(() => {
+    if (!pushoverResultSets.length) {
+      if (selectedResultSetId !== null) {
+        setSelectedResultSetId(null)
+      }
+      if (selectedCaseId !== null) {
+        setSelectedCaseId(null)
+      }
+      return
+    }
+
+    const selectedResultSetExists =
+      selectedResultSetId !== null &&
+      pushoverResultSets.some((resultSet) => resultSet.id === selectedResultSetId)
+
+    if (!selectedResultSetExists) {
+      setSelectedResultSetId(pushoverResultSets[0].id)
+      setSelectedCaseId(null)
+    }
+  }, [pushoverResultSets, selectedResultSetId, selectedCaseId])
+
+  useEffect(() => {
+    if (!selectedResultSetId) return
+
+    if (!pushoverCases.length) {
+      if (selectedCaseId !== null) {
+        setSelectedCaseId(null)
+      }
+      return
+    }
+
+    const selectedCaseExists =
+      selectedCaseId !== null && pushoverCases.some((pushoverCase) => pushoverCase.id === selectedCaseId)
+
+    if (!selectedCaseExists && curveSelectionMode === 'single') {
+      setSelectedCaseId(pushoverCases[0].id)
+    }
+  }, [pushoverCases, selectedCaseId, selectedResultSetId, curveSelectionMode])
+
+  useEffect(() => {
+    if (!directions.includes(selectedDirection)) {
+      setSelectedDirection(directions[0])
+    }
+  }, [directions, selectedDirection])
+
+  const handleSelectCase = (caseId: number) => {
+    setCurveSelectionMode('single')
+    setAllCurvesDirection(null)
+    setSelectedCaseId(caseId)
+  }
+
+  const handleSelectAllCurves = (direction: string) => {
+    setCurveSelectionMode('all')
+    setAllCurvesDirection(direction)
+    setSelectedCaseId(null)
+  }
+
+  if (!resultSetsLoading && pushoverResultSets.length === 0) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="text-center max-w-md px-6">
+          <h3 className="text-lg font-semibold text-text-primary">
+            No pushover data imported yet
+          </h3>
+          <p className="text-text-muted mt-2">
+            Use the header actions to load pushover curves first, then load pushover results.
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="pushover-view h-full flex">
@@ -85,6 +179,8 @@ export function PushoverView({ projectSlug }: PushoverViewProps) {
                   onClick={() => {
                     setSelectedResultSetId(rs.id)
                     setSelectedCaseId(null)
+                    setCurveSelectionMode('single')
+                    setAllCurvesDirection(null)
                   }}
                   className={clsx(
                     'browser-item',
@@ -102,26 +198,43 @@ export function PushoverView({ projectSlug }: PushoverViewProps) {
           )}
         </div>
 
-        {/* Case Selection (for curves tab) */}
+        {/* Case Selection with direction grouping (for curves tab) */}
         {activeTab === 'curves' && selectedResultSetId && (
           <div className="browser-section">
             <h3 className="browser-section-title">Pushover Cases</h3>
             {pushoverCases.length ? (
-              <div className="space-y-1">
-                {pushoverCases.map((pc) => (
-                  <button
-                    key={pc.id}
-                    onClick={() => setSelectedCaseId(pc.id)}
-                    className={clsx(
-                      'browser-item',
-                      selectedCaseId === pc.id
-                        ? 'browser-item-active'
-                        : null
-                    )}
-                  >
-                    <span>{pc.name}</span>
-                    <span className="text-text-muted text-xs ml-2">({pc.direction})</span>
-                  </button>
+              <div className="space-y-0.5">
+                {Array.from(directionGroups.entries()).map(([dir, cases]) => (
+                  <div key={dir}>
+                    <div className="text-[11px] font-medium text-text-muted uppercase tracking-wider px-2 pt-2 pb-0.5">
+                      {dir} Direction
+                    </div>
+                    {cases.map((pc) => (
+                      <button
+                        key={pc.id}
+                        onClick={() => handleSelectCase(pc.id)}
+                        className={clsx(
+                          'browser-item',
+                          curveSelectionMode === 'single' && selectedCaseId === pc.id
+                            ? 'browser-item-active'
+                            : null
+                        )}
+                      >
+                        <span className="truncate">{pc.name}</span>
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => handleSelectAllCurves(dir)}
+                      className={clsx(
+                        'browser-item text-accent-secondary',
+                        curveSelectionMode === 'all' && allCurvesDirection === dir
+                          ? 'browser-item-active'
+                          : null
+                      )}
+                    >
+                      All {dir} Curves
+                    </button>
+                  </div>
                 ))}
               </div>
             ) : (
@@ -140,7 +253,14 @@ export function PushoverView({ projectSlug }: PushoverViewProps) {
                 onChange={(e) => setSelectedResultType(e.target.value as GlobalResultType)}
                 className="w-full px-2 py-1.5 bg-bg-primary border border-border-default rounded text-sm text-text-primary"
               >
-                {availableTypes?.global_results.map((rt) => (
+                {(availableTypes?.global_results.length
+                  ? availableTypes.global_results
+                  : [
+                      { type: 'Drifts', directions: ['X', 'Y'] },
+                      { type: 'Forces', directions: ['X', 'Y'] },
+                      { type: 'Displacements', directions: ['X', 'Y'] },
+                    ]
+                ).map((rt) => (
                   <option key={rt.type} value={rt.type}>
                     {rt.type}
                   </option>
@@ -203,54 +323,72 @@ export function PushoverView({ projectSlug }: PushoverViewProps) {
         <div className="pushover-data flex-1 overflow-hidden p-2">
           {activeTab === 'curves' ? (
             // Curves Tab
-            curveLoading ? (
-              <div className="flex items-center justify-center h-full">
-                <div className="text-text-secondary">Loading curve data...</div>
-              </div>
-            ) : curveData ? (
-              <div className="h-full flex">
-                {/* Chart fills available space */}
-                <div className="flex-1 h-full">
-                  <PushoverCurveChart
-                    points={curveData.points}
-                    caseName={curveData.case.name}
-                  />
+            curveSelectionMode === 'all' ? (
+              // All Curves mode
+              allCurvesLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-text-secondary">Loading all curves...</div>
                 </div>
-                {/* Curve Data Table - compact sidebar */}
-                <div className="w-48 overflow-auto border-l border-border-default">
-                  <table className="results-table w-full">
-                    <thead className="sticky top-0 z-10">
-                      <tr>
-                        <th className="results-table-header text-center">Step</th>
-                        <th className="results-table-header text-right">mm</th>
-                        <th className="results-table-header text-right">kN</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {curveData.points.map((point) => (
-                        <tr key={point.step} className="results-table-row">
-                          <td className="results-table-cell text-center">{point.step}</td>
-                          <td className="results-table-cell">{point.displacement.toFixed(2)}</td>
-                          <td className="results-table-cell">{point.base_shear.toFixed(0)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              ) : allCurves.length > 0 ? (
+                <div className="h-full">
+                  <PushoverMultiCurveChart curves={allCurves} />
                 </div>
-              </div>
-            ) : selectedCaseId ? (
-              <div className="flex items-center justify-center h-full">
-                <div className="text-text-secondary">No curve data available</div>
-              </div>
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-text-secondary">No curve data for {allCurvesDirection} direction</div>
+                </div>
+              )
             ) : (
-              <div className="flex items-center justify-center h-full">
-                <div className="text-center">
-                  <p className="text-text-secondary mb-2">Select a pushover case</p>
-                  <p className="text-text-muted text-sm">
-                    Choose a case from the left panel to view its curve
-                  </p>
+              // Single Curve mode
+              curveLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-text-secondary">Loading curve data...</div>
                 </div>
-              </div>
+              ) : curveData ? (
+                <div className="h-full flex">
+                  {/* Chart fills available space */}
+                  <div className="flex-1 h-full">
+                    <PushoverCurveChart
+                      points={curveData.points}
+                      caseName={curveData.case.name}
+                    />
+                  </div>
+                  {/* Curve Data Table - compact sidebar */}
+                  <div className="w-48 overflow-auto border-l border-border-default">
+                    <table className="results-table w-full">
+                      <thead className="sticky top-0 z-10">
+                        <tr>
+                          <th className="results-table-header text-center">Step</th>
+                          <th className="results-table-header text-right">mm</th>
+                          <th className="results-table-header text-right">kN</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {curveData.points.map((point) => (
+                          <tr key={point.step} className="results-table-row">
+                            <td className="results-table-cell text-center">{point.step}</td>
+                            <td className="results-table-cell">{point.displacement.toFixed(2)}</td>
+                            <td className="results-table-cell">{point.base_shear.toFixed(0)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : selectedCaseId ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-text-secondary">No curve data available</div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center">
+                    <p className="text-text-secondary mb-2">Select a pushover case</p>
+                    <p className="text-text-muted text-sm">
+                      Choose a case from the left panel to view its curve
+                    </p>
+                  </div>
+                </div>
+              )
             )
           ) : (
             // Results Tab

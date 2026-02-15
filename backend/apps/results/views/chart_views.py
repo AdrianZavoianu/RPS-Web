@@ -124,6 +124,90 @@ class TimeSeriesDataView(ProjectResultsMixin, APIView):
         )
 
 
+class TimeSeriesAllTypesView(ProjectResultsMixin, APIView):
+    """
+    Get time-series data for ALL 4 global result types in one response.
+    Used by the animated 4-panel time-series view.
+
+    Query params:
+    - result_set_id: Required
+    - load_case: Required
+    - direction: Required. 'X' or 'Y'
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    GLOBAL_TYPES = ["Displacements", "Drifts", "Accelerations", "Forces"]
+
+    def get(self, request, project_slug):
+        params = self.validate_result_params(
+            request,
+            ("result_set_id", "load_case", "direction"),
+        )
+        if isinstance(params, Response):
+            return params
+
+        parsed_result_set_id = self.parse_int_param(params["result_set_id"], "result_set_id")
+        if isinstance(parsed_result_set_id, Response):
+            return parsed_result_set_id
+
+        project = self.get_project()
+
+        cache_entries = (
+            TimeSeriesGlobalCache.objects.filter(
+                project=project,
+                result_set_id=parsed_result_set_id,
+                load_case_name=params["load_case"],
+                direction=params["direction"],
+                result_type__in=self.GLOBAL_TYPES,
+            )
+            .select_related("story")
+            .order_by("-story_sort_order")
+        )
+
+        if not cache_entries.exists():
+            return Response(
+                {
+                    "stories": [],
+                    "time_steps": [],
+                    "types": {},
+                    "load_case": params["load_case"],
+                    "direction": params["direction"],
+                }
+            )
+
+        types_data: dict = {}
+        stories = []
+        stories_seen = set()
+        time_steps = None
+
+        for entry in cache_entries:
+            story_name = entry.story.name
+            rt = entry.result_type
+
+            if story_name not in stories_seen:
+                stories.append(story_name)
+                stories_seen.add(story_name)
+
+            if rt not in types_data:
+                types_data[rt] = {}
+
+            types_data[rt][story_name] = entry.values
+
+            if time_steps is None and entry.time_steps:
+                time_steps = entry.time_steps
+
+        return Response(
+            {
+                "stories": stories,
+                "time_steps": time_steps or [],
+                "types": types_data,
+                "load_case": params["load_case"],
+                "direction": params["direction"],
+            }
+        )
+
+
 class TimeSeriesLoadCasesView(ProjectResultsMixin, APIView):
     """
     Get available load cases for time-series animation.

@@ -5,17 +5,11 @@ import clsx from 'clsx'
 import { useResultSets } from '../hooks/useResults'
 import { useProject } from '../hooks/useProjects'
 
-const ComparisonView = lazy(() =>
-  import('../components/results/ComparisonView').then((module) => ({ default: module.ComparisonView }))
-)
 const ResultsView = lazy(() =>
   import('../components/results/ResultsView').then((module) => ({ default: module.ResultsView }))
 )
 const MaxMinView = lazy(() =>
   import('../components/results/MaxMinView').then((module) => ({ default: module.MaxMinView }))
-)
-const PushoverView = lazy(() =>
-  import('../components/results/PushoverView').then((module) => ({ default: module.PushoverView }))
 )
 const ElementResultsView = lazy(() =>
   import('../components/results/ElementResultsView').then((module) => ({
@@ -36,12 +30,19 @@ const ProjectSettings = lazy(() =>
   }))
 )
 const importImportDialogModule = () => import('../components/imports/ImportDialog')
+const importPushoverImportDialogModule = () => import('../components/imports/PushoverImportDialog')
 const importExportDialogModule = () => import('../components/exports/ExportDialog')
 const importReportDialogModule = () => import('../components/reports/ReportDialog')
+const importComparisonDialogModule = () => import('../components/comparisons/ComparisonSetDialog')
 
 const ImportDialog = lazy(() =>
   importImportDialogModule().then((module) => ({
     default: module.ImportDialog,
+  }))
+)
+const PushoverImportDialog = lazy(() =>
+  importPushoverImportDialogModule().then((module) => ({
+    default: module.PushoverImportDialog,
   }))
 )
 const ExportDialog = lazy(() =>
@@ -54,16 +55,27 @@ const ReportDialog = lazy(() =>
     default: module.ReportDialog,
   }))
 )
+const ComparisonSetDialog = lazy(() =>
+  importComparisonDialogModule().then((module) => ({
+    default: module.ComparisonSetDialog,
+  }))
+)
 
 export function ProjectDetailPage() {
   const { slug } = useParams<{ slug: string }>()
   const projectSlug = slug ?? ''
   const [showImportDialog, setShowImportDialog] = useState(false)
+  const [showPushoverCurvesDialog, setShowPushoverCurvesDialog] = useState(false)
+  const [showPushoverResultsDialog, setShowPushoverResultsDialog] = useState(false)
   const [showExportDialog, setShowExportDialog] = useState(false)
   const [showReportDialog, setShowReportDialog] = useState(false)
+  const [showComparisonDialog, setShowComparisonDialog] = useState(false)
   const [isContextExpanded, setIsContextExpanded] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
+  const [activeContext, setActiveContext] = useState<'NLTHA' | 'Pushover'>(() =>
+    location.pathname.includes('/pushover') ? 'Pushover' : 'NLTHA'
+  )
   const queryClient = useQueryClient()
 
   const handleImportComplete = useCallback(() => {
@@ -83,11 +95,21 @@ export function ProjectDetailPage() {
     setShowImportDialog(false)
   }, [queryClient, projectSlug])
 
+  const handlePushoverImportComplete = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['resultSets', projectSlug] })
+    queryClient.invalidateQueries({ queryKey: ['pushoverCases', projectSlug] })
+    queryClient.invalidateQueries({ queryKey: ['globalResults', projectSlug] })
+    queryClient.invalidateQueries({ queryKey: ['availableResultTypes', projectSlug] })
+    setShowPushoverCurvesDialog(false)
+    setShowPushoverResultsDialog(false)
+  }, [queryClient, projectSlug])
+
   const { data: project, isLoading, error } = useProject(slug)
   const { data: resultSets, isLoading: resultSetsLoading } = useResultSets(projectSlug)
   const pathSegments = location.pathname.split('/').filter(Boolean)
-  const activeContext = pathSegments.includes('pushover') ? 'Pushover' : 'NLTHA'
   const hasResultSets = (resultSets?.length ?? 0) > 0
+  const isSettingsRoute = pathSegments[pathSegments.length - 1] === 'settings'
+  const showNoResultsState = !hasResultSets && !isSettingsRoute
 
   if (isLoading) {
     return (
@@ -140,7 +162,7 @@ export function ProjectDetailPage() {
                 if (activeContext === 'NLTHA') {
                   setIsContextExpanded(!isContextExpanded)
                 } else {
-                  navigate(`/projects/${projectSlug}/results`)
+                  setActiveContext('NLTHA')
                   setIsContextExpanded(true)
                 }
               }}
@@ -157,7 +179,7 @@ export function ProjectDetailPage() {
                 if (activeContext === 'Pushover') {
                   setIsContextExpanded(!isContextExpanded)
                 } else {
-                  navigate(`/projects/${projectSlug}/pushover`)
+                  setActiveContext('Pushover')
                   setIsContextExpanded(true)
                 }
               }}
@@ -198,7 +220,9 @@ export function ProjectDetailPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => navigate(`/projects/${projectSlug}/comparison`)}
+                      onClick={() => setShowComparisonDialog(true)}
+                      onMouseEnter={() => void importComparisonDialogModule()}
+                      onFocus={() => void importComparisonDialogModule()}
                       className="project-header-link"
                     >
                       Create Comparison
@@ -227,11 +251,10 @@ export function ProjectDetailPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        navigate(`/projects/${projectSlug}/pushover`)
-                        setShowImportDialog(true)
+                        setShowPushoverCurvesDialog(true)
                       }}
-                      onMouseEnter={prefetchImportDialog}
-                      onFocus={prefetchImportDialog}
+                      onMouseEnter={() => void importPushoverImportDialogModule()}
+                      onFocus={() => void importPushoverImportDialogModule()}
                       className="project-header-link"
                     >
                       Load Pushover Curves
@@ -239,11 +262,10 @@ export function ProjectDetailPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        navigate(`/projects/${projectSlug}/pushover`)
-                        setShowImportDialog(true)
+                        setShowPushoverResultsDialog(true)
                       }}
-                      onMouseEnter={prefetchImportDialog}
-                      onFocus={prefetchImportDialog}
+                      onMouseEnter={() => void importPushoverImportDialogModule()}
+                      onFocus={() => void importPushoverImportDialogModule()}
                       className="project-header-link"
                     >
                       Load Results
@@ -311,7 +333,7 @@ export function ProjectDetailPage() {
           <div className="h-full flex items-center justify-center">
             <div className="text-text-secondary">Loading results...</div>
           </div>
-        ) : !hasResultSets ? (
+        ) : showNoResultsState ? (
           <div className="h-full flex items-center justify-center">
             <div className="text-center max-w-md">
               <h3 className="text-lg font-semibold text-text-primary">
@@ -326,13 +348,12 @@ export function ProjectDetailPage() {
         ) : (
           <Suspense fallback={routeFallback}>
             <Routes>
-              <Route index element={<Navigate to="results" replace />} />
+              <Route index element={<Navigate to={hasResultSets ? 'results' : 'settings'} replace />} />
               <Route path="results" element={<ResultsView projectSlug={projectSlug} />} />
               <Route path="maxmin" element={<MaxMinView projectSlug={projectSlug} />} />
-              <Route path="comparison" element={<ComparisonView projectSlug={projectSlug} />} />
               <Route path="elements" element={<ElementResultsView projectSlug={projectSlug} />} />
               <Route path="foundation" element={<JointResultsView projectSlug={projectSlug} />} />
-              <Route path="pushover" element={<PushoverView projectSlug={projectSlug} />} />
+              <Route path="pushover" element={<ResultsView projectSlug={projectSlug} />} />
               <Route path="time-series" element={<TimeSeriesView projectSlug={projectSlug} />} />
               <Route path="settings" element={<ProjectSettings projectSlug={projectSlug} />} />
             </Routes>
@@ -368,6 +389,45 @@ export function ProjectDetailPage() {
           <ReportDialog
             projectSlug={projectSlug}
             onClose={() => setShowReportDialog(false)}
+          />
+        </Suspense>
+      )}
+
+      {/* Comparison Set Dialog */}
+      {showComparisonDialog && (
+        <Suspense fallback={dialogFallback}>
+          <ComparisonSetDialog
+            projectSlug={projectSlug}
+            onClose={() => setShowComparisonDialog(false)}
+            onCreated={() => {
+              queryClient.invalidateQueries({ queryKey: ['comparisonSets', projectSlug] })
+            }}
+          />
+        </Suspense>
+      )}
+
+      {/* Pushover Curves Import Dialog */}
+      {showPushoverCurvesDialog && (
+        <Suspense fallback={dialogFallback}>
+          <PushoverImportDialog
+            projectSlug={projectSlug}
+            projectName={project.name}
+            mode="curves"
+            onClose={() => setShowPushoverCurvesDialog(false)}
+            onComplete={handlePushoverImportComplete}
+          />
+        </Suspense>
+      )}
+
+      {/* Pushover Results Import Dialog */}
+      {showPushoverResultsDialog && (
+        <Suspense fallback={dialogFallback}>
+          <PushoverImportDialog
+            projectSlug={projectSlug}
+            projectName={project.name}
+            mode="results"
+            onClose={() => setShowPushoverResultsDialog(false)}
+            onComplete={handlePushoverImportComplete}
           />
         </Suspense>
       )}

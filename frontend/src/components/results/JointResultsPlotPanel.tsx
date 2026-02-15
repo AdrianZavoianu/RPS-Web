@@ -78,7 +78,7 @@ function buildHistogramBins(values: number[], binCount = 50): HistogramBin[] {
 export function JointResultsPlotPanel({ dataset }: JointResultsPlotPanelProps) {
   const [activeTab, setActiveTab] = useState<TabId>('scatter')
 
-  const loadCases = dataset.load_case_columns || []
+  const loadCases = dataset.load_case_columns
   const useAbsoluteValue =
     dataset.meta?.result_type === 'SoilPressures' ||
     dataset.meta?.result_type === 'VerticalDisplacements'

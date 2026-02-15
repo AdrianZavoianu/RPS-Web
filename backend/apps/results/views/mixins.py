@@ -22,6 +22,7 @@ from ..models import (
     SoilPressure,
     VerticalDisplacement,
     PushoverCase,
+    GlobalResultsCache,
 )
 from ..services import ResultDataService, RESULT_TYPE_CONFIG
 
@@ -150,6 +151,28 @@ class AvailableResultTypesView(ProjectResultsMixin, APIView):
                     "unit": config["unit"],
                 }
             )
+
+        # Also detect pushover global results written directly to cache
+        seen_global_types = {r["type"] for r in global_results}
+        cache_types = (
+            GlobalResultsCache.objects.filter(project=project)
+            .values_list("result_type", flat=True)
+            .distinct()
+        )
+        for cache_type in cache_types:
+            # Cache types are like "Drifts_X", "Forces_VX" — extract base type
+            base_type = cache_type.rsplit("_", 1)[0]
+            if base_type in seen_global_types or base_type not in RESULT_TYPE_CONFIG:
+                continue
+            config = RESULT_TYPE_CONFIG[base_type]
+            global_results.append(
+                {
+                    "type": base_type,
+                    "directions": config["directions"],
+                    "unit": config["unit"],
+                }
+            )
+            seen_global_types.add(base_type)
 
         for type_name, (model_class, project_field) in ELEMENT_AVAILABILITY_MAP.items():
             if not model_class.objects.filter(**{project_field: project}).exists():

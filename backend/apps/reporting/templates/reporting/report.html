@@ -9,6 +9,9 @@
     <!-- Header -->
     <div class="header">
         <div class="header-left">
+            {% if logo_uri %}
+            <img class="logo" src="{{ logo_uri }}" alt="RPS Logo">
+            {% endif %}
             <span class="project-name">{{ project_name }}</span>
         </div>
         <div class="result-set-name">{{ result_set_name }}</div>
@@ -20,19 +23,26 @@
         <div class="section-title">{{ section.title }}{% if section.unit %} ({{ section.unit }}){% endif %}</div>
 
         {% if section.table %}
+        {% if section.category == "Element" or section.category == "Joint" %}
+        <div class="top10-label">Top 10 by absolute average</div>
+        {% endif %}
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>Story</th>
+                    {% for lh in section.table.label_headers %}
+                    <th class="label-header">{{ lh }}</th>
+                    {% endfor %}
                     {% for col in section.table.columns %}
-                    <th>{{ col|truncatechars:8 }}</th>
+                    <th>{{ col|truncatechars:10 }}</th>
                     {% endfor %}
                 </tr>
             </thead>
             <tbody>
                 {% for row in section.table.rows %}
                 <tr>
-                    <td>{{ row.story }}</td>
+                    {% for lv in row.label_columns %}
+                    <td class="label-cell">{{ lv }}</td>
+                    {% endfor %}
                     {% for value in row.values %}
                     <td>{{ value }}</td>
                     {% endfor %}

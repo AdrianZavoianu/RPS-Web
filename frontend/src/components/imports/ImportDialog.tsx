@@ -255,6 +255,35 @@ export function ImportDialog({
     if (!importJob) return
 
     if (importJob.status === 'completed') {
+      const summary = importJob.import_summary as {
+        errors?: unknown
+        has_warnings?: unknown
+        warning_count?: unknown
+      } | null
+      const importErrors = Array.isArray(summary?.errors)
+        ? summary.errors.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+        : []
+      const warningCountFromSummary =
+        typeof summary?.warning_count === 'number' && Number.isFinite(summary.warning_count)
+          ? summary.warning_count
+          : undefined
+      const hasWarningsFromSummary = summary?.has_warnings === true
+
+      if (importErrors.length > 0 || hasWarningsFromSummary || (warningCountFromSummary ?? 0) > 0) {
+        const warningCount = warningCountFromSummary ?? importErrors.length
+        const warning = `Import completed with ${warningCount} file error(s)`
+        setError(warning)
+        addLog(`- ${warning}`)
+        for (const entry of importErrors.slice(0, 3)) {
+          addLog(`- ${entry}`)
+        }
+        if (importErrors.length > 3) {
+          addLog(`- ...and ${importErrors.length - 3} more file error(s)`)
+        }
+        setStep('error')
+        return
+      }
+
       addLog('- Import completed successfully')
       setStep('complete')
     }

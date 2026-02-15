@@ -57,6 +57,7 @@ class ExcelParser:
         self._available_sheets: Optional[List[str]] = None
         self._column_forces_df: Optional[pd.DataFrame] = None
         self._sheet_headers_cache: Dict[str, List[Any]] = {}  # Cache for sheet headers
+        self._load_cases_cache: Dict[str, List[str]] = {}
 
     def _get_excel_file(self) -> pd.ExcelFile:
         if self._excel_file is None:
@@ -314,13 +315,79 @@ class ExcelParser:
                 return None
         return self._sheet_headers_cache[sheet_name]
 
+    def _get_load_cases_only_openpyxl(self, sheet_name: str) -> Optional[List[str]]:
+        """Extract load cases using openpyxl row iteration when available.
+
+        This avoids creating pandas DataFrames during prescan.
+        Returns None when the workbook engine does not support this fast path.
+        """
+        excel_file = self._get_excel_file()
+        workbook = getattr(excel_file, "book", None)
+        if workbook is None or not hasattr(workbook, "__getitem__"):
+            return None
+
+        try:
+            worksheet = workbook[sheet_name]
+        except Exception:
+            return None
+
+        if not hasattr(worksheet, "iter_rows"):
+            return None
+
+        try:
+            header_row_values = None
+            for row in worksheet.iter_rows(min_row=2, max_row=2, values_only=True):
+                header_row_values = list(row)
+                break
+            if not header_row_values:
+                return []
+
+            output_case_column = None
+            for idx, value in enumerate(header_row_values, start=1):
+                if self._normalize_header_name(value) == "outputcase":
+                    output_case_column = idx
+                    break
+            if output_case_column is None:
+                return None
+
+            seen: set[str] = set()
+            load_cases: List[str] = []
+            for row in worksheet.iter_rows(
+                min_row=4,
+                min_col=output_case_column,
+                max_col=output_case_column,
+                values_only=True,
+            ):
+                value = row[0]
+                if value is None:
+                    continue
+                case_name = str(value).strip()
+                if not case_name or case_name in seen:
+                    continue
+                seen.add(case_name)
+                load_cases.append(case_name)
+
+            return load_cases
+        except Exception:
+            return None
+
     def get_load_cases_only(self, sheet_name: str) -> Optional[List[str]]:
         """Return load cases from a sheet using a lightweight read.
 
         Optimized with header caching to avoid repeated header parsing.
         """
+        cached = self._load_cases_cache.get(sheet_name)
+        if cached is not None:
+            return list(cached)
+
         if not self.validate_sheet_exists(sheet_name):
+            self._load_cases_cache[sheet_name] = []
             return []
+
+        openpyxl_cases = self._get_load_cases_only_openpyxl(sheet_name)
+        if openpyxl_cases is not None:
+            self._load_cases_cache[sheet_name] = openpyxl_cases
+            return list(openpyxl_cases)
 
         columns = self._get_sheet_headers(sheet_name)
         if columns is None:
@@ -347,11 +414,15 @@ class ExcelParser:
             return None
 
         if df.empty:
+            self._load_cases_cache[sheet_name] = []
             return []
         series = df.iloc[:, 0].dropna()
         if series.empty:
+            self._load_cases_cache[sheet_name] = []
             return []
-        return pd.unique(series.astype(str)).tolist()
+        load_cases = pd.unique(series.astype(str)).tolist()
+        self._load_cases_cache[sheet_name] = load_cases
+        return list(load_cases)
 
     def get_column_forces(self) -> Tuple[pd.DataFrame, List[str], List[str], List[str]]:
         """Parse column force data from Excel file.
@@ -788,6 +859,197 @@ class ExcelParser:
         except Exception as e:
             logger.exception(f"Error parsing pushover curve data: {e}")
             return pd.DataFrame(), []
+
+    # --- Pushover Global Results Methods ---
+
+    def get_pushover_directions(self) -> List[str]:
+        """Detect available pushover directions from Output Case names.
+
+        Returns:
+            List of detected directions ('X', 'Y', possibly 'XY')
+        """
+        sheet = "Story Drifts"
+        if not self.validate_sheet_exists(sheet):
+            return []
+
+        try:
+            df = self._get_excel_file().parse(
+                sheet_name=sheet,
+                skiprows=[0, 2],
+                usecols=["Output Case"],
+            )
+            output_cases = df["Output Case"].dropna().unique()
+            # Only include pushover cases
+            pushover_cases = [c for c in output_cases if "push" in str(c).lower()]
+            if not pushover_cases:
+                return []
+
+            directions = []
+            if any("X" in str(c).upper() and "Y" in str(c).upper() for c in pushover_cases):
+                directions.append("XY")
+            if any("X" in str(c).upper() for c in pushover_cases):
+                directions.append("X")
+            if any("Y" in str(c).upper() for c in pushover_cases):
+                directions.append("Y")
+            return directions
+        except Exception as e:
+            logger.warning(f"Error detecting pushover directions: {e}")
+            return []
+
+    def get_pushover_global_results(
+        self, direction: str
+    ) -> Dict[str, Optional[pd.DataFrame]]:
+        """Parse pushover global results (drifts, displacements, forces) for a direction.
+
+        Args:
+            direction: 'X', 'Y', or 'XY'
+
+        Returns:
+            Dict with keys 'drifts', 'displacements', 'forces', each a pivoted DataFrame
+            with columns [Story, case1, case2, ...] or None if unavailable.
+        """
+        results: Dict[str, Optional[pd.DataFrame]] = {
+            "drifts": None,
+            "displacements": None,
+            "forces": None,
+        }
+
+        try:
+            results["drifts"] = self._extract_pushover_drifts(direction)
+        except Exception as e:
+            logger.warning(f"Failed to extract pushover drifts for {direction}: {e}")
+
+        try:
+            results["displacements"] = self._extract_pushover_displacements(direction)
+        except Exception as e:
+            logger.warning(f"Failed to extract pushover displacements for {direction}: {e}")
+
+        try:
+            results["forces"] = self._extract_pushover_forces(direction)
+        except Exception as e:
+            logger.warning(f"Failed to extract pushover forces for {direction}: {e}")
+
+        return results
+
+    def _filter_pushover_cases(self, df: pd.DataFrame, direction: str) -> pd.DataFrame:
+        """Filter DataFrame to only pushover cases matching direction."""
+        pushover_mask = df["Output Case"].apply(lambda x: "push" in str(x).lower())
+        df = df[pushover_mask].copy()
+
+        if direction == "XY":
+            df = df[
+                df["Output Case"].apply(
+                    lambda x: "X" in str(x).upper() and "Y" in str(x).upper()
+                )
+            ]
+        else:
+            df = df[df["Output Case"].apply(lambda x: direction in str(x).upper())]
+        return df
+
+    def _extract_pushover_drifts(self, direction: str) -> Optional[pd.DataFrame]:
+        """Extract max story drift per story/case for pushover."""
+        sheet = "Story Drifts"
+        if not self.validate_sheet_exists(sheet):
+            return None
+
+        df = self._get_excel_file().parse(sheet_name=sheet, skiprows=[0, 2])
+        df = df[["Story", "Output Case", "Step Type", "Direction", "Drift"]]
+        df = self._filter_pushover_cases(df, direction)
+
+        if df.empty:
+            return None
+
+        if direction == "XY":
+            df_x = df[df["Direction"] == "X"].rename(columns={"Drift": "Drift_X"})
+            df_y = df[df["Direction"] == "Y"].rename(columns={"Drift": "Drift_Y"})
+            merged = pd.merge(
+                df_x[["Story", "Output Case", "Step Type", "Drift_X"]],
+                df_y[["Story", "Output Case", "Step Type", "Drift_Y"]],
+                on=["Story", "Output Case", "Step Type"],
+                how="inner",
+            )
+            merged["Drift"] = (merged["Drift_X"] ** 2 + merged["Drift_Y"] ** 2) ** 0.5
+            df = merged[["Story", "Output Case", "Step Type", "Drift"]]
+        else:
+            df = df[df["Direction"] == direction]
+
+        story_order = df["Story"].unique().tolist()
+        pivoted = (
+            df.groupby(["Story", "Output Case"], sort=False)["Drift"]
+            .max()
+            .unstack()
+            .reset_index()
+        )
+        pivoted["Story"] = pd.Categorical(pivoted["Story"], categories=story_order, ordered=True)
+        pivoted = pivoted.sort_values("Story").reset_index(drop=True)
+        pivoted.columns.name = None
+        return pivoted
+
+    def _extract_pushover_displacements(self, direction: str) -> Optional[pd.DataFrame]:
+        """Extract max absolute displacement per story/case for pushover."""
+        sheet = "Joint Displacements"
+        if not self.validate_sheet_exists(sheet):
+            return None
+
+        df = self._get_excel_file().parse(sheet_name=sheet, skiprows=[0, 2])
+        df = self._filter_pushover_cases(df, direction)
+
+        if df.empty:
+            return None
+
+        if direction == "XY":
+            df = df[["Story", "Output Case", "Step Type", "Ux", "Uy"]]
+            df["Disp"] = (df["Ux"] ** 2 + df["Uy"] ** 2) ** 0.5
+            col = "Disp"
+        else:
+            col = "Ux" if direction == "X" else "Uy"
+            df = df[["Story", "Output Case", "Step Type", col]]
+
+        story_order = df["Story"].unique().tolist()
+        pivoted = (
+            df.groupby(["Story", "Output Case"], sort=False)[col]
+            .apply(lambda x: x.abs().max())
+            .unstack()
+            .reset_index()
+        )
+        pivoted["Story"] = pd.Categorical(pivoted["Story"], categories=story_order, ordered=True)
+        pivoted = pivoted.sort_values("Story").reset_index(drop=True)
+        pivoted.columns.name = None
+        return pivoted
+
+    def _extract_pushover_forces(self, direction: str) -> Optional[pd.DataFrame]:
+        """Extract max absolute shear per story/case for pushover (Bottom location)."""
+        sheet = "Story Forces"
+        if not self.validate_sheet_exists(sheet):
+            return None
+
+        df = self._get_excel_file().parse(sheet_name=sheet, skiprows=[0, 2])
+        # Filter to Bottom location
+        df = df[~df["Location"].str.contains("Top", na=False)]
+        df = self._filter_pushover_cases(df, direction)
+
+        if df.empty:
+            return None
+
+        if direction == "XY":
+            df = df[["Story", "Output Case", "Step Type", "Location", "VX", "VY"]]
+            df["Shear"] = (df["VX"] ** 2 + df["VY"] ** 2) ** 0.5
+            col = "Shear"
+        else:
+            col = "VX" if direction == "X" else "VY"
+            df = df[["Story", "Output Case", "Step Type", "Location", col]]
+
+        story_order = df["Story"].unique().tolist()
+        pivoted = (
+            df.groupby(["Story", "Output Case"], sort=False)[col]
+            .apply(lambda x: x.abs().max())
+            .unstack()
+            .reset_index()
+        )
+        pivoted["Story"] = pd.Categorical(pivoted["Story"], categories=story_order, ordered=True)
+        pivoted = pivoted.sort_values("Story").reset_index(drop=True)
+        pivoted.columns.name = None
+        return pivoted
 
     # --- Time-Series Methods ---
 

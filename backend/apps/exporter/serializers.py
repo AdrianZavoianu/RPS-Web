@@ -59,6 +59,12 @@ class ExportRequestSerializer(serializers.Serializer):
     result_types = serializers.ListField(
         child=serializers.CharField(), required=False, default=list
     )
+    element_types = serializers.ListField(
+        child=serializers.CharField(), required=False, default=list
+    )
+    joint_types = serializers.ListField(
+        child=serializers.CharField(), required=False, default=list
+    )
     directions = serializers.ListField(
         child=serializers.CharField(), required=False, default=["X", "Y"]
     )

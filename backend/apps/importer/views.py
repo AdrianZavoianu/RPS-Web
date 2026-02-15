@@ -26,7 +26,7 @@ from apps.importer.serializers import (
     PushoverImportStartSerializer,
 )
 from apps.importer.services.import_preparation import detect_conflicts
-from apps.importer.tasks import prescan_files_task, process_import_task, import_pushover_curves_task
+from apps.importer.tasks import prescan_files_task, process_import_task, import_pushover_curves_task, import_pushover_results_task
 
 logger = logging.getLogger(__name__)
 
@@ -400,6 +400,64 @@ class ImportViewSet(ProjectLookupMixin, ViewSet):
         return Response(
             {
                 "detail": "Pushover import started",
+                "task_id": task.id,
+                "job_id": job.id,
+            }
+        )
+
+    @action(detail=True, methods=["post"], url_path="start-pushover-results")
+    def start_pushover_results(self, request, project_slug=None, pk=None):
+        """Start a pushover global results import.
+
+        Request body:
+            - result_set_name: Name for the result set (default: 'Pushover Results')
+            - result_set_id: Optional existing result set ID
+        """
+        project = self.get_project(project_slug)
+        job = get_object_or_404(ImportJob, project=project, pk=pk)
+
+        if job.status not in ("pending",):
+            return Response(
+                {"detail": f"Cannot start job in status: {job.status}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = PushoverImportStartSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        job.job_config["result_set_name"] = serializer.validated_data.get(
+            "result_set_name",
+            "Pushover Results",
+        )
+        result_set_id = serializer.validated_data.get("result_set_id")
+        if result_set_id is not None:
+            result_set = self.validate_result_set_for_project(
+                project,
+                result_set_id,
+                expected_analysis_type="Pushover",
+            )
+            if result_set is None:
+                return Response(
+                    {
+                        "detail": (
+                            "result_set_id must belong to this project "
+                            "and have analysis_type='Pushover'"
+                        )
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            job.job_config["result_set_id"] = result_set.id
+        else:
+            job.job_config.pop("result_set_id", None)
+        job.save(update_fields=["job_config"])
+
+        task = import_pushover_results_task.delay(job.id)
+        job.celery_task_id = task.id
+        job.save(update_fields=["celery_task_id"])
+
+        return Response(
+            {
+                "detail": "Pushover results import started",
                 "task_id": task.id,
                 "job_id": job.id,
             }

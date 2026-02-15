@@ -4,7 +4,7 @@
 
 import { useQuery, useMutation } from '@tanstack/react-query'
 import * as reportsApi from '../api/reports'
-import type { GenerateReportRequest } from '../api/reports'
+import type { GenerateReportRequest, SectionDataRequest } from '../api/reports'
 
 /**
  * Fetch available report sections for a result set
@@ -29,5 +29,15 @@ export function useGenerateReport(projectSlug: string) {
       const filename = `report_${variables.result_set_id}.pdf`
       reportsApi.downloadBlob(blob, filename)
     },
+  })
+}
+
+/**
+ * Fetch structured section data for live preview (mutation for imperative control)
+ */
+export function useReportSectionData(projectSlug: string) {
+  return useMutation({
+    mutationFn: (request: SectionDataRequest) =>
+      reportsApi.getReportSectionData(projectSlug, request),
   })
 }

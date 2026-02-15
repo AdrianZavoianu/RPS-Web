@@ -18,6 +18,7 @@ from .views import (
     PushoverCasesView,
     PushoverCurveView,
     ResultSetViewSet,
+    TimeSeriesAllTypesView,
     TimeSeriesDataView,
     TimeSeriesLoadCasesView,
 )
@@ -120,6 +121,12 @@ urlpatterns = [
         "<slug:project_slug>/results/time-series/",
         TimeSeriesDataView.as_view(),
         name="time-series-data",
+    ),
+    # Time-series all types (bulk endpoint for 4-panel animation)
+    path(
+        "<slug:project_slug>/results/time-series/all-types/",
+        TimeSeriesAllTypesView.as_view(),
+        name="time-series-all-types",
     ),
     # Available time-series load cases
     path(

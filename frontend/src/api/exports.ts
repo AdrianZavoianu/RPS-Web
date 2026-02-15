@@ -7,6 +7,8 @@ import { apiClient } from './client'
 export interface ExportRequest {
   result_set_id: number
   result_types?: string[]
+  element_types?: string[]
+  joint_types?: string[]
   directions?: string[]
   format: 'excel' | 'csv'
   include_summary?: boolean

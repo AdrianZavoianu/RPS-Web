@@ -1,7 +1,7 @@
 """Results view exports for URL compatibility."""
 
 from .beam_views import BeamRotationsPlotDataView, BeamRotationsTableDataView
-from .chart_views import ChartDataView, TimeSeriesDataView, TimeSeriesLoadCasesView
+from .chart_views import ChartDataView, TimeSeriesAllTypesView, TimeSeriesDataView, TimeSeriesLoadCasesView
 from .column_views import ColumnRotationsPlotDataView
 from .comparison_views import ComparisonDataView, MaxMinDataView
 from .element_views import ElementListView, ElementResultsDataView
@@ -29,6 +29,7 @@ __all__ = [
     "PushoverCasesView",
     "PushoverCurveView",
     "ResultSetViewSet",
+    "TimeSeriesAllTypesView",
     "TimeSeriesDataView",
     "TimeSeriesLoadCasesView",
 ]
