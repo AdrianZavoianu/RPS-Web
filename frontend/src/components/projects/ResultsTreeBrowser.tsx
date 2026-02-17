@@ -9,12 +9,14 @@ import {
   useResultSets,
   useAvailableResultTypes,
   useElementsForType,
+  useJointResults,
   useTimeSeriesLoadCases,
   useComparisonSets,
   useDeleteComparisonSet,
   usePushoverCases,
 } from '../../hooks/useResults'
 import type { ResultSet, ComparisonSet, PushoverCase } from '../../types'
+import { isNlthaResultSet, isPushoverResultSet } from '../../utils/resultSets'
 
 // Tree node selection data
 export interface TreeSelection {
@@ -35,6 +37,7 @@ export interface TreeSelection {
     | 'comparison_global'
     | 'comparison_element'
     | 'comparison_joint'
+    | 'comparison_column_rotations'
     | 'comparison_beam_rotations'
   resultSetId: number
   category: 'Envelopes' | 'Time-Series'
@@ -54,6 +57,8 @@ interface ResultsTreeBrowserProps {
   projectSlug: string
   onSelect: (selection: TreeSelection) => void
   currentSelection: TreeSelection | null
+  disableInitialAutoSelect?: boolean
+  resultSetRootSelectsDefault?: boolean
 }
 
 const naturalCompare = (a: string, b: string) =>
@@ -84,6 +89,8 @@ export function ResultsTreeBrowser({
   projectSlug,
   onSelect,
   currentSelection,
+  disableInitialAutoSelect = false,
+  resultSetRootSelectsDefault = true,
 }: ResultsTreeBrowserProps) {
   const { data: resultSets, isLoading } = useResultSets(projectSlug)
   const { data: availableTypes } = useAvailableResultTypes(projectSlug)
@@ -100,8 +107,8 @@ export function ResultsTreeBrowser({
   const { nlthaResultSets, pushoverResultSets } = useMemo(() => {
     if (!resultSets) return { nlthaResultSets: [], pushoverResultSets: [] }
     return {
-      nlthaResultSets: resultSets.filter((rs) => rs.analysis_type !== 'Pushover'),
-      pushoverResultSets: resultSets.filter((rs) => rs.analysis_type === 'Pushover'),
+      nlthaResultSets: resultSets.filter(isNlthaResultSet),
+      pushoverResultSets: resultSets.filter(isPushoverResultSet),
     }
   }, [resultSets])
 
@@ -173,6 +180,7 @@ export function ResultsTreeBrowser({
 
   // Auto-expand first result set
   useEffect(() => {
+    if (disableInitialAutoSelect) return
     if (!nlthaResultSets.length || hasAutoSelectedInitial) return
 
     const firstId = nlthaResultSets[0].id
@@ -191,7 +199,7 @@ export function ResultsTreeBrowser({
       direction: 'X',
     })
     setHasAutoSelectedInitial(true)
-  }, [hasAutoSelectedInitial, handleSelect, nlthaResultSets])
+  }, [disableInitialAutoSelect, hasAutoSelectedInitial, handleSelect, nlthaResultSets])
 
   const toggleSection = (section: string) => {
     setExpandedSections((prev) => {
@@ -321,7 +329,9 @@ export function ResultsTreeBrowser({
                 expandedCategories={expandedCategories}
                 expandedCategoryTypes={expandedCategoryTypes}
                 expandedResultTypes={expandedResultTypes}
-                onToggleResultSet={() => handleResultSetRootClick(rs.id)}
+                onToggleResultSet={() =>
+                  resultSetRootSelectsDefault ? handleResultSetRootClick(rs.id) : toggleResultSet(rs.id)
+                }
                 onToggleCategory={toggleCategory}
                 onToggleCategoryType={toggleCategoryType}
                 onToggleResultType={toggleResultType}
@@ -370,7 +380,26 @@ export function ResultsTreeBrowser({
                 }
 
                 if (defaultSelection.type === 'comparison_beam_rotations') {
-                  setExpandedCategoryTypes(new Set([rootKey, `${rootKey}-Elements`]))
+                  setExpandedCategoryTypes(
+                    new Set([
+                      rootKey,
+                      `${rootKey}-Elements`,
+                      `${rootKey}-Elements-Beams`,
+                    ])
+                  )
+                  setExpandedResultTypes(new Set())
+                  return
+                }
+
+                if (defaultSelection.type === 'comparison_column_rotations') {
+                  setExpandedCategoryTypes(
+                    new Set([
+                      rootKey,
+                      `${rootKey}-Elements`,
+                      `${rootKey}-Elements-Columns`,
+                      `${rootKey}-Elements-Columns-ColumnRotations`,
+                    ])
+                  )
                   setExpandedResultTypes(new Set())
                   return
                 }
@@ -495,7 +524,11 @@ function NLTHAResultSetNode({
 
   // Check for time-series data
   const { data: timeSeriesData } = useTimeSeriesLoadCases(projectSlug, resultSet.id)
-  const hasTimeSeries = (timeSeriesData?.load_cases?.length || 0) > 0
+  const timeSeriesLoadCases = useMemo(
+    () => [...(timeSeriesData?.load_cases ?? [])].sort(naturalCompare),
+    [timeSeriesData?.load_cases]
+  )
+  const hasTimeSeries = timeSeriesLoadCases.length > 0
   const hasWallShears = elementResults.some((resultType) => resultType.type === 'WallShears')
   const hasQuadRotations = elementResults.some((resultType) => resultType.type === 'QuadRotations')
   const hasColumnShears = elementResults.some((resultType) => resultType.type === 'ColumnShears')
@@ -1109,39 +1142,43 @@ function NLTHAResultSetNode({
               isExpanded={expandedCategories.has(timeSeriesKey)}
               onToggle={() => onToggleCategory(timeSeriesKey)}
             >
-              <TreeCategoryTypeNode
-                label="Global"
-                icon={ICONS.categoryType}
-                isExpanded={true}
-                onToggle={() => {}}
-              >
-                <TreeLeafNode
-                  label={`${ICONS.branch} X Direction`}
-                  onClick={() =>
-                    onSelect({
-                      type: 'time_series',
-                      resultSetId: resultSet.id,
-                      category: 'Time-Series',
-                      categoryType: 'Global',
-                      resultType: 'Drifts',
-                      direction: 'X',
-                    })
-                  }
-                />
-                <TreeLeafNode
-                  label={`${ICONS.branchLast} Y Direction`}
-                  onClick={() =>
-                    onSelect({
-                      type: 'time_series',
-                      resultSetId: resultSet.id,
-                      category: 'Time-Series',
-                      categoryType: 'Global',
-                      resultType: 'Drifts',
-                      direction: 'Y',
-                    })
-                  }
-                />
-              </TreeCategoryTypeNode>
+              {timeSeriesLoadCases.map((loadCaseName, index) => {
+                const loadCaseKey = `${timeSeriesKey}-${loadCaseName}`
+                const isLastLoadCase = index === timeSeriesLoadCases.length - 1
+                return (
+                  <TreeCategoryTypeNode
+                    key={loadCaseName}
+                    label={`${isLastLoadCase ? ICONS.branchLast : ICONS.branch} ${loadCaseName}`}
+                    icon={ICONS.categoryType}
+                    isExpanded={expandedCategoryTypes.has(loadCaseKey)}
+                    onToggle={() => onToggleCategoryType(loadCaseKey)}
+                  >
+                    {(['X', 'Y'] as const).map((direction, directionIndex) => (
+                      <TreeLeafNode
+                        key={`${loadCaseName}-${direction}`}
+                        label={`${directionIndex < 1 ? ICONS.branch : ICONS.branchLast} ${direction} Direction`}
+                        onClick={() =>
+                          onSelect({
+                            type: 'time_series',
+                            resultSetId: resultSet.id,
+                            category: 'Time-Series',
+                            categoryType: 'Global',
+                            resultType: 'Drifts',
+                            direction,
+                            loadCaseName,
+                          })
+                        }
+                        isSelected={
+                          currentSelection?.type === 'time_series' &&
+                          currentSelection.resultSetId === resultSet.id &&
+                          currentSelection.direction === direction &&
+                          currentSelection.loadCaseName === loadCaseName
+                        }
+                      />
+                    ))}
+                  </TreeCategoryTypeNode>
+                )
+              })}
             </TreeCategoryNode>
           )}
         </div>
@@ -1181,7 +1218,10 @@ function PushoverResultSetNode({
   onSelect,
 }: PushoverResultSetNodeProps) {
   const { data: casesData } = usePushoverCases(projectSlug, isExpanded ? resultSet.id : undefined)
-  const pushoverCases = casesData?.pushover_cases ?? []
+  const pushoverCases = useMemo(
+    () => casesData?.pushover_cases ?? [],
+    [casesData?.pushover_cases]
+  )
 
   // Group cases by direction
   const directionGroups = useMemo(() => {
@@ -1196,7 +1236,97 @@ function PushoverResultSetNode({
 
   const curvesKey = `push-${resultSet.id}-curves`
   const globalKey = `push-${resultSet.id}-global`
+  const elementsKey = `push-${resultSet.id}-elements`
+  const wallsKey = `push-${resultSet.id}-elements-walls`
+  const wallShearsKey = `push-${resultSet.id}-elements-walls-shears`
+  const wallRotationsKey = `push-${resultSet.id}-elements-walls-rotations`
+  const columnsKey = `push-${resultSet.id}-elements-columns`
+  const columnShearsKey = `push-${resultSet.id}-elements-columns-shears`
+  const columnRotationsKey = `push-${resultSet.id}-elements-columns-rotations`
+  const beamsKey = `push-${resultSet.id}-elements-beams`
+  const beamRotationsKey = `push-${resultSet.id}-elements-beams-r3`
+  const jointsKey = `push-${resultSet.id}-joints`
+  const soilPressuresKey = `push-${resultSet.id}-joints-soil`
+  const verticalDisplacementsKey = `push-${resultSet.id}-joints-vertical`
   const PUSHOVER_GLOBAL_TYPES = ['Drifts', 'Forces', 'Displacements']
+
+  const { data: wallShearElementsData } = useElementsForType(
+    projectSlug,
+    isExpanded ? { result_set_id: resultSet.id, result_type: 'WallShears' } : null
+  )
+  const wallShearElements = useMemo(
+    () => [...(wallShearElementsData?.elements || [])].sort((a, b) => naturalCompare(a.name, b.name)),
+    [wallShearElementsData]
+  )
+
+  const { data: quadRotationElementsData } = useElementsForType(
+    projectSlug,
+    isExpanded ? { result_set_id: resultSet.id, result_type: 'QuadRotations' } : null
+  )
+  const quadRotationElements = useMemo(
+    () => [...(quadRotationElementsData?.elements || [])].sort((a, b) => naturalCompare(a.name, b.name)),
+    [quadRotationElementsData]
+  )
+
+  const { data: columnShearElementsData } = useElementsForType(
+    projectSlug,
+    isExpanded ? { result_set_id: resultSet.id, result_type: 'ColumnShears' } : null
+  )
+  const columnShearElements = useMemo(
+    () => [...(columnShearElementsData?.elements || [])].sort((a, b) => naturalCompare(a.name, b.name)),
+    [columnShearElementsData]
+  )
+
+  const { data: columnRotationElementsData } = useElementsForType(
+    projectSlug,
+    isExpanded ? { result_set_id: resultSet.id, result_type: 'ColumnRotations' } : null
+  )
+  const columnRotationElements = useMemo(
+    () => [...(columnRotationElementsData?.elements || [])].sort((a, b) => naturalCompare(a.name, b.name)),
+    [columnRotationElementsData]
+  )
+
+  const { data: beamRotationElementsData } = useElementsForType(
+    projectSlug,
+    isExpanded ? { result_set_id: resultSet.id, result_type: 'BeamRotations' } : null
+  )
+
+  const { data: soilPressuresData } = useJointResults(
+    projectSlug,
+    isExpanded
+      ? {
+          result_set_id: resultSet.id,
+          result_type: 'SoilPressures_Min',
+          is_pushover: true,
+        }
+      : null
+  )
+
+  const { data: verticalDisplacementsData } = useJointResults(
+    projectSlug,
+    isExpanded
+      ? {
+          result_set_id: resultSet.id,
+          result_type: 'VerticalDisplacements_Min',
+          is_pushover: true,
+        }
+      : null
+  )
+
+  const hasWallShears = wallShearElements.length > 0
+  const hasQuadRotations = quadRotationElements.length > 0
+  const hasColumnShears = columnShearElements.length > 0
+  const hasColumnRotations = columnRotationElements.length > 0
+  const hasBeamRotations = (beamRotationElementsData?.elements?.length || 0) > 0
+  const hasSoilPressures = (soilPressuresData?.rows?.length || 0) > 0
+  const hasVerticalDisplacements = (verticalDisplacementsData?.rows?.length || 0) > 0
+  const hasElements =
+    hasWallShears ||
+    hasQuadRotations ||
+    hasColumnShears ||
+    hasColumnRotations ||
+    hasBeamRotations
+  const hasJoints = hasSoilPressures || hasVerticalDisplacements
 
   return (
     <div className="tree-result-set">
@@ -1335,6 +1465,454 @@ function PushoverResultSetNode({
               })}
             </div>
           )}
+
+          {/* Elements Section */}
+          {hasElements && (
+            <>
+              <button
+                onClick={() => onToggleCategory(elementsKey)}
+                className="tree-item w-full text-left flex items-center gap-1 py-1 px-2 rounded hover:bg-bg-hover transition-colors"
+              >
+                <span className="text-text-muted text-[13px]">{ICONS.category}</span>
+                <span className="text-text-secondary">Elements</span>
+              </button>
+              {expandedCategories.has(elementsKey) && (
+                <div className="tree-children ml-3">
+                  {(hasWallShears || hasQuadRotations) && (
+                    <TreeCategoryTypeNode
+                      label="Walls"
+                      icon={ICONS.categoryType}
+                      isExpanded={expandedCategoryTypes.has(wallsKey)}
+                      onToggle={() => onToggleCategoryType(wallsKey)}
+                    >
+                      {hasWallShears && (
+                        <TreeCategoryTypeNode
+                          label="Shears"
+                          icon={ICONS.resultType}
+                          isExpanded={expandedCategoryTypes.has(wallShearsKey)}
+                          onToggle={() => onToggleCategoryType(wallShearsKey)}
+                        >
+                          {wallShearElements.map((element, idx) => {
+                            const wallElementKey = `${wallShearsKey}-${element.id}`
+                            return (
+                              <TreeCategoryTypeNode
+                                key={element.id}
+                                label={`${idx < wallShearElements.length - 1 ? ICONS.branch : ICONS.branchLast} ${element.name}`}
+                                icon={ICONS.resultType}
+                                isExpanded={expandedCategoryTypes.has(wallElementKey)}
+                                onToggle={() => onToggleCategoryType(wallElementKey)}
+                              >
+                                <TreeLeafNode
+                                  label={`${ICONS.branch} V2`}
+                                  onClick={() =>
+                                    onSelect({
+                                      type: 'element',
+                                      resultSetId: resultSet.id,
+                                      category: 'Envelopes',
+                                      categoryType: 'Elements',
+                                      resultType: 'WallShears',
+                                      direction: 'V2',
+                                      elementType: 'Wall',
+                                      elementId: element.id,
+                                    })
+                                  }
+                                  isSelected={
+                                    currentSelection?.type === 'element' &&
+                                    currentSelection.resultSetId === resultSet.id &&
+                                    currentSelection.resultType === 'WallShears' &&
+                                    currentSelection.direction === 'V2' &&
+                                    currentSelection.elementId === element.id
+                                  }
+                                />
+                                <TreeLeafNode
+                                  label={`${ICONS.branchLast} V3`}
+                                  onClick={() =>
+                                    onSelect({
+                                      type: 'element',
+                                      resultSetId: resultSet.id,
+                                      category: 'Envelopes',
+                                      categoryType: 'Elements',
+                                      resultType: 'WallShears',
+                                      direction: 'V3',
+                                      elementType: 'Wall',
+                                      elementId: element.id,
+                                    })
+                                  }
+                                  isSelected={
+                                    currentSelection?.type === 'element' &&
+                                    currentSelection.resultSetId === resultSet.id &&
+                                    currentSelection.resultType === 'WallShears' &&
+                                    currentSelection.direction === 'V3' &&
+                                    currentSelection.elementId === element.id
+                                  }
+                                />
+                              </TreeCategoryTypeNode>
+                            )
+                          })}
+                        </TreeCategoryTypeNode>
+                      )}
+
+                      {hasQuadRotations && (
+                        <TreeCategoryTypeNode
+                          label="Quad Rotations"
+                          icon={ICONS.resultType}
+                          isExpanded={expandedCategoryTypes.has(wallRotationsKey)}
+                          onToggle={() => onToggleCategoryType(wallRotationsKey)}
+                        >
+                          {quadRotationElements.map((element, idx) => (
+                            <TreeLeafNode
+                              key={element.id}
+                              label={`${idx < quadRotationElements.length - 1 ? ICONS.branch : ICONS.branchLast} ${element.name}`}
+                              onClick={() =>
+                                onSelect({
+                                  type: 'element',
+                                  resultSetId: resultSet.id,
+                                  category: 'Envelopes',
+                                  categoryType: 'Elements',
+                                  resultType: 'QuadRotations',
+                                  direction: '',
+                                  elementType: 'Quad',
+                                  elementId: element.id,
+                                })
+                              }
+                              isSelected={
+                                currentSelection?.type === 'element' &&
+                                currentSelection.resultSetId === resultSet.id &&
+                                currentSelection.resultType === 'QuadRotations' &&
+                                currentSelection.elementId === element.id
+                              }
+                            />
+                          ))}
+                        </TreeCategoryTypeNode>
+                      )}
+                    </TreeCategoryTypeNode>
+                  )}
+
+                  {(hasColumnShears || hasColumnRotations) && (
+                    <TreeCategoryTypeNode
+                      label="Columns"
+                      icon={ICONS.categoryType}
+                      isExpanded={expandedCategoryTypes.has(columnsKey)}
+                      onToggle={() => onToggleCategoryType(columnsKey)}
+                    >
+                      {hasColumnShears && (
+                        <TreeCategoryTypeNode
+                          label="Shears"
+                          icon={ICONS.resultType}
+                          isExpanded={expandedCategoryTypes.has(columnShearsKey)}
+                          onToggle={() => onToggleCategoryType(columnShearsKey)}
+                        >
+                          {columnShearElements.map((element, idx) => {
+                            const columnElementKey = `${columnShearsKey}-${element.id}`
+                            return (
+                              <TreeCategoryTypeNode
+                                key={element.id}
+                                label={`${idx < columnShearElements.length - 1 ? ICONS.branch : ICONS.branchLast} ${element.name}`}
+                                icon={ICONS.resultType}
+                                isExpanded={expandedCategoryTypes.has(columnElementKey)}
+                                onToggle={() => onToggleCategoryType(columnElementKey)}
+                              >
+                                <TreeLeafNode
+                                  label={`${ICONS.branch} V2`}
+                                  onClick={() =>
+                                    onSelect({
+                                      type: 'element',
+                                      resultSetId: resultSet.id,
+                                      category: 'Envelopes',
+                                      categoryType: 'Elements',
+                                      resultType: 'ColumnShears',
+                                      direction: 'V2',
+                                      elementType: 'Column',
+                                      elementId: element.id,
+                                    })
+                                  }
+                                  isSelected={
+                                    currentSelection?.type === 'element' &&
+                                    currentSelection.resultSetId === resultSet.id &&
+                                    currentSelection.resultType === 'ColumnShears' &&
+                                    currentSelection.direction === 'V2' &&
+                                    currentSelection.elementId === element.id
+                                  }
+                                />
+                                <TreeLeafNode
+                                  label={`${ICONS.branchLast} V3`}
+                                  onClick={() =>
+                                    onSelect({
+                                      type: 'element',
+                                      resultSetId: resultSet.id,
+                                      category: 'Envelopes',
+                                      categoryType: 'Elements',
+                                      resultType: 'ColumnShears',
+                                      direction: 'V3',
+                                      elementType: 'Column',
+                                      elementId: element.id,
+                                    })
+                                  }
+                                  isSelected={
+                                    currentSelection?.type === 'element' &&
+                                    currentSelection.resultSetId === resultSet.id &&
+                                    currentSelection.resultType === 'ColumnShears' &&
+                                    currentSelection.direction === 'V3' &&
+                                    currentSelection.elementId === element.id
+                                  }
+                                />
+                              </TreeCategoryTypeNode>
+                            )
+                          })}
+                        </TreeCategoryTypeNode>
+                      )}
+
+                      {hasColumnRotations && (
+                        <TreeCategoryTypeNode
+                          label="Rotations"
+                          icon={ICONS.resultType}
+                          isExpanded={expandedCategoryTypes.has(columnRotationsKey)}
+                          onToggle={() => onToggleCategoryType(columnRotationsKey)}
+                        >
+                          <TreeLeafNode
+                            label={`${columnRotationElements.length ? ICONS.branch : ICONS.branchLast} All Rotations`}
+                            onClick={() =>
+                              onSelect({
+                                type: 'column_rotations_plot',
+                                resultSetId: resultSet.id,
+                                category: 'Envelopes',
+                                categoryType: 'Elements',
+                                resultType: 'AllColumnRotations',
+                                direction: '',
+                                elementType: 'Column',
+                              })
+                            }
+                            isSelected={
+                              currentSelection?.type === 'column_rotations_plot' &&
+                              currentSelection.resultSetId === resultSet.id
+                            }
+                          />
+                          {columnRotationElements.map((element, idx) => {
+                            const columnRotationElementKey = `${columnRotationsKey}-${element.id}`
+                            return (
+                              <TreeCategoryTypeNode
+                                key={element.id}
+                                label={`${idx < columnRotationElements.length - 1 ? ICONS.branch : ICONS.branchLast} ${element.name}`}
+                                icon={ICONS.resultType}
+                                isExpanded={expandedCategoryTypes.has(columnRotationElementKey)}
+                                onToggle={() => onToggleCategoryType(columnRotationElementKey)}
+                              >
+                                <TreeLeafNode
+                                  label={`${ICONS.branch} R2`}
+                                  onClick={() =>
+                                    onSelect({
+                                      type: 'element',
+                                      resultSetId: resultSet.id,
+                                      category: 'Envelopes',
+                                      categoryType: 'Elements',
+                                      resultType: 'ColumnRotations',
+                                      direction: 'R2',
+                                      elementType: 'Column',
+                                      elementId: element.id,
+                                    })
+                                  }
+                                  isSelected={
+                                    currentSelection?.type === 'element' &&
+                                    currentSelection.resultSetId === resultSet.id &&
+                                    currentSelection.resultType === 'ColumnRotations' &&
+                                    currentSelection.direction === 'R2' &&
+                                    currentSelection.elementId === element.id
+                                  }
+                                />
+                                <TreeLeafNode
+                                  label={`${ICONS.branchLast} R3`}
+                                  onClick={() =>
+                                    onSelect({
+                                      type: 'element',
+                                      resultSetId: resultSet.id,
+                                      category: 'Envelopes',
+                                      categoryType: 'Elements',
+                                      resultType: 'ColumnRotations',
+                                      direction: 'R3',
+                                      elementType: 'Column',
+                                      elementId: element.id,
+                                    })
+                                  }
+                                  isSelected={
+                                    currentSelection?.type === 'element' &&
+                                    currentSelection.resultSetId === resultSet.id &&
+                                    currentSelection.resultType === 'ColumnRotations' &&
+                                    currentSelection.direction === 'R3' &&
+                                    currentSelection.elementId === element.id
+                                  }
+                                />
+                              </TreeCategoryTypeNode>
+                            )
+                          })}
+                        </TreeCategoryTypeNode>
+                      )}
+                    </TreeCategoryTypeNode>
+                  )}
+
+                  {hasBeamRotations && (
+                    <TreeCategoryTypeNode
+                      label="Beams"
+                      icon={ICONS.categoryType}
+                      isExpanded={expandedCategoryTypes.has(beamsKey)}
+                      onToggle={() => onToggleCategoryType(beamsKey)}
+                    >
+                      <TreeCategoryTypeNode
+                        label="R3 Plastic Rotations"
+                        icon={ICONS.resultType}
+                        isExpanded={expandedCategoryTypes.has(beamRotationsKey)}
+                        onToggle={() => onToggleCategoryType(beamRotationsKey)}
+                      >
+                        <TreeLeafNode
+                          label={`${ICONS.branch} Plot`}
+                          onClick={() =>
+                            onSelect({
+                              type: 'beam_rotations_plot',
+                              resultSetId: resultSet.id,
+                              category: 'Envelopes',
+                              categoryType: 'Elements',
+                              resultType: 'AllBeamRotations',
+                              direction: '',
+                              elementType: 'Beam',
+                            })
+                          }
+                          isSelected={
+                            currentSelection?.type === 'beam_rotations_plot' &&
+                            currentSelection.resultSetId === resultSet.id
+                          }
+                        />
+                        <TreeLeafNode
+                          label={`${ICONS.branchLast} Table`}
+                          onClick={() =>
+                            onSelect({
+                              type: 'beam_rotations_table',
+                              resultSetId: resultSet.id,
+                              category: 'Envelopes',
+                              categoryType: 'Elements',
+                              resultType: 'BeamRotationsTable',
+                              direction: '',
+                              elementType: 'Beam',
+                            })
+                          }
+                          isSelected={
+                            currentSelection?.type === 'beam_rotations_table' &&
+                            currentSelection.resultSetId === resultSet.id
+                          }
+                        />
+                      </TreeCategoryTypeNode>
+                    </TreeCategoryTypeNode>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Joints Section */}
+          {hasJoints && (
+            <>
+              <button
+                onClick={() => onToggleCategory(jointsKey)}
+                className="tree-item w-full text-left flex items-center gap-1 py-1 px-2 rounded hover:bg-bg-hover transition-colors"
+              >
+                <span className="text-text-muted text-[13px]">{ICONS.category}</span>
+                <span className="text-text-secondary">Joints</span>
+              </button>
+              {expandedCategories.has(jointsKey) && (
+                <div className="tree-children ml-3">
+                  {hasSoilPressures && (
+                    <TreeCategoryTypeNode
+                      label="Soil Pressures (Min)"
+                      icon={ICONS.resultType}
+                      isExpanded={expandedCategoryTypes.has(soilPressuresKey)}
+                      onToggle={() => onToggleCategoryType(soilPressuresKey)}
+                    >
+                      <TreeLeafNode
+                        label={`${ICONS.branch} Plot`}
+                        onClick={() =>
+                          onSelect({
+                            type: 'joint_plot',
+                            resultSetId: resultSet.id,
+                            category: 'Envelopes',
+                            categoryType: 'Joints',
+                            resultType: 'SoilPressures',
+                            direction: 'Min',
+                          })
+                        }
+                        isSelected={
+                          currentSelection?.type === 'joint_plot' &&
+                          currentSelection.resultSetId === resultSet.id &&
+                          currentSelection.resultType === 'SoilPressures'
+                        }
+                      />
+                      <TreeLeafNode
+                        label={`${ICONS.branchLast} Table`}
+                        onClick={() =>
+                          onSelect({
+                            type: 'joint_table',
+                            resultSetId: resultSet.id,
+                            category: 'Envelopes',
+                            categoryType: 'Joints',
+                            resultType: 'SoilPressures',
+                            direction: 'Min',
+                          })
+                        }
+                        isSelected={
+                          currentSelection?.type === 'joint_table' &&
+                          currentSelection.resultSetId === resultSet.id &&
+                          currentSelection.resultType === 'SoilPressures'
+                        }
+                      />
+                    </TreeCategoryTypeNode>
+                  )}
+
+                  {hasVerticalDisplacements && (
+                    <TreeCategoryTypeNode
+                      label="Vertical Displacements (Min)"
+                      icon={ICONS.resultType}
+                      isExpanded={expandedCategoryTypes.has(verticalDisplacementsKey)}
+                      onToggle={() => onToggleCategoryType(verticalDisplacementsKey)}
+                    >
+                      <TreeLeafNode
+                        label={`${ICONS.branch} Plot`}
+                        onClick={() =>
+                          onSelect({
+                            type: 'joint_plot',
+                            resultSetId: resultSet.id,
+                            category: 'Envelopes',
+                            categoryType: 'Joints',
+                            resultType: 'VerticalDisplacements',
+                            direction: 'Min',
+                          })
+                        }
+                        isSelected={
+                          currentSelection?.type === 'joint_plot' &&
+                          currentSelection.resultSetId === resultSet.id &&
+                          currentSelection.resultType === 'VerticalDisplacements'
+                        }
+                      />
+                      <TreeLeafNode
+                        label={`${ICONS.branchLast} Table`}
+                        onClick={() =>
+                          onSelect({
+                            type: 'joint_table',
+                            resultSetId: resultSet.id,
+                            category: 'Envelopes',
+                            categoryType: 'Joints',
+                            resultType: 'VerticalDisplacements',
+                            direction: 'Min',
+                          })
+                        }
+                        isSelected={
+                          currentSelection?.type === 'joint_table' &&
+                          currentSelection.resultSetId === resultSet.id &&
+                          currentSelection.resultType === 'VerticalDisplacements'
+                        }
+                      />
+                    </TreeCategoryTypeNode>
+                  )}
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
     </div>
@@ -1454,6 +2032,7 @@ function ComparisonSetNode({
   const elementTypes = cs.result_types.filter((t) => t in COMP_ELEMENT_TYPE_MAP)
   const jointTypes = cs.result_types.filter((t) => COMP_JOINT_TYPES.includes(t))
   const hasBeamRotations = cs.result_types.includes(COMP_BEAM_ROTATIONS)
+  const hasColumnRotations = cs.result_types.includes('ColumnRotations')
 
   const hasGlobal = globalTypes.length > 0
   const hasElements = elementTypes.length > 0 || hasBeamRotations
@@ -1510,6 +2089,19 @@ function ComparisonSetNode({
         resultSetId: -1,
         category: 'Envelopes',
         resultType: 'BeamRotations',
+        direction: '',
+        comparisonSetId: cs.id,
+        comparisonSetName: cs.name,
+        resultSetIds: cs.result_set_ids,
+      }
+    }
+
+    if (hasColumnRotations) {
+      return {
+        type: 'comparison_column_rotations',
+        resultSetId: -1,
+        category: 'Envelopes',
+        resultType: 'ColumnRotations',
         direction: '',
         comparisonSetId: cs.id,
         comparisonSetName: cs.name,
@@ -1598,26 +2190,32 @@ function ComparisonSetNode({
                 />
               ))}
               {hasBeamRotations && (
-                <TreeLeafNode
-                  label="Beams — All Rotations"
+                <TreeCategoryTypeNode
+                  label="Beams"
                   icon={ICONS.resultType}
-                  onClick={() =>
-                    onSelect({
-                      type: 'comparison_beam_rotations',
-                      resultSetId: -1,
-                      category: 'Envelopes',
-                      resultType: 'BeamRotations',
-                      direction: '',
-                      comparisonSetId: cs.id,
-                      comparisonSetName: cs.name,
-                      resultSetIds: cs.result_set_ids,
-                    })
-                  }
-                  isSelected={
-                    currentSelection?.comparisonSetId === cs.id &&
-                    currentSelection?.type === 'comparison_beam_rotations'
-                  }
-                />
+                  isExpanded={expandedCategoryTypes.has(`${csKey}-Elements-Beams`)}
+                  onToggle={() => onToggleCategoryType(`${csKey}-Elements-Beams`)}
+                >
+                  <TreeLeafNode
+                    label={`${ICONS.branchLast} R3 Plastic Rotations`}
+                    onClick={() =>
+                      onSelect({
+                        type: 'comparison_beam_rotations',
+                        resultSetId: -1,
+                        category: 'Envelopes',
+                        resultType: 'BeamRotations',
+                        direction: '',
+                        comparisonSetId: cs.id,
+                        comparisonSetName: cs.name,
+                        resultSetIds: cs.result_set_ids,
+                      })
+                    }
+                    isSelected={
+                      currentSelection?.comparisonSetId === cs.id &&
+                      currentSelection?.type === 'comparison_beam_rotations'
+                    }
+                  />
+                </TreeCategoryTypeNode>
               )}
             </TreeCategoryTypeNode>
           )}
@@ -1755,6 +2353,27 @@ function ComparisonElementGroupNode({
             isExpanded={expandedCategoryTypes.has(typeKey)}
             onToggle={() => onToggleCategoryType(typeKey)}
           >
+            {groupName === 'Columns' && typeInfo.type === 'ColumnRotations' && (
+              <TreeLeafNode
+                label={`${elements.length ? ICONS.branch : ICONS.branchLast} All Rotations`}
+                onClick={() =>
+                  onSelect({
+                    type: 'comparison_column_rotations',
+                    resultSetId: -1,
+                    category: 'Envelopes',
+                    resultType: 'ColumnRotations',
+                    direction: '',
+                    comparisonSetId: csId,
+                    comparisonSetName: csName,
+                    resultSetIds,
+                  })
+                }
+                isSelected={
+                  currentSelection?.comparisonSetId === csId &&
+                  currentSelection?.type === 'comparison_column_rotations'
+                }
+              />
+            )}
             {elements.map((element, idx) => {
               const elKey = `${typeKey}-${element.id}`
               const isLast = idx === elements.length - 1

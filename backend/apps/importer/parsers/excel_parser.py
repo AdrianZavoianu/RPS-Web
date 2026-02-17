@@ -580,8 +580,12 @@ class ExcelParser:
 
         df["Soil Pressure"] = pd.to_numeric(df["Soil Pressure"], errors="coerce")
 
-        # Filter to only Min step type
-        df = df[df["Step Type"] == "Min"].copy()
+        # NLTHA typically uses explicit Min rows. Pushover files often have step-by-step rows;
+        # in that case we keep all rows and aggregate minimum pressure per case below.
+        step_type_series = df["Step Type"].astype(str).str.strip().str.casefold()
+        min_only = df[step_type_series == "min"].copy()
+        if not min_only.empty:
+            df = min_only
 
         # Min soil pressure per (Shell Object, Unique Name, Output Case)
         grp = df.groupby(["Shell Object", "Unique Name", "Output Case"], as_index=False)[
@@ -640,8 +644,12 @@ class ExcelParser:
 
         df["Uz"] = pd.to_numeric(df["Uz"], errors="coerce")
 
-        # Filter to only Min step type
-        df = df[df["Step Type"] == "Min"].copy()
+        # NLTHA typically uses explicit Min rows. For pushover step-by-step rows,
+        # keep all rows and aggregate minimum Uz per case below.
+        step_type_series = df["Step Type"].astype(str).str.strip().str.casefold()
+        min_only = df[step_type_series == "min"].copy()
+        if not min_only.empty:
+            df = min_only
 
         # Min Uz per (Unique Name, Output Case)
         grp = df.groupby(["Unique Name", "Output Case"], as_index=False).agg(

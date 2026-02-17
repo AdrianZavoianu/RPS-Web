@@ -227,7 +227,7 @@
 .report-preview-area {}
 .report-page {}
 .report-page-header {}
-.report-page-header-left {}
+.report-page-header-meta {}
 .report-page-logo {}
 .report-page-project-name {}
 .report-page-result-set {}
@@ -236,7 +236,13 @@
 .report-section {}
 .report-section-title {}
 .report-top10-label {}
+.report-data-table-wrap {}
 .report-data-table {}
+.report-data-header {}
 .report-label-header {}
+.report-data-cell {}
 .report-label-cell {}
+.report-summary-header {}
+.report-summary-cell {}
+.report-numeric-cell {}
 .report-chart {}

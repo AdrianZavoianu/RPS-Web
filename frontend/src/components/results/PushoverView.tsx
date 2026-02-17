@@ -11,6 +11,7 @@ import { PushoverCurveChart, PushoverMultiCurveChart } from '../charts/ProfileCh
 import { ResultsTable } from './ResultsTable'
 import { ProjectBrowserNav } from '../projects/ProjectBrowserNav'
 import type { GlobalResultType, PushoverCase } from '../../types'
+import { isPushoverResultSet } from '../../utils/resultSets'
 
 interface PushoverViewProps {
   projectSlug: string
@@ -41,7 +42,7 @@ export function PushoverView({ projectSlug }: PushoverViewProps) {
   // Get pushover result sets only
   const { data: allResultSets, isLoading: resultSetsLoading } = useResultSets(projectSlug)
   const pushoverResultSets = useMemo(
-    () => allResultSets?.filter((rs) => rs.analysis_type === 'Pushover') ?? [],
+    () => allResultSets?.filter(isPushoverResultSet) ?? [],
     [allResultSets]
   )
 

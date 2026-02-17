@@ -2,6 +2,7 @@ import { useState } from 'react'
 import clsx from 'clsx'
 import { useResultSets, useAvailableResultTypes, useCreateComparisonSet } from '../../hooks/useResults'
 import type { ComparisonSetCreate } from '../../types'
+import { isNlthaResultSet } from '../../utils/resultSets'
 
 interface ComparisonSetDialogProps {
   projectSlug: string
@@ -69,7 +70,7 @@ export function ComparisonSetDialog({ projectSlug, onClose, onCreated }: Compari
   const selectAllResultSets = () => {
     if (!resultSets) return
     // Only NLTHA result sets for comparison
-    const nltha = resultSets.filter((rs) => rs.analysis_type !== 'Pushover')
+    const nltha = resultSets.filter(isNlthaResultSet)
     setSelectedResultSetIds(new Set(nltha.map((rs) => rs.id)))
   }
 
@@ -102,7 +103,7 @@ export function ComparisonSetDialog({ projectSlug, onClose, onCreated }: Compari
     })
   }
 
-  const nlthaResultSets = resultSets?.filter((rs) => rs.analysis_type !== 'Pushover') || []
+  const nlthaResultSets = resultSets?.filter(isNlthaResultSet) || []
 
   return (
     <div className="dialog-overlay fixed inset-0 bg-black/50 flex items-center justify-center z-50">

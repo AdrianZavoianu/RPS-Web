@@ -6,13 +6,15 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import clsx from 'clsx'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   useResultSets,
   useTimeSeriesLoadCases,
   useTimeSeriesAllTypes,
 } from '../../hooks/useResults'
 import { LazyPlot } from '../charts/LazyPlot'
-import { ProjectBrowserNav } from '../projects/ProjectBrowserNav'
+import { ResultsTreeBrowser, type TreeSelection } from '../projects/ResultsTreeBrowser'
+import { isNlthaResultSet } from '../../utils/resultSets'
 
 // --- Constants ---
 
@@ -37,7 +39,6 @@ const STORY_AXIS_TOP_PADDING = 0.2
 // Plotly dark theme colors
 const PAPER_BG = '#0a0c10'
 const PLOT_BG = '#0f1419'
-const GRID_COLOR = '#2c313a'
 const TEXT_COLOR = '#d1d5db'
 const PROFILE_COLOR = '#4a7d89'
 const MAX_ENVELOPE_COLOR = '#e74c3c'
@@ -59,6 +60,9 @@ interface EnvelopeData {
 // --- Component ---
 
 export function TimeSeriesView({ projectSlug }: TimeSeriesViewProps) {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const preselectionAppliedFor = useRef<string | null>(null)
   // Selection state
   const [selectedResultSetId, setSelectedResultSetId] = useState<number | null>(null)
   const [selectedLoadCase, setSelectedLoadCase] = useState<string | null>(null)
@@ -72,8 +76,33 @@ export function TimeSeriesView({ projectSlug }: TimeSeriesViewProps) {
   const lastFrameTimeRef = useRef<number>(0)
 
   // Data fetching
-  const { data: resultSets, isLoading: resultSetsLoading } = useResultSets(projectSlug)
-  const { data: loadCasesData } = useTimeSeriesLoadCases(projectSlug, selectedResultSetId || undefined)
+  const { data: resultSets } = useResultSets(projectSlug)
+  const { data: loadCasesData } = useTimeSeriesLoadCases(
+    projectSlug,
+    selectedResultSetId || undefined
+  )
+  const nlthaResultSets = useMemo(
+    () => (resultSets || []).filter(isNlthaResultSet),
+    [resultSets]
+  )
+  const preselectedParams = useMemo(() => {
+    const search = new URLSearchParams(location.search)
+    const resultSetIdRaw = search.get('result_set_id')
+    const directionRaw = search.get('direction')
+    const loadCaseRaw = search.get('load_case')
+
+    const parsedResultSetId = resultSetIdRaw ? Number(resultSetIdRaw) : null
+    const direction =
+      directionRaw && ['X', 'Y'].includes(directionRaw.toUpperCase())
+        ? directionRaw.toUpperCase()
+        : null
+
+    return {
+      resultSetId: Number.isFinite(parsedResultSetId) ? parsedResultSetId : null,
+      direction,
+      loadCase: loadCaseRaw || null,
+    }
+  }, [location.search])
 
   const { data: allTypesData, isLoading: dataLoading } = useTimeSeriesAllTypes(
     projectSlug,
@@ -88,23 +117,52 @@ export function TimeSeriesView({ projectSlug }: TimeSeriesViewProps) {
 
   // Auto-select first result set
   useEffect(() => {
-    if (resultSets?.length && !selectedResultSetId) {
-      setSelectedResultSetId(resultSets[0].id)
+    if (nlthaResultSets.length && !selectedResultSetId) {
+      setSelectedResultSetId(nlthaResultSets[0].id)
     }
-  }, [resultSets, selectedResultSetId])
+  }, [nlthaResultSets, selectedResultSetId])
+
+  useEffect(() => {
+    if (!location.search || preselectionAppliedFor.current === location.search) {
+      return
+    }
+
+    if (
+      preselectedParams.resultSetId &&
+      nlthaResultSets.some((resultSet) => resultSet.id === preselectedParams.resultSetId)
+    ) {
+      setSelectedResultSetId(preselectedParams.resultSetId)
+    }
+
+    if (preselectedParams.direction) {
+      setSelectedDirection(preselectedParams.direction)
+    }
+
+    if (preselectedParams.loadCase) {
+      setSelectedLoadCase(preselectedParams.loadCase)
+    }
+
+    preselectionAppliedFor.current = location.search
+  }, [location.search, nlthaResultSets, preselectedParams])
 
   const loadCases = useMemo(() => loadCasesData?.load_cases ?? [], [loadCasesData])
 
-  // Auto-select first load case
+  // Keep load-case selection valid when result set / data changes.
   useEffect(() => {
-    if (loadCases.length && !selectedLoadCase) {
+    if (!loadCases.length) {
+      if (selectedLoadCase !== null) {
+        setSelectedLoadCase(null)
+      }
+      return
+    }
+
+    if (!selectedLoadCase || !loadCases.includes(selectedLoadCase)) {
       setSelectedLoadCase(loadCases[0])
     }
   }, [loadCases, selectedLoadCase])
 
   // Reset load case when result set changes
   useEffect(() => {
-    setSelectedLoadCase(null)
     setCurrentPosition(0)
     setIsPlaying(false)
   }, [selectedResultSetId])
@@ -272,125 +330,141 @@ export function TimeSeriesView({ projectSlug }: TimeSeriesViewProps) {
   }, [allTypesData, stories])
 
   const hasData = allTypesData && Object.keys(allTypesData.types).length > 0
+  const selectedResultSetName = useMemo(() => {
+    if (!selectedResultSetId) return 'N/A'
+    return nlthaResultSets.find((resultSet) => resultSet.id === selectedResultSetId)?.name || 'N/A'
+  }, [nlthaResultSets, selectedResultSetId])
+  const currentTreeSelection = useMemo<TreeSelection | null>(() => {
+    if (!selectedResultSetId || !selectedLoadCase) return null
+    return {
+      type: 'time_series',
+      resultSetId: selectedResultSetId,
+      category: 'Time-Series',
+      categoryType: 'Global',
+      resultType: 'Drifts',
+      direction: selectedDirection,
+      loadCaseName: selectedLoadCase,
+    }
+  }, [selectedDirection, selectedLoadCase, selectedResultSetId])
+
+  const handleTreeSelect = useCallback((selection: TreeSelection) => {
+    if (selection.type !== 'time_series') {
+      const query = selection.resultSetId > 0
+        ? `?result_set_id=${selection.resultSetId}`
+        : ''
+      navigate(`/projects/${projectSlug}/results${query}`)
+      return
+    }
+
+    setSelectedResultSetId(selection.resultSetId)
+    if (selection.loadCaseName) {
+      setSelectedLoadCase(selection.loadCaseName)
+    }
+    setSelectedDirection(selection.direction === 'Y' ? 'Y' : 'X')
+
+    const query = new URLSearchParams({
+      result_set_id: String(selection.resultSetId),
+      direction: selection.direction === 'Y' ? 'Y' : 'X',
+    })
+    if (selection.loadCaseName) {
+      query.set('load_case', selection.loadCaseName)
+    }
+    navigate(`/projects/${projectSlug}/time-series?${query.toString()}`)
+  }, [navigate, projectSlug])
 
   return (
     <div className="time-series-view h-full flex">
-      {/* Left sidebar - nav only */}
-      <div className="time-series-sidebar w-[180px] bg-bg-secondary border-r border-border-default flex flex-col overflow-auto">
-        <ProjectBrowserNav projectSlug={projectSlug} />
+      <div className="w-[240px] min-w-[240px] flex flex-col overflow-hidden">
+        <div className="flex-1 overflow-auto">
+          <ResultsTreeBrowser
+            projectSlug={projectSlug}
+            currentSelection={currentTreeSelection}
+            onSelect={handleTreeSelect}
+            disableInitialAutoSelect
+            resultSetRootSelectsDefault={false}
+          />
+        </div>
       </div>
 
       {/* Main content */}
-      <div className="time-series-content flex-1 flex flex-col overflow-hidden">
-        {/* Compact toolbar */}
-        <div className="ts-toolbar px-3 py-2 border-b border-border-default bg-bg-secondary flex items-center gap-3 flex-wrap">
-          {/* Result Set */}
-          <select
-            value={selectedResultSetId || ''}
-            onChange={(e) => setSelectedResultSetId(Number(e.target.value))}
-            className="px-2 py-1 bg-bg-primary border border-border-default rounded text-sm text-text-primary"
-          >
-            {resultSetsLoading ? (
-              <option>Loading...</option>
-            ) : resultSets?.length ? (
-              resultSets.map((rs) => (
-                <option key={rs.id} value={rs.id}>
-                  {rs.name}
-                </option>
-              ))
-            ) : (
-              <option>No result sets</option>
-            )}
-          </select>
-
-          {/* Load Case */}
-          <select
-            value={selectedLoadCase || ''}
-            onChange={(e) => setSelectedLoadCase(e.target.value)}
-            className="px-2 py-1 bg-bg-primary border border-border-default rounded text-sm text-text-primary"
-          >
-            {loadCases.length > 0 ? (
-              loadCases.map((lc) => (
-                <option key={lc} value={lc}>
-                  {lc}
-                </option>
-              ))
-            ) : (
-              <option>No load cases</option>
-            )}
-          </select>
-
-          {/* Direction toggles */}
-          <div className="flex gap-1">
-            {['X', 'Y'].map((dir) => (
-              <button
-                key={dir}
-                onClick={() => setSelectedDirection(dir)}
-                className={clsx(
-                  'px-3 py-1 rounded text-sm transition-colors',
-                  selectedDirection === dir
-                    ? 'bg-accent-primary text-white'
-                    : 'bg-bg-primary text-text-secondary hover:bg-bg-hover'
-                )}
-              >
-                {dir}
-              </button>
-            ))}
-          </div>
-
-          {/* Spacer */}
-          <div className="flex-1" />
-
-          {/* Time display */}
-          {hasData && (
-            <div className="text-sm text-text-secondary">
-              Time: <span className="font-mono text-text-primary">{currentTime.toFixed(3)}s</span>
-              <span className="text-text-muted ml-2">
-                (Step {Math.floor(currentPosition) + 1} / {totalSteps})
+      <div className="time-series-content flex-1 min-h-0 flex flex-col overflow-hidden">
+        <div className="px-4 py-2 border-b border-border-default bg-bg-secondary/45">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <h2 className="text-[22px] font-semibold tracking-tight text-text-primary">
+                NLTHA Time-Series Results
+              </h2>
+              <p className="text-[14px] text-text-secondary">
+                Dynamic response evolution by story across time
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap text-[14px]">
+              <span className="px-2.5 py-1 rounded border border-border-default bg-bg-primary text-text-secondary">
+                Set: <span className="text-text-primary">{selectedResultSetName}</span>
+              </span>
+              <span className="px-2.5 py-1 rounded border border-border-default bg-bg-primary text-text-secondary">
+                Case: <span className="text-text-primary">{selectedLoadCase || 'N/A'}</span>
+              </span>
+              <span className="px-2.5 py-1 rounded border border-border-default bg-bg-primary text-text-secondary">
+                Direction: <span className="text-text-primary">{selectedDirection}</span>
               </span>
             </div>
-          )}
+          </div>
         </div>
 
         {hasData ? (
           <>
             {/* 4 profile plots */}
-            <div className="ts-plots-row flex-1 flex gap-0 min-h-0">
-              {RESULT_TYPES.map((rt) => {
-                const profile = getInterpolatedProfile(rt)
-                const envelope = envelopes[rt]
-                const unit = RESULT_TYPE_UNITS[rt]
+            <div className="px-3 pt-3 pb-1 flex-1 min-h-0">
+              <div className="ts-plots-row flex h-full gap-2 min-h-[560px]">
+                {RESULT_TYPES.map((rt) => {
+                  const profile = getInterpolatedProfile(rt)
+                  const envelope = envelopes[rt]
+                  const unit = RESULT_TYPE_UNITS[rt]
 
-                return (
-                  <ProfilePlot
-                    key={rt}
-                    resultType={rt}
-                    unit={unit}
-                    stories={stories}
-                    profile={profile}
-                    envelope={envelope}
-                  />
-                )
-              })}
+                  return (
+                    <ProfilePlot
+                      key={rt}
+                      resultType={rt}
+                      unit={unit}
+                      stories={stories}
+                      profile={profile}
+                      envelope={envelope}
+                    />
+                  )
+                })}
+              </div>
             </div>
 
             {/* Base acceleration plot */}
             {baseAccelData && (
-              <div className="ts-base-plot border-t border-border-default" style={{ height: 120 }}>
-                <BaseAccelerationPlot
-                  timeSteps={timeSteps}
-                  values={baseAccelData}
-                  currentTime={currentTime}
-                />
+              <div className="px-3 pb-1">
+                <div
+                  className="ts-base-plot rounded-md border border-border-default bg-[#0c1117] overflow-hidden"
+                  style={{ height: 'clamp(56px, 8vh, 78px)' }}
+                >
+                  <BaseAccelerationPlot
+                    timeSteps={timeSteps}
+                    values={baseAccelData}
+                    currentTime={currentTime}
+                  />
+                </div>
               </div>
             )}
 
             {/* Controls bar */}
-            <div className="ts-controls px-3 py-2 border-t border-border-default bg-bg-secondary flex items-center gap-3">
+            <div className="ts-controls mx-3 mt-1 mb-3 px-3 py-2 rounded-md border border-border-default bg-bg-secondary flex items-center gap-3">
+              <div className="text-[14px] text-text-secondary min-w-[220px]">
+                Time: <span className="font-mono text-[15px] text-text-primary">{currentTime.toFixed(3)}s</span>
+                <span className="text-text-muted ml-2">
+                  (Step {Math.floor(currentPosition) + 1} / {totalSteps})
+                </span>
+              </div>
+
               {/* Reset */}
               <button
                 onClick={handleReset}
-                className="px-2 py-1 rounded text-sm bg-bg-primary text-text-secondary hover:bg-bg-hover transition-colors"
+                className="px-2 py-1 rounded text-[14px] bg-bg-primary text-text-secondary hover:bg-bg-hover transition-colors"
                 title="Reset"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -407,7 +481,7 @@ export function TimeSeriesView({ projectSlug }: TimeSeriesViewProps) {
               <button
                 onClick={handlePlayPause}
                 className={clsx(
-                  'px-4 py-1 rounded text-sm font-medium transition-colors min-w-[70px]',
+                  'px-4 py-1 rounded text-[14px] font-medium transition-colors min-w-[78px]',
                   isPlaying
                     ? 'bg-red-500 text-white hover:bg-red-600'
                     : 'bg-accent-primary text-white hover:bg-accent-hover'
@@ -433,19 +507,19 @@ export function TimeSeriesView({ projectSlug }: TimeSeriesViewProps) {
               <button
                 onClick={handleSlower}
                 disabled={speedIndex === 0}
-                className="px-2 py-1 rounded text-xs bg-bg-primary text-text-secondary hover:bg-bg-hover disabled:opacity-30 transition-colors"
+                className="px-2 py-1 rounded text-[13px] bg-bg-primary text-text-secondary hover:bg-bg-hover disabled:opacity-30 transition-colors"
               >
                 Slower
               </button>
 
-              <span className="text-sm font-mono text-text-primary min-w-[40px] text-center">
+              <span className="text-[14px] font-mono text-text-primary min-w-[48px] text-center">
                 {speedMultiplier}x
               </span>
 
               <button
                 onClick={handleFaster}
                 disabled={speedIndex === SPEED_LEVELS.length - 1}
-                className="px-2 py-1 rounded text-xs bg-bg-primary text-text-secondary hover:bg-bg-hover disabled:opacity-30 transition-colors"
+                className="px-2 py-1 rounded text-[13px] bg-bg-primary text-text-secondary hover:bg-bg-hover disabled:opacity-30 transition-colors"
               >
                 Faster
               </button>
@@ -453,13 +527,13 @@ export function TimeSeriesView({ projectSlug }: TimeSeriesViewProps) {
           </>
         ) : dataLoading ? (
           <div className="flex items-center justify-center h-full">
-            <div className="text-text-secondary">Loading time-series data...</div>
+            <div className="text-text-secondary text-[16px]">Loading time-series data...</div>
           </div>
         ) : (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
-              <p className="text-text-secondary mb-2">Select a load case to view time-series data</p>
-              <p className="text-text-muted text-sm">
+              <p className="text-text-secondary text-[16px] mb-2">Select a load case to view time-series data</p>
+              <p className="text-text-muted text-[14px]">
                 Time-series data is available for NLTHA analysis results
               </p>
             </div>
@@ -535,23 +609,23 @@ function ProfilePlot({ resultType, unit, stories, profile, envelope }: ProfilePl
   const layout = useMemo(
     () => ({
       xaxis: {
-        title: { text: `${resultType} (${unit})`, font: { size: 9, color: TEXT_COLOR } },
-        gridcolor: GRID_COLOR,
+        title: { text: `${resultType} (${unit})`, font: { size: 12, color: TEXT_COLOR } },
+        showgrid: false,
         zerolinecolor: PROFILE_COLOR,
         zerolinewidth: 1,
-        tickfont: { size: 9, color: TEXT_COLOR },
+        tickfont: { size: 11, color: TEXT_COLOR },
       },
       yaxis: {
-        gridcolor: GRID_COLOR,
-        tickfont: { size: 9, color: TEXT_COLOR },
+        showgrid: false,
+        tickfont: { size: 11, color: TEXT_COLOR },
         categoryorder: 'array' as const,
         categoryarray: stories,
         range: [0, (stories.length > 0 ? stories.length - 1 : 0) + STORY_AXIS_TOP_PADDING],
       },
       paper_bgcolor: PAPER_BG,
       plot_bgcolor: PLOT_BG,
-      font: { color: TEXT_COLOR, size: 10 },
-      margin: { l: 55, r: 8, t: 8, b: 35 },
+      font: { color: TEXT_COLOR, size: 12 },
+      margin: { l: 62, r: 10, t: 10, b: 40 },
       showlegend: false,
       autosize: true,
     }),
@@ -559,7 +633,7 @@ function ProfilePlot({ resultType, unit, stories, profile, envelope }: ProfilePl
   )
 
   return (
-    <div className="ts-profile-plot flex-1 min-w-0">
+    <div className="ts-profile-plot flex-1 min-w-0 h-full rounded-md border border-border-default bg-[#0c1117] overflow-hidden">
       <LazyPlot
         data={traces}
         layout={layout}
@@ -600,20 +674,20 @@ function BaseAccelerationPlot({ timeSteps, values, currentTime }: BaseAccelerati
   const layout = useMemo(
     () => ({
       xaxis: {
-        title: { text: 'Time (s)', font: { size: 9, color: TEXT_COLOR } },
-        gridcolor: GRID_COLOR,
-        tickfont: { size: 9, color: TEXT_COLOR },
+        title: { text: 'Time (s)', font: { size: 11, color: TEXT_COLOR } },
+        showgrid: false,
+        tickfont: { size: 10, color: TEXT_COLOR },
         range: [0, maxTime],
       },
       yaxis: {
-        title: { text: 'Accel (g)', font: { size: 9, color: TEXT_COLOR } },
-        gridcolor: GRID_COLOR,
-        tickfont: { size: 9, color: TEXT_COLOR },
+        title: { text: 'Accel (g)', font: { size: 11, color: TEXT_COLOR } },
+        showgrid: false,
+        tickfont: { size: 10, color: TEXT_COLOR },
       },
       paper_bgcolor: PAPER_BG,
       plot_bgcolor: PLOT_BG,
-      font: { color: TEXT_COLOR, size: 10 },
-      margin: { l: 55, r: 8, t: 4, b: 30 },
+      font: { color: TEXT_COLOR, size: 11 },
+      margin: { l: 62, r: 10, t: 6, b: 34 },
       showlegend: false,
       autosize: true,
       shapes: [

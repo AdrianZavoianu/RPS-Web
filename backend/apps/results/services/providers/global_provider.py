@@ -13,6 +13,36 @@ from ..datasets import (
 from .common import build_summary_columns, sort_load_case_columns
 
 
+def _detect_pushover_case_direction(load_case_name: str) -> str:
+    """Detect pushover case direction from load case name."""
+    case_upper = str(load_case_name).upper()
+    has_x = "X" in case_upper
+    has_y = "Y" in case_upper
+    if has_x and has_y:
+        return "XY"
+    if has_x:
+        return "X"
+    if has_y:
+        return "Y"
+    return "UNKNOWN"
+
+
+def _filter_pushover_matrix_by_direction(
+    matrix: Dict[str, Any], selected_direction: str
+) -> Dict[str, Any]:
+    """Keep only load-case columns matching selected pushover direction."""
+    selected = str(selected_direction).upper()
+    if selected not in {"X", "Y"}:
+        return matrix
+
+    filtered: Dict[str, Any] = {}
+    for load_case_name, value in matrix.items():
+        direction = _detect_pushover_case_direction(load_case_name)
+        if direction == selected or direction == "XY":
+            filtered[load_case_name] = value
+    return filtered if filtered else matrix
+
+
 def get_global_results(
     service,
     result_set_id: int,
@@ -42,7 +72,12 @@ def get_global_results(
 
     for entry in cache_entries:
         row = {"Story": entry.story.name, "story_sort_order": entry.story_sort_order}
-        for lc_name, value in entry.results_matrix.items():
+
+        matrix = entry.results_matrix or {}
+        if is_pushover:
+            matrix = _filter_pushover_matrix_by_direction(matrix, direction)
+
+        for lc_name, value in matrix.items():
             row[lc_name] = service._apply_multiplier(value, result_type)
             load_case_set.add(lc_name)
 

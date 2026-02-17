@@ -27,10 +27,25 @@ class ResultSetSerializer(serializers.ModelSerializer):
     """Serializer for result sets."""
 
     categories = ResultCategorySerializer(many=True, read_only=True)
+    has_pushover_cases = serializers.SerializerMethodField()
+
+    def get_has_pushover_cases(self, obj) -> bool:
+        annotated_value = getattr(obj, "has_pushover_cases", None)
+        if annotated_value is not None:
+            return bool(annotated_value)
+        return obj.pushover_cases.exists()
 
     class Meta:
         model = ResultSet
-        fields = ["id", "name", "description", "analysis_type", "created_at", "categories"]
+        fields = [
+            "id",
+            "name",
+            "description",
+            "analysis_type",
+            "has_pushover_cases",
+            "created_at",
+            "categories",
+        ]
         read_only_fields = ["id", "created_at"]
 
 

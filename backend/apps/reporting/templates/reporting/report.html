@@ -11,6 +11,8 @@
         <div class="header-left">
             {% if logo_uri %}
             <img class="logo" src="{{ logo_uri }}" alt="RPS Logo">
+            {% else %}
+            <span class="logo-fallback">RPS</span>
             {% endif %}
             <span class="project-name">{{ project_name }}</span>
         </div>

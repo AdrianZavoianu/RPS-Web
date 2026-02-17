@@ -4,13 +4,17 @@ Renders HTML templates to PDF with proper styling.
 """
 
 import base64
+import io
+import inspect
 import logging
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import pydyf
 from django.template.loader import render_to_string
 from weasyprint import HTML, CSS
+from PIL import Image
 
 from apps.results.services import ResultDataService
 from apps.results.models import ResultSet
@@ -18,6 +22,42 @@ from apps.results.models import ResultSet
 from .report_data import ReportDataService
 
 logger = logging.getLogger(__name__)
+
+
+def _patch_pydyf_pdf_init_for_weasyprint_60() -> None:
+    """Patch pydyf>=0.11 constructor shape for WeasyPrint 60.x compatibility.
+
+    WeasyPrint 60.x instantiates pydyf.PDF with positional args, while newer
+    pydyf constructors accept only `self`. This shim is a no-op when running
+    against compatible versions.
+    """
+    init_signature = inspect.signature(pydyf.PDF.__init__)
+    if len(init_signature.parameters) != 1:
+        return
+
+    original_init = pydyf.PDF.__init__
+
+    def _compat_init(self, version=b"1.7", identifier=False):
+        original_init(self)
+        if isinstance(version, str):
+            version = version.encode()
+        self.version = version
+        self.identifier = identifier
+
+    def _compat_transform(self, a=1, b=0, c=0, d=1, e=0, f=0):
+        self.set_matrix(a, b, c, d, e, f)
+
+    def _compat_text_matrix(self, a=1, b=0, c=0, d=1, e=0, f=0):
+        self.set_text_matrix(a, b, c, d, e, f)
+
+    pydyf.PDF.__init__ = _compat_init
+    if not hasattr(pydyf.Stream, "transform"):
+        pydyf.Stream.transform = _compat_transform
+    if not hasattr(pydyf.Stream, "text_matrix"):
+        pydyf.Stream.text_matrix = _compat_text_matrix
+
+
+_patch_pydyf_pdf_init_for_weasyprint_60()
 
 # Print-optimized palette (desktop parity)
 PLOT_COLORS = [
@@ -34,6 +74,7 @@ PLOT_COLORS = [
     "#d97706",  # amber
     "#7c3aed",  # violet
 ]
+PLOT_AREA_FILL = "#eef2f6"
 
 LOGO_PATH = Path(__file__).parent / "static" / "reporting" / "RPS_Logo.png"
 
@@ -42,6 +83,19 @@ def _load_logo_b64() -> str:
     """Load logo as base64 data URI."""
     if LOGO_PATH.exists():
         data = LOGO_PATH.read_bytes()
+        try:
+            # The shipped logo is an alpha mask (white pixels). Tint it dark teal
+            # so it remains visible on white PDF backgrounds.
+            image = Image.open(io.BytesIO(data)).convert("RGBA")
+            alpha = image.getchannel("A")
+            colored = Image.new("RGBA", image.size, (31, 92, 106, 255))
+            colored.putalpha(alpha)
+            output = io.BytesIO()
+            colored.save(output, format="PNG")
+            data = output.getvalue()
+        except Exception:
+            logger.exception("Failed to colorize report logo; using original asset")
+
         b64 = base64.b64encode(data).decode("ascii")
         return f"data:image/png;base64,{b64}"
     return ""
@@ -202,18 +256,33 @@ class PDFReportService:
         include_table = config.get("include_table", True)
         include_chart = config.get("include_chart", True)
 
-        if result_type == "BeamRotations":
-            report = self.report_data_service.get_beam_rotation_report(
-                result_set.id, is_pushover
+        try:
+            if result_type == "BeamRotations":
+                report = self.report_data_service.get_beam_rotation_report(
+                    result_set.id, is_pushover
+                )
+            elif result_type == "ColumnRotations":
+                report = self.report_data_service.get_column_rotation_report(
+                    result_set.id, is_pushover
+                )
+            else:
+                return None
+        except Exception:
+            logger.exception(
+                "Error building element section (project_id=%s, result_set_id=%s, result_type=%s)",
+                self.project.id,
+                result_set.id,
+                result_type,
             )
-        elif result_type == "ColumnRotations":
-            report = self.report_data_service.get_column_rotation_report(
-                result_set.id, is_pushover
-            )
-        else:
             return None
 
         if not report or not report.get("top_10"):
+            logger.warning(
+                "Empty element section data (project_id=%s, result_set_id=%s, result_type=%s)",
+                self.project.id,
+                result_set.id,
+                result_type,
+            )
             return None
 
         table_data = None
@@ -227,7 +296,7 @@ class PDFReportService:
         return {
             "title": result_type.replace("Rotations", " Rotations"),
             "result_type": result_type,
-            "direction": None,
+            "direction": "",
             "category": "Element",
             "unit": report.get("unit", "%"),
             "table": table_data,
@@ -245,14 +314,35 @@ class PDFReportService:
         include_table = config.get("include_table", True)
         include_chart = config.get("include_chart", True)
 
-        if result_type == "SoilPressures":
-            report = self.report_data_service.get_soil_pressure_report(
-                result_set.id, is_pushover
+        try:
+            if result_type == "SoilPressures":
+                report = self.report_data_service.get_soil_pressure_report(
+                    result_set.id, is_pushover
+                )
+                title = "Soil Pressures"
+            elif result_type == "VerticalDisplacements":
+                report = self.report_data_service.get_vertical_displacement_report(
+                    result_set.id, is_pushover
+                )
+                title = "Vertical Displacements"
+            else:
+                return None
+        except Exception:
+            logger.exception(
+                "Error building joint section (project_id=%s, result_set_id=%s, result_type=%s)",
+                self.project.id,
+                result_set.id,
+                result_type,
             )
-        else:
             return None
 
         if not report or not report.get("top_10"):
+            logger.warning(
+                "Empty joint section data (project_id=%s, result_set_id=%s, result_type=%s)",
+                self.project.id,
+                result_set.id,
+                result_type,
+            )
             return None
 
         table_data = None
@@ -264,11 +354,11 @@ class PDFReportService:
             chart_svg = self._generate_joint_scatter_svg(report, result_type)
 
         return {
-            "title": "Soil Pressures",
+            "title": title,
             "result_type": result_type,
-            "direction": None,
+            "direction": "",
             "category": "Joint",
-            "unit": report.get("unit", "kPa"),
+            "unit": report.get("unit", "kPa" if result_type == "SoilPressures" else "mm"),
             "table": table_data,
             "chart_svg": chart_svg,
         }
@@ -411,7 +501,7 @@ class PDFReportService:
             f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg">',
             f'<rect width="{width}" height="{height}" fill="#ffffff"/>',
             f'<rect x="{margin["left"]}" y="{margin["top"]}" '
-            f'width="{plot_width}" height="{plot_height}" fill="#f8f9fa" stroke="#d1d5db"/>',
+            f'width="{plot_width}" height="{plot_height}" fill="{PLOT_AREA_FILL}" stroke="#d1d5db"/>',
         ]
 
         # Grid lines
@@ -534,7 +624,7 @@ class PDFReportService:
             f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg">',
             f'<rect width="{width}" height="{height}" fill="#ffffff"/>',
             f'<rect x="{margin["left"]}" y="{margin["top"]}" '
-            f'width="{plot_width}" height="{plot_height}" fill="#f8f9fa" stroke="#d1d5db"/>',
+            f'width="{plot_width}" height="{plot_height}" fill="{PLOT_AREA_FILL}" stroke="#d1d5db"/>',
         ]
 
         # Grid lines for stories
@@ -610,94 +700,162 @@ class PDFReportService:
     # ------------------------------------------------------------------
 
     def _generate_joint_scatter_svg(self, report: Dict[str, Any], result_type: str) -> str:
-        plot_data = report.get("plot_data", [])
+        plot_data_raw = report.get("plot_data", [])
+        load_cases = report.get("load_cases", [])
         unit = report.get("unit", "kPa")
+        if result_type == "VerticalDisplacements":
+            value_axis_label = "Vertical Displacement"
+        elif result_type == "SoilPressures":
+            value_axis_label = "Soil Pressure"
+        else:
+            value_axis_label = result_type
+
+        if not plot_data_raw or not load_cases:
+            return ""
+
+        plot_data: List[tuple[int, float]] = []
+        for point in plot_data_raw:
+            lc_idx = None
+            value = None
+
+            if isinstance(point, dict):
+                lc_idx = point.get("load_case_idx")
+                value = point.get("value")
+            elif isinstance(point, (list, tuple)) and len(point) >= 2:
+                lc_idx = point[0]
+                value = point[1]
+
+            if not isinstance(value, (int, float)):
+                continue
+
+            try:
+                lc_idx_int = int(lc_idx)
+            except (TypeError, ValueError):
+                continue
+
+            if lc_idx_int < 0 or lc_idx_int >= len(load_cases):
+                continue
+
+            plot_data.append((lc_idx_int, abs(float(value))))
 
         if not plot_data:
             return ""
 
         width = 500
         height = 300
-        margin = {"top": 20, "right": 20, "bottom": 40, "left": 100}
+        margin = {"top": 20, "right": 20, "bottom": 56, "left": 56}
         plot_width = width - margin["left"] - margin["right"]
         plot_height = height - margin["top"] - margin["bottom"]
 
-        # Unique joints for y-axis
-        joint_names = list(dict.fromkeys(p["name"] for p in plot_data))
-        n_joints = len(joint_names)
-        if n_joints == 0:
-            return ""
+        num_load_cases = len(load_cases)
+        slot_width = plot_width / num_load_cases
 
-        joint_index = {name: idx for idx, name in enumerate(joint_names)}
+        all_values = [value for _, value in plot_data]
+        y_min = 0.0
+        y_max = max(all_values) * 1.1
+        if y_max <= y_min:
+            y_max = y_min + 1.0
+        y_range = y_max - y_min
 
-        all_values = [p["value"] for p in plot_data]
-        min_val = min(all_values)
-        max_val = max(all_values)
-        if min_val == max_val:
-            min_val -= 1
-            max_val += 1
-        padding = (max_val - min_val) * 0.05
-        min_val -= padding
-        max_val += padding
-        val_range = max_val - min_val
+        def to_px_x(lc_idx: int) -> float:
+            return margin["left"] + (lc_idx + 0.5) * slot_width
+
+        def to_px_y(value: float) -> float:
+            return margin["top"] + plot_height - (value - y_min) / y_range * plot_height
+
+        def nice_ticks(data_min: float, data_max: float, num_ticks: int = 5) -> List[float]:
+            import math
+
+            data_range = data_max - data_min
+            if data_range <= 0:
+                return [data_min]
+
+            rough_step = data_range / num_ticks
+            magnitude = 10 ** math.floor(math.log10(rough_step))
+            residual = rough_step / magnitude
+            if residual > 5:
+                nice_step = 10 * magnitude
+            elif residual > 2:
+                nice_step = 5 * magnitude
+            elif residual > 1:
+                nice_step = 2 * magnitude
+            else:
+                nice_step = magnitude
+
+            start = math.ceil(data_min / nice_step) * nice_step
+            ticks = []
+            tick = start
+            while tick <= data_max + 1e-9:
+                ticks.append(tick)
+                tick += nice_step
+
+            return ticks
+
+        y_ticks = nice_ticks(y_min, y_max, 5)
 
         svg_parts = [
             f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg">',
             f'<rect width="{width}" height="{height}" fill="#ffffff"/>',
             f'<rect x="{margin["left"]}" y="{margin["top"]}" '
-            f'width="{plot_width}" height="{plot_height}" fill="#f8f9fa" stroke="#d1d5db"/>',
+            f'width="{plot_width}" height="{plot_height}" fill="{PLOT_AREA_FILL}" stroke="#d1d5db"/>',
         ]
 
-        # Grid
-        for i in range(n_joints):
-            y = margin["top"] + plot_height - (i + 0.5) / n_joints * plot_height
+        # Horizontal grid lines
+        for tick in y_ticks:
+            y = to_px_y(tick)
             svg_parts.append(
                 f'<line x1="{margin["left"]}" y1="{y}" '
                 f'x2="{margin["left"] + plot_width}" y2="{y}" '
                 f'stroke="#e5e7eb" stroke-dasharray="2,2"/>'
             )
 
-        # Points
+        # Vertical grid lines for load-case bins
+        for i in range(num_load_cases + 1):
+            x = margin["left"] + i * slot_width
+            svg_parts.append(
+                f'<line x1="{x}" y1="{margin["top"]}" '
+                f'x2="{x}" y2="{margin["top"] + plot_height}" '
+                f'stroke="#e5e7eb" stroke-dasharray="2,2"/>'
+            )
+
+        # Scatter points
         import random
-        random.seed(42)
-        for p in plot_data:
-            ji = joint_index[p["name"]]
-            base_y = margin["top"] + plot_height - (ji + 0.5) / n_joints * plot_height
-            jitter = (random.random() - 0.5) * (plot_height / max(n_joints, 1) * 0.6)
-            y = base_y + jitter
-            x = margin["left"] + (p["value"] - min_val) / val_range * plot_width
+        rng = random.Random(46)
+        for lc_idx, value in plot_data:
+            jitter = (rng.random() - 0.5) * slot_width * 0.7
+            x = to_px_x(lc_idx) + jitter
+            y = to_px_y(value)
             svg_parts.append(
                 f'<circle cx="{x:.1f}" cy="{y:.1f}" r="2.5" fill="#2563eb" opacity="0.6"/>'
             )
 
-        # Y labels
-        for i, name in enumerate(joint_names):
-            y = margin["top"] + plot_height - (i + 0.5) / n_joints * plot_height + 4
-            display = name[:14] if len(name) > 14 else name
+        # Y-axis tick labels
+        for tick in y_ticks:
+            y = to_px_y(tick) + 3
+            label = f"{tick:.1f}" if abs(tick) < 10 else f"{tick:.0f}"
             svg_parts.append(
                 f'<text x="{margin["left"] - 5}" y="{y}" '
-                f'fill="#374151" font-size="8" text-anchor="end">{display}</text>'
+                f'fill="#374151" font-size="8" text-anchor="end">{label}</text>'
             )
 
-        # X-axis
-        n_ticks = 5
-        for i in range(n_ticks + 1):
-            val = min_val + val_range * i / n_ticks
-            x = margin["left"] + i / n_ticks * plot_width
+        # X-axis labels (load case names)
+        for i, load_case in enumerate(load_cases):
+            x = to_px_x(i)
+            label = str(load_case)[:5]
             svg_parts.append(
-                f'<text x="{x}" y="{height - margin["bottom"] + 15}" '
-                f'fill="#374151" font-size="10" text-anchor="middle">{val:.1f}</text>'
+                f'<text x="{x}" y="{height - margin["bottom"] + 13}" '
+                f'fill="#374151" font-size="8" text-anchor="middle">{label}</text>'
             )
 
         svg_parts.append(
             f'<text x="{margin["left"] + plot_width / 2}" y="{height - 5}" '
-            f'fill="#1f2937" font-size="11" text-anchor="middle">Soil Pressure ({unit})</text>'
+            f'fill="#1f2937" font-size="11" text-anchor="middle">Load Case</text>'
         )
 
         svg_parts.append(
-            f'<text x="12" y="{margin["top"] + plot_height / 2}" '
+            f'<text x="14" y="{margin["top"] + plot_height / 2}" '
             f'fill="#1f2937" font-size="11" text-anchor="middle" '
-            f'transform="rotate(-90, 12, {margin["top"] + plot_height / 2})">Joint</text>'
+            f'transform="rotate(-90, 14, {margin["top"] + plot_height / 2})">{value_axis_label} ({unit})</text>'
         )
 
         svg_parts.append("</svg>")
@@ -748,8 +906,15 @@ class PDFReportService:
         }
 
         .logo {
-            width: 40px;
+            width: 92px;
             height: auto;
+        }
+
+        .logo-fallback {
+            font-size: 14pt;
+            font-weight: 700;
+            color: #1f5c6a;
+            letter-spacing: 0.2px;
         }
 
         .project-name {

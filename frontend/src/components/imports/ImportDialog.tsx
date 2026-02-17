@@ -10,12 +10,15 @@ import {
   useStartImport,
   useImportJob,
 } from '../../hooks/useImports'
+import { useResultSets } from '../../hooks/useResults'
 import { useProject } from '../../hooks/useProjects'
 import type { ImportConflict, ConflictResolution } from '../../types'
+import { isNlthaResultSet } from '../../utils/resultSets'
 
 interface ImportDialogProps {
   projectSlug: string
   projectName?: string
+  mode?: 'nltha' | 'time-series'
   onClose: () => void
   onComplete?: (resultSetId: number) => void
 }
@@ -25,6 +28,7 @@ type ImportStep = 'idle' | 'uploading' | 'prescan' | 'select' | 'importing' | 'c
 export function ImportDialog({
   projectSlug,
   projectName,
+  mode = 'nltha',
   onClose,
   onComplete,
 }: ImportDialogProps) {
@@ -37,6 +41,7 @@ export function ImportDialog({
     new Map()
   )
   const [resultSetName, setResultSetName] = useState('')
+  const [selectedResultSetId, setSelectedResultSetId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [logLines, setLogLines] = useState<string[]>(['Ready to import'])
   const [showConflictDialog, setShowConflictDialog] = useState(false)
@@ -45,7 +50,9 @@ export function ImportDialog({
   const logSetRef = useRef<Set<string>>(new Set())
 
   const { data: project } = useProject(projectSlug)
+  const { data: resultSets } = useResultSets(projectSlug)
   const displayProjectName = projectName || project?.name || projectSlug
+  const nlthaResultSets = (resultSets || []).filter(isNlthaResultSet)
 
   const uploadMutation = useUploadFiles(projectSlug)
   const prescanMutation = useTriggerPrescan(projectSlug)
@@ -103,6 +110,20 @@ export function ImportDialog({
     logSetRef.current.clear()
     setLogLines(['Ready to import'])
   }
+
+  useEffect(() => {
+    if (mode !== 'time-series') return
+    if (!nlthaResultSets.length) {
+      setSelectedResultSetId(null)
+      return
+    }
+    if (
+      selectedResultSetId === null ||
+      !nlthaResultSets.some((resultSet) => resultSet.id === selectedResultSetId)
+    ) {
+      setSelectedResultSetId(nlthaResultSets[0].id)
+    }
+  }, [mode, nlthaResultSets, selectedResultSetId])
 
   const handleFileUpload = useCallback(
     async (files: File[]) => {
@@ -183,11 +204,25 @@ export function ImportDialog({
   const runImport = async () => {
     if (!jobId) return
     try {
+      if (mode === 'time-series' && selectedResultSetId === null) {
+        const message = 'Select an existing result set for time-series import.'
+        setError(message)
+        addLog(`- ${message}`)
+        return
+      }
+
       setError(null)
       setStep('importing')
       addLog('- Starting import...')
       addLog(`- Importing into project: ${displayProjectName}`)
-      addLog(`- Result set: ${resultSetName.trim() || 'Imported Results'}`)
+      if (mode === 'time-series') {
+        const selectedResultSetName =
+          nlthaResultSets.find((resultSet) => resultSet.id === selectedResultSetId)?.name ||
+          `Result Set ${selectedResultSetId}`
+        addLog(`- Result set: ${selectedResultSetName}`)
+      } else {
+        addLog(`- Result set: ${resultSetName.trim() || 'Imported Results'}`)
+      }
       addLog(`- Processing ${selectedFiles.length} file(s)...`)
       if (selectedLoadCases.size) {
         addLog(`- Enhanced import: ${selectedLoadCases.size} load case(s) selected`)
@@ -206,7 +241,9 @@ export function ImportDialog({
         options: {
           selected_load_cases: Array.from(selectedLoadCases),
           conflict_resolutions: resolutions,
-          result_set_name: resultSetName.trim() || 'Imported Results',
+          result_set_name:
+            mode === 'time-series' ? undefined : resultSetName.trim() || 'Imported Results',
+          result_set_id: mode === 'time-series' ? selectedResultSetId || undefined : undefined,
         },
       })
     } catch (err) {
@@ -309,6 +346,7 @@ export function ImportDialog({
 
   const disableStart =
     !selectedFiles.length ||
+    (mode === 'time-series' && selectedResultSetId === null) ||
     step === 'uploading' ||
     step === 'prescan' ||
     step === 'importing'
@@ -372,14 +410,32 @@ export function ImportDialog({
             <div className="import-group">
               <div className="import-group-title">Result Set</div>
               <div className="import-group-body">
-                <input
-                  type="text"
-                  value={resultSetName}
-                  placeholder="e.g., DES, MCE, SLE..."
-                  onChange={(e) => setResultSetName(e.target.value)}
-                  className="import-input"
-                  data-empty={resultSetName.trim() ? 'false' : 'true'}
-                />
+                {mode === 'time-series' ? (
+                  <select
+                    value={selectedResultSetId ?? ''}
+                    onChange={(e) => setSelectedResultSetId(Number(e.target.value) || null)}
+                    className="import-input"
+                  >
+                    {nlthaResultSets.length > 0 ? (
+                      nlthaResultSets.map((resultSet) => (
+                        <option key={resultSet.id} value={resultSet.id}>
+                          {resultSet.name}
+                        </option>
+                      ))
+                    ) : (
+                      <option value="">No available result sets</option>
+                    )}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={resultSetName}
+                    placeholder="e.g., DES, MCE, SLE..."
+                    onChange={(e) => setResultSetName(e.target.value)}
+                    className="import-input"
+                    data-empty={resultSetName.trim() ? 'false' : 'true'}
+                  />
+                )}
               </div>
             </div>
           </div>

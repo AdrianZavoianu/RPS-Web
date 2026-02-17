@@ -64,6 +64,7 @@ const ComparisonSetDialog = lazy(() =>
 export function ProjectDetailPage() {
   const { slug } = useParams<{ slug: string }>()
   const projectSlug = slug ?? ''
+  const [importDialogMode, setImportDialogMode] = useState<'nltha' | 'time-series'>('nltha')
   const [showImportDialog, setShowImportDialog] = useState(false)
   const [showPushoverCurvesDialog, setShowPushoverCurvesDialog] = useState(false)
   const [showPushoverResultsDialog, setShowPushoverResultsDialog] = useState(false)
@@ -199,7 +200,10 @@ export function ProjectDetailPage() {
                   <>
                     <button
                       type="button"
-                      onClick={() => setShowImportDialog(true)}
+                      onClick={() => {
+                        setImportDialogMode('nltha')
+                        setShowImportDialog(true)
+                      }}
                       onMouseEnter={prefetchImportDialog}
                       onFocus={prefetchImportDialog}
                       className="project-header-link"
@@ -210,6 +214,7 @@ export function ProjectDetailPage() {
                       type="button"
                       onClick={() => {
                         navigate(`/projects/${projectSlug}/time-series`)
+                        setImportDialogMode('time-series')
                         setShowImportDialog(true)
                       }}
                       onMouseEnter={prefetchImportDialog}
@@ -367,6 +372,7 @@ export function ProjectDetailPage() {
           <ImportDialog
             projectSlug={projectSlug}
             projectName={project.name}
+            mode={importDialogMode}
             onClose={() => setShowImportDialog(false)}
             onComplete={handleImportComplete}
           />
@@ -388,6 +394,7 @@ export function ProjectDetailPage() {
         <Suspense fallback={dialogFallback}>
           <ReportDialog
             projectSlug={projectSlug}
+            projectName={project.name}
             onClose={() => setShowReportDialog(false)}
           />
         </Suspense>

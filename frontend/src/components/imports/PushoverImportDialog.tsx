@@ -12,6 +12,7 @@ import {
 } from '../../hooks/useImports'
 import { useProject } from '../../hooks/useProjects'
 import { useResultSets } from '../../hooks/useResults'
+import { isPushoverResultSet } from '../../utils/resultSets'
 
 interface PushoverImportDialogProps {
   projectSlug: string
@@ -48,7 +49,7 @@ export function PushoverImportDialog({
   const displayProjectName = projectName || project?.name || projectSlug
 
   const { data: allResultSets } = useResultSets(projectSlug)
-  const pushoverResultSets = allResultSets?.filter((rs) => rs.analysis_type === 'Pushover') ?? []
+  const pushoverResultSets = allResultSets?.filter(isPushoverResultSet) ?? []
 
   const uploadMutation = useUploadFiles(projectSlug)
   const startPushoverMutation = useStartPushoverImport(projectSlug)

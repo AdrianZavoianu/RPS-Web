@@ -249,6 +249,13 @@ class ReportPreviewView(ProjectReportsMixin, APIView):
             result_set_id=result_set.id,
             result_type__startswith="SoilPressures",
         ).exists()
+        if not has_soil:
+            from apps.results.models import SoilPressure
+
+            has_soil = SoilPressure.objects.filter(
+                project=project,
+                result_set_id=result_set.id,
+            ).exists()
 
         if has_soil:
             available_sections.append(
@@ -257,6 +264,29 @@ class ReportPreviewView(ProjectReportsMixin, APIView):
                     "direction": "",
                     "category": "Joint",
                     "label": "Soil Pressures",
+                }
+            )
+
+        has_vertical = JointResultsCache.objects.filter(
+            project=project,
+            result_set_id=result_set.id,
+            result_type__startswith="VerticalDisplacements",
+        ).exists()
+        if not has_vertical:
+            from apps.results.models import VerticalDisplacement
+
+            has_vertical = VerticalDisplacement.objects.filter(
+                project=project,
+                result_set_id=result_set.id,
+            ).exists()
+
+        if has_vertical:
+            available_sections.append(
+                {
+                    "result_type": "VerticalDisplacements",
+                    "direction": "",
+                    "category": "Joint",
+                    "label": "Vertical Displacements",
                 }
             )
 

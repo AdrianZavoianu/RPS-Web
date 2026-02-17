@@ -21,8 +21,8 @@ const TITLE_HEIGHT = 20
 const TABLE_HEADER_HEIGHT = 16
 const TABLE_ROW_HEIGHT = 14
 const SUBTITLE_HEIGHT = 14 // "Top 10 by absolute average"
-const GLOBAL_CHART_HEIGHT = 200
-const ELEMENT_JOINT_CHART_HEIGHT = 150
+const GLOBAL_CHART_HEIGHT = 300
+const ELEMENT_JOINT_CHART_HEIGHT = 300
 
 function estimateSectionHeight(section: SectionData): number {
   let h = TITLE_HEIGHT
@@ -80,15 +80,8 @@ export function ReportPreviewArea({
 }: ReportPreviewAreaProps) {
   const pages = useMemo(() => paginateSections(sections), [sections])
 
-  if (isLoading) {
-    return (
-      <div className="report-preview-area flex items-center justify-center">
-        <div className="text-text-muted text-sm">Loading preview...</div>
-      </div>
-    )
-  }
-
-  if (sections.length === 0) {
+  const hasPages = pages.length > 0
+  if (!hasPages && !isLoading) {
     return (
       <div className="report-preview-area flex items-center justify-center">
         <div className="text-text-muted text-sm">Select sections from the tree to preview</div>
@@ -97,16 +90,26 @@ export function ReportPreviewArea({
   }
 
   return (
-    <div className="report-preview-area">
-      {pages.map((pageSections, i) => (
-        <ReportPage
-          key={i}
-          sections={pageSections}
-          projectName={projectName}
-          resultSetName={resultSetName}
-          pageNumber={i + 1}
-        />
-      ))}
+    <div className="report-preview-area relative">
+      {hasPages ? (
+        pages.map((pageSections, i) => (
+          <ReportPage
+            key={i}
+            sections={pageSections}
+            projectName={projectName}
+            resultSetName={resultSetName}
+            pageNumber={i + 1}
+          />
+        ))
+      ) : (
+        <div className="text-text-muted text-sm">Loading preview...</div>
+      )}
+
+      {isLoading && hasPages && (
+        <div className="absolute top-3 right-3 rounded border border-border-default bg-bg-secondary/85 px-2 py-1 text-xs text-text-secondary">
+          Refreshing preview...
+        </div>
+      )}
     </div>
   )
 }

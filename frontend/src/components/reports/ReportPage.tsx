@@ -21,11 +21,11 @@ export function ReportPage({ sections, projectName, resultSetName, pageNumber }:
     <div className="report-page">
       {/* Header */}
       <div className="report-page-header">
-        <div className="report-page-header-left">
-          <img src="/assets/rps-icon.png" alt="" className="report-page-logo" />
+        <span className="rps-logo report-page-logo" aria-label="RPS logo" role="img" />
+        <div className="report-page-header-meta">
           <span className="report-page-project-name">{projectName}</span>
+          <span className="report-page-result-set">{resultSetName}</span>
         </div>
-        <span className="report-page-result-set">{resultSetName}</span>
       </div>
 
       {/* Content */}

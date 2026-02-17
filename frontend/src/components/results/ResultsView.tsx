@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
+import { useNavigate } from 'react-router-dom'
 import {
   useAllPushoverCurves,
   useBeamRotationsPlotData,
@@ -16,7 +17,14 @@ import {
 } from '../../hooks/useResults'
 import { MultiSeriesProfileChart, ProfileChart, PushoverCurveChart, PushoverMultiCurveChart } from '../charts/ProfileChart'
 import { ResultsTreeBrowser, type TreeSelection } from '../projects/ResultsTreeBrowser'
-import type { GlobalResultType, ProfileChartData, BeamRotationsPlotData, ResultDataset } from '../../types'
+import type {
+  GlobalResultType,
+  ProfileChartData,
+  BeamRotationsPlotData,
+  ColumnRotationsPlotData,
+  ResultDataset,
+  ResultSet,
+} from '../../types'
 import { ResultsTable } from './ResultsTable'
 import { ComparisonTable } from './ComparisonTable'
 import { MaxMinResultsDisplay } from './MaxMinResultsDisplay'
@@ -26,7 +34,8 @@ import { ColumnRotationsPlotPanel } from './ColumnRotationsPlotPanel'
 import { JointResultsPlotPanel } from './JointResultsPlotPanel'
 import { LazyPlot } from '../charts/LazyPlot'
 import { getResultTypeUnit } from '../../utils/resultConfig'
-import { COMPARISON_SERIES_COLORS } from '../../utils/chartColors'
+import { COMPARISON_SERIES_COLORS, ROTATION_COMPARISON_COLORS } from '../../utils/chartColors'
+import { isPushoverResultSet } from '../../utils/resultSets'
 
 interface ResultsViewProps {
   projectSlug: string
@@ -40,6 +49,7 @@ const ELEMENT_DIRECTIONS: Record<string, string[]> = {
 }
 
 export function ResultsView({ projectSlug }: ResultsViewProps) {
+  const navigate = useNavigate()
   const [selection, setSelection] = useState<TreeSelection | null>(null)
   const [selectedElementId, setSelectedElementId] = useState<number | null>(null)
   const [selectedElementDirection, setSelectedElementDirection] = useState<string | null>(null)
@@ -52,16 +62,46 @@ export function ResultsView({ projectSlug }: ResultsViewProps) {
   const isComparisonSelection = selection?.type === 'comparison_global' ||
     selection?.type === 'comparison_element'
   const isBeamRotationsComparison = selection?.type === 'comparison_beam_rotations'
+  const isColumnRotationsComparison = selection?.type === 'comparison_column_rotations'
   const isJointComparison = selection?.type === 'comparison_joint'
-  const isPushoverGlobalSelection = selection?.type === 'pushover_global'
+  const { data: allResultSets } = useResultSets(projectSlug)
+  const resultSetById = useMemo(() => {
+    const map = new Map<number, ResultSet>()
+    for (const resultSet of allResultSets || []) {
+      map.set(resultSet.id, resultSet)
+    }
+    return map
+  }, [allResultSets])
+
+  const selectedResultSetIsPushover = useMemo(() => {
+    if (!selection?.resultSetId) return false
+    const resultSet = resultSetById.get(selection.resultSetId)
+    return resultSet ? isPushoverResultSet(resultSet) : false
+  }, [selection?.resultSetId, resultSetById])
+
+  const isPushoverGlobalSelection =
+    selection?.type === 'pushover_global' ||
+    (selection?.type === 'global_result' && selectedResultSetIsPushover)
 
   const handleTreeSelect = useCallback((newSelection: TreeSelection) => {
+    if (newSelection.type === 'time_series') {
+      const query = new URLSearchParams({
+        result_set_id: String(newSelection.resultSetId),
+        direction: newSelection.direction || 'X',
+      })
+      if (newSelection.loadCaseName) {
+        query.set('load_case', newSelection.loadCaseName)
+      }
+      navigate(`/projects/${projectSlug}/time-series?${query.toString()}`)
+      return
+    }
+
     setSelection(newSelection)
     setSelectedLoadCases(new Set())
     setHoveredLoadCase(null)
     setSelectedRows(new Set())
     setHoveredRow(null)
-  }, [])
+  }, [navigate, projectSlug])
 
   useEffect(() => {
     if (selection?.type !== 'element') {
@@ -97,7 +137,7 @@ export function ResultsView({ projectSlug }: ResultsViewProps) {
           result_set_id: selection.resultSetId,
           result_type: selection.resultType as GlobalResultType,
           direction: selection.direction,
-          is_pushover: selection.type === 'pushover_global',
+          is_pushover: isPushoverGlobalSelection,
         }
       : null
   )
@@ -195,6 +235,7 @@ export function ResultsView({ projectSlug }: ResultsViewProps) {
       ? {
           result_set_id: selection.resultSetId,
           result_type: jointResultTypeParam,
+          is_pushover: selectedResultSetIsPushover,
         }
       : null
   )
@@ -271,6 +312,7 @@ export function ResultsView({ projectSlug }: ResultsViewProps) {
           element_id: selectedElementId,
           result_type: selection.resultType,
           direction: elementDirection || undefined,
+          is_pushover: selectedResultSetIsPushover,
         }
       : null
   )
@@ -320,6 +362,11 @@ export function ResultsView({ projectSlug }: ResultsViewProps) {
     if (isBeamRotationsComparison) {
       const unit = getResultTypeUnit('BeamRotations')
       return `▸ ${selection.comparisonSetName} - All Beam Rotations${unit ? ` (${unit})` : ''}`
+    }
+
+    if (isColumnRotationsComparison) {
+      const unit = getResultTypeUnit('ColumnRotations')
+      return `▸ ${selection.comparisonSetName} - All Column Rotations${unit ? ` (${unit})` : ''}`
     }
 
     if (isJointComparison) {
@@ -391,7 +438,7 @@ export function ResultsView({ projectSlug }: ResultsViewProps) {
 
   return (
     <div className="results-view h-full flex bg-bg-primary">
-      <div className="w-[200px] min-w-[200px] flex flex-col overflow-hidden">
+      <div className="w-[240px] min-w-[240px] flex flex-col overflow-hidden">
         <div className="flex-1 overflow-auto">
           <ResultsTreeBrowser
             projectSlug={projectSlug}
@@ -402,7 +449,7 @@ export function ResultsView({ projectSlug }: ResultsViewProps) {
       </div>
 
       <div className="flex-1 flex flex-col overflow-hidden pl-4">
-        {(selection?.resultSetId || isComparisonSelection || isBeamRotationsComparison || isJointComparison) ? (
+        {(selection?.resultSetId || isComparisonSelection || isBeamRotationsComparison || isColumnRotationsComparison || isJointComparison) ? (
           <>
             <div className="flex items-center justify-between py-2 gap-3">
               <span className="text-lg font-medium text-text-primary">{getDisplayTitle()}</span>
@@ -464,6 +511,11 @@ export function ResultsView({ projectSlug }: ResultsViewProps) {
                   projectSlug={projectSlug}
                   resultSetIds={selection.resultSetIds || []}
                 />
+              ) : isColumnRotationsComparison ? (
+                <ComparisonColumnRotationsPanel
+                  projectSlug={projectSlug}
+                  resultSetIds={selection.resultSetIds || []}
+                />
               ) : isJointComparison ? (
                 <ComparisonJointOverlayPanel
                   projectSlug={projectSlug}
@@ -500,7 +552,7 @@ export function ResultsView({ projectSlug }: ResultsViewProps) {
                     <div className="text-text-secondary">Loading results...</div>
                   </div>
                 ) : resultsData && resultsData.rows?.length > 0 ? (
-                  isPushoverGlobalSelection ? (
+                  <>
                     <div className="overflow-auto">
                       <ResultsTable
                         dataset={resultsData}
@@ -514,31 +566,15 @@ export function ResultsView({ projectSlug }: ResultsViewProps) {
                         onRowSelectionChange={setSelectedRows}
                       />
                     </div>
-                  ) : (
-                    <>
-                      <div className="overflow-auto">
-                        <ResultsTable
-                          dataset={resultsData}
-                          selectedLoadCases={selectedLoadCases}
-                          hoveredLoadCase={hoveredLoadCase}
-                          hoveredRow={hoveredRow}
-                          selectedRows={selectedRows}
-                          onSelectionChange={setSelectedLoadCases}
-                          onHoverChange={setHoveredLoadCase}
-                          onRowHoverChange={setHoveredRow}
-                          onRowSelectionChange={setSelectedRows}
-                        />
-                      </div>
 
-                      <div className="flex-1 h-[90vh]">
-                        <MultiSeriesProfileChart
-                          dataset={resultsData}
-                          selectedLoadCases={selectedLoadCases}
-                          hoveredLoadCase={hoveredLoadCase}
-                        />
-                      </div>
-                    </>
-                  )
+                    <div className="flex-1 h-[90vh]">
+                      <MultiSeriesProfileChart
+                        dataset={resultsData}
+                        selectedLoadCases={selectedLoadCases}
+                        hoveredLoadCase={hoveredLoadCase}
+                      />
+                    </div>
+                  </>
                 ) : (
                   <div className="flex-1 flex items-center justify-center">
                     <div className="text-center">
@@ -786,7 +822,6 @@ function ComparisonBeamRotationsPanel({
   projectSlug: string
   resultSetIds: number[]
 }) {
-  const [activeTab, setActiveTab] = useState<'scatter' | 'histogram'>('scatter')
   const { data: resultSets } = useResultSets(projectSlug)
   const rsNameMap = useMemo(() => {
     const m: Record<number, string> = {}
@@ -835,7 +870,7 @@ function ComparisonBeamRotationsPanel({
         ...ds.data.max_points.map((p, i) => ({ ...p, jitter: seededJitter(i, 42 + dsIdx) })),
         ...ds.data.min_points.map((p, i) => ({ ...p, jitter: seededJitter(i, 43 + dsIdx) })),
       ]
-      const color = COMPARISON_SERIES_COLORS[dsIdx % COMPARISON_SERIES_COLORS.length]
+      const color = ROTATION_COMPARISON_COLORS[dsIdx % ROTATION_COMPARISON_COLORS.length]
       return {
         type: 'scatter' as const,
         mode: 'markers' as const,
@@ -849,23 +884,6 @@ function ComparisonBeamRotationsPanel({
       }
     })
   }, [datasets, storyIndexMap])
-
-  // Overlay histogram: stacked bars per result set
-  const histogramTraces = useMemo(() => {
-    return datasets.map((ds, dsIdx) => {
-      const color = COMPARISON_SERIES_COLORS[dsIdx % COMPARISON_SERIES_COLORS.length]
-      return {
-        type: 'bar' as const,
-        name: ds.name,
-        x: ds.data.histogram_bins.map((bin) => bin.center),
-        y: ds.data.histogram_bins.map((bin) => bin.count),
-        width: ds.data.histogram_bins.map((bin) => (bin.end - bin.start) * 0.9),
-        marker: { color, opacity: 0.6, line: { color, width: 1 } },
-        hovertemplate: `<b>${ds.name}</b><br>%{x:.3f}<br>Count: %{y}<extra></extra>`,
-        showlegend: true,
-      }
-    })
-  }, [datasets])
 
   const xLabel = datasets[0]?.data.meta.x_label || 'Rotation (%)'
 
@@ -910,25 +928,241 @@ function ComparisonBeamRotationsPanel({
 
   return (
     <div className="beam-rotations-plot flex-1 flex flex-col overflow-hidden">
-      <div className="beam-rotations-tabs flex gap-0">
-        {(['scatter', 'histogram'] as const).map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            onClick={() => setActiveTab(tab)}
-            className={clsx(
-              'beam-rotations-tab px-4 py-1.5 text-base capitalize transition-colors',
-              activeTab === tab
-                ? 'text-accent-primary border-b-2 border-accent-primary font-medium'
-                : 'text-text-secondary hover:text-text-primary'
-            )}
-          >
-            {tab}
-          </button>
-        ))}
+      <div className="h-[90vh] min-h-0">
+        <LazyPlot
+          data={scatterTraces}
+          layout={{
+            ...plotLayout,
+            xaxis: {
+              title: { text: xLabel, font: { size: 13, color: '#d1d5db' } },
+              gridcolor: 'rgba(60, 65, 75, 0.3)',
+              zeroline: false,
+              tickfont: { size: 10 },
+              range: xRange,
+              dtick: 0.5,
+              linecolor: '#3a3f4a', linewidth: 1, mirror: true,
+            },
+            yaxis: {
+              title: { text: 'Story', font: { size: 13, color: '#d1d5db' } },
+              tickmode: 'array' as const,
+              tickvals: stories.map((_, i) => i),
+              ticktext: stories,
+              range: [-0.5, Math.max(stories.length - 0.5, 0.5)],
+              gridcolor: 'rgba(60, 65, 75, 0.25)',
+              tickfont: { size: 10 },
+              linecolor: '#3a3f4a', linewidth: 1, mirror: true,
+            },
+            shapes: [{
+              type: 'line' as const,
+              x0: 0, x1: 0,
+              y0: -0.5, y1: Math.max(stories.length - 0.5, 0.5),
+              line: { color: '#4a7d89', width: 1, dash: 'dash' as const },
+            }],
+          }}
+          config={{ displayModeBar: false, responsive: true }}
+          style={{ width: '100%', height: '100%' }}
+          useResizeHandler
+        />
+      </div>
+    </div>
+  )
+}
+
+// Column rotations overlay comparison — fetches plot data per result set, overlays scatter traces
+function ComparisonColumnRotationsPanel({
+  projectSlug,
+  resultSetIds,
+}: {
+  projectSlug: string
+  resultSetIds: number[]
+}) {
+  const [directionFilter, setDirectionFilter] = useState<string>('All')
+  const { data: resultSets } = useResultSets(projectSlug)
+  const rsNameMap = useMemo(() => {
+    const m: Record<number, string> = {}
+    for (const rs of resultSets || []) m[rs.id] = rs.name
+    return m
+  }, [resultSets])
+
+  const queries = resultSetIds.map((rsId) =>
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    useColumnRotationsPlotData(projectSlug, { result_set_id: rsId })
+  )
+
+  const isLoading = queries.some((q) => q.isLoading)
+  const datasets = useMemo(() => {
+    const result: Array<{ rsId: number; name: string; data: ColumnRotationsPlotData }> = []
+    for (let i = 0; i < resultSetIds.length; i++) {
+      const data = queries[i].data
+      if (data) {
+        result.push({
+          rsId: resultSetIds[i],
+          name: rsNameMap[resultSetIds[i]] || `RS ${resultSetIds[i]}`,
+          data,
+        })
+      }
+    }
+    return result
+  }, [queries, resultSetIds, rsNameMap])
+
+  const availableDirections = useMemo(() => {
+    const directionSet = new Set<string>()
+    datasets.forEach((dataset) => {
+      dataset.data.directions.forEach((direction) => {
+        const value = direction.trim()
+        if (value) directionSet.add(value)
+      })
+      dataset.data.max_points.forEach((point) => {
+        if (point.direction) directionSet.add(point.direction)
+      })
+      dataset.data.min_points.forEach((point) => {
+        if (point.direction) directionSet.add(point.direction)
+      })
+    })
+    return Array.from(directionSet).sort((a, b) => a.localeCompare(b))
+  }, [datasets])
+
+  const effectiveDirection = useMemo(() => {
+    if (directionFilter === 'All') return 'All'
+    return availableDirections.includes(directionFilter) ? directionFilter : 'All'
+  }, [availableDirections, directionFilter])
+
+  const stories = useMemo(() => {
+    let best: string[] = []
+    for (const ds of datasets) {
+      if (ds.data.stories.length > best.length) best = ds.data.stories
+    }
+    return best
+  }, [datasets])
+
+  const storyIndexMap = useMemo(() => {
+    const m: Record<string, number> = {}
+    stories.forEach((story, index) => {
+      m[story] = index
+    })
+    return m
+  }, [stories])
+
+  const seededJitter = (index: number, seed: number) => {
+    const raw = ((index + 1) * 9301 + seed * 49297) % 233280
+    return (raw / 233280 - 0.5) * 0.6
+  }
+
+  const getFilteredPoints = useCallback(
+    (data: ColumnRotationsPlotData) => {
+      if (effectiveDirection === 'All') {
+        return [...data.max_points, ...data.min_points]
+      }
+      return [...data.max_points, ...data.min_points].filter(
+        (point) => point.direction === effectiveDirection
+      )
+    },
+    [effectiveDirection]
+  )
+
+  const scatterTraces = useMemo(() => {
+    return datasets.map((dataset, datasetIndex) => {
+      const maxPoints =
+        effectiveDirection === 'All'
+          ? dataset.data.max_points
+          : dataset.data.max_points.filter((point) => point.direction === effectiveDirection)
+      const minPoints =
+        effectiveDirection === 'All'
+          ? dataset.data.min_points
+          : dataset.data.min_points.filter((point) => point.direction === effectiveDirection)
+
+      const points = [
+        ...maxPoints.map((point, index) => ({ ...point, jitter: seededJitter(index, 74 + datasetIndex) })),
+        ...minPoints.map((point, index) => ({ ...point, jitter: seededJitter(index, 75 + datasetIndex) })),
+      ]
+
+      const color = ROTATION_COMPARISON_COLORS[datasetIndex % ROTATION_COMPARISON_COLORS.length]
+      return {
+        type: 'scatter' as const,
+        mode: 'markers' as const,
+        name: dataset.name,
+        x: points.map((point) => point.rotation),
+        y: points.map((point) => (storyIndexMap[point.story] ?? point.story_index) + point.jitter),
+        customdata: points.map((point) => [
+          point.element,
+          point.load_case,
+          point.story,
+          point.direction,
+        ]),
+        marker: { color, size: 4, opacity: 0.7 },
+        hovertemplate: `<b>${dataset.name}</b><br>%{customdata[0]}<br>%{customdata[1]}<br>%{customdata[2]} (%{customdata[3]}): %{x:.3f}<extra></extra>`,
+        showlegend: true,
+      }
+    })
+  }, [datasets, effectiveDirection, storyIndexMap])
+
+  const xRange = useMemo(() => {
+    const points = datasets.flatMap((dataset) => getFilteredPoints(dataset.data))
+    if (!points.length) return undefined
+
+    const maxAbs = points.reduce((maxValue, point) => Math.max(maxValue, Math.abs(point.rotation)), 0)
+    if (maxAbs === 0) return undefined
+
+    const pad = maxAbs * 0.1
+    return [-(maxAbs + pad), maxAbs + pad]
+  }, [datasets, getFilteredPoints])
+
+  if (isLoading) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-text-secondary">Loading column rotation data...</div>
+      </div>
+    )
+  }
+
+  if (!datasets.length) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-text-muted">No column rotation data available</div>
+      </div>
+    )
+  }
+
+  const xLabel = datasets[0]?.data.meta.x_label || 'Rotation (%)'
+
+  const plotLayout = {
+    paper_bgcolor: '#0a0c10',
+    plot_bgcolor: 'rgba(22, 27, 34, 0.5)',
+    font: { color: '#d1d5db', size: 11 },
+    margin: { l: 72, r: 16, t: 6, b: 44 },
+    autosize: true,
+    legend: { font: { size: 11, color: '#d1d5db' }, bgcolor: 'rgba(0,0,0,0)' },
+  }
+
+  const directionButtons = ['All', ...availableDirections]
+
+  return (
+    <div className="column-rotations-plot flex-1 flex flex-col overflow-hidden">
+      <div className="column-rotations-toolbar flex items-center justify-between gap-3">
+        <div className="column-rotations-directions flex items-center gap-2">
+          {directionButtons.map((direction) => (
+            <button
+              key={direction}
+              type="button"
+              onClick={() => setDirectionFilter(direction)}
+              className={clsx(
+                'px-3 py-1 rounded text-sm transition-colors',
+                effectiveDirection === direction
+                  ? 'bg-accent-primary text-white'
+                  : 'bg-bg-secondary text-text-secondary hover:bg-bg-hover'
+              )}
+            >
+              {direction}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="h-[calc(90vh-3rem)] min-h-0 mt-2">
-        {activeTab === 'scatter' ? (
+        {effectiveDirection !== 'All' && !scatterTraces.some((trace) => trace.x.length > 0) ? (
+          <div className="h-full flex items-center justify-center">
+            <div className="text-text-muted">No {effectiveDirection} direction data available</div>
+          </div>
+        ) : (
           <LazyPlot
             data={scatterTraces}
             layout={{
@@ -963,38 +1197,13 @@ function ComparisonBeamRotationsPanel({
             style={{ width: '100%', height: '100%' }}
             useResizeHandler
           />
-        ) : (
-          <LazyPlot
-            data={histogramTraces}
-            layout={{
-              ...plotLayout,
-              barmode: 'overlay' as const,
-              xaxis: {
-                title: { text: xLabel, font: { size: 13, color: '#d1d5db' } },
-                gridcolor: 'rgba(60, 65, 75, 0.3)',
-                tickfont: { size: 10 },
-                dtick: 0.5,
-                linecolor: '#3a3f4a', linewidth: 1, mirror: true,
-              },
-              yaxis: {
-                title: { text: 'Count', font: { size: 13, color: '#d1d5db' } },
-                rangemode: 'tozero' as const,
-                gridcolor: 'rgba(60, 65, 75, 0.25)',
-                tickfont: { size: 10 },
-                linecolor: '#3a3f4a', linewidth: 1, mirror: true,
-              },
-            }}
-            config={{ displayModeBar: false, responsive: true }}
-            style={{ width: '100%', height: '100%' }}
-            useResizeHandler
-          />
         )}
       </div>
     </div>
   )
 }
 
-// Joint overlay comparison — fetches joint data per result set, overlays scatter/histogram traces
+// Joint overlay comparison — fetches joint data per result set, overlays scatter traces
 function ComparisonJointOverlayPanel({
   projectSlug,
   resultSetIds,
@@ -1004,7 +1213,6 @@ function ComparisonJointOverlayPanel({
   resultSetIds: number[]
   resultType: string
 }) {
-  const [activeTab, setActiveTab] = useState<'scatter' | 'histogram'>('scatter')
   const { data: resultSets } = useResultSets(projectSlug)
   const rsNameMap = useMemo(() => {
     const m: Record<number, string> = {}
@@ -1071,7 +1279,7 @@ function ComparisonJointOverlayPanel({
         })
       })
 
-      const color = COMPARISON_SERIES_COLORS[dsIdx % COMPARISON_SERIES_COLORS.length]
+      const color = ROTATION_COMPARISON_COLORS[dsIdx % ROTATION_COMPARISON_COLORS.length]
       return {
         type: 'scatter' as const,
         mode: 'markers' as const,
@@ -1085,50 +1293,6 @@ function ComparisonJointOverlayPanel({
       }
     })
   }, [datasets, lcIndexMap, useAbsoluteValue])
-
-  // Histogram traces — one per result set, overlaid
-  const histogramTraces = useMemo(() => {
-    return datasets.map((ds, dsIdx) => {
-      const values: number[] = []
-      ds.data.rows.forEach((row) => {
-        ds.data.load_case_columns.forEach((lc) => {
-          const raw = row[lc]
-          if (typeof raw !== 'number' || !Number.isFinite(raw)) return
-          values.push(useAbsoluteValue ? Math.abs(raw) : raw)
-        })
-      })
-
-      if (!values.length) return null
-
-      const minVal = Math.min(...values)
-      const maxVal = Math.max(...values)
-      const binCount = 50
-      const width = maxVal === minVal ? 1 : (maxVal - minVal) / binCount
-      const counts = new Array(binCount).fill(0)
-      values.forEach((v) => {
-        let idx = maxVal === minVal ? 0 : Math.floor((v - minVal) / width)
-        if (idx >= binCount) idx = binCount - 1
-        counts[idx]++
-      })
-      const bins = counts.map((count: number, i: number) => ({
-        center: minVal + width * (i + 0.5),
-        width,
-        count,
-      }))
-
-      const color = COMPARISON_SERIES_COLORS[dsIdx % COMPARISON_SERIES_COLORS.length]
-      return {
-        type: 'bar' as const,
-        name: ds.name,
-        x: bins.map((b) => b.center),
-        y: bins.map((b) => b.count),
-        width: bins.map((b) => b.width * 0.9),
-        marker: { color, opacity: 0.6, line: { color, width: 1 } },
-        hovertemplate: `<b>${ds.name}</b><br>%{x:.3f}<br>Count: %{y}<extra></extra>`,
-        showlegend: true,
-      }
-    }).filter((t): t is NonNullable<typeof t> => t !== null)
-  }, [datasets, useAbsoluteValue])
 
   const yLabel = resultType === 'SoilPressures'
     ? `Soil Pressure (${datasets[0]?.data.meta?.unit || ''})`
@@ -1165,78 +1329,35 @@ function ComparisonJointOverlayPanel({
 
   return (
     <div className="joint-results-plot flex-1 flex flex-col overflow-hidden">
-      <div className="joint-results-tabs flex gap-0">
-        {(['scatter', 'histogram'] as const).map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            onClick={() => setActiveTab(tab)}
-            className={clsx(
-              'joint-results-tab px-4 py-1.5 text-base capitalize transition-colors',
-              activeTab === tab
-                ? 'text-accent-primary border-b-2 border-accent-primary font-medium'
-                : 'text-text-secondary hover:text-text-primary'
-            )}
-          >
-            {tab}
-          </button>
-        ))}
-      </div>
-      <div className="h-[calc(90vh-3rem)] min-h-0 mt-2">
-        {activeTab === 'scatter' ? (
-          <LazyPlot
-            data={scatterTraces}
-            layout={{
-              ...plotLayout,
-              xaxis: {
-                title: { text: 'Load Case', font: { size: 13, color: '#d1d5db' } },
-                tickmode: 'array' as const,
-                tickvals: allLoadCases.map((_, i) => i),
-                ticktext: allLoadCases,
-                range: [-0.5, xRange],
-                gridcolor: 'rgba(60, 65, 75, 0.25)',
-                tickfont: { size: 10 },
-                linecolor: '#3a3f4a', linewidth: 1, mirror: true,
-              },
-              yaxis: {
-                title: { text: yLabel, font: { size: 13, color: '#d1d5db' } },
-                gridcolor: 'rgba(60, 65, 75, 0.3)',
-                zeroline: true,
-                zerolinecolor: '#4a7d89',
-                zerolinewidth: 1,
-                tickfont: { size: 10 },
-                linecolor: '#3a3f4a', linewidth: 1, mirror: true,
-              },
-            }}
-            config={{ displayModeBar: false, responsive: true }}
-            style={{ width: '100%', height: '100%' }}
-            useResizeHandler
-          />
-        ) : (
-          <LazyPlot
-            data={histogramTraces}
-            layout={{
-              ...plotLayout,
-              barmode: 'overlay' as const,
-              xaxis: {
-                title: { text: yLabel, font: { size: 13, color: '#d1d5db' } },
-                gridcolor: 'rgba(60, 65, 75, 0.3)',
-                tickfont: { size: 10 },
-                linecolor: '#3a3f4a', linewidth: 1, mirror: true,
-              },
-              yaxis: {
-                title: { text: 'Count', font: { size: 13, color: '#d1d5db' } },
-                rangemode: 'tozero' as const,
-                gridcolor: 'rgba(60, 65, 75, 0.25)',
-                tickfont: { size: 10 },
-                linecolor: '#3a3f4a', linewidth: 1, mirror: true,
-              },
-            }}
-            config={{ displayModeBar: false, responsive: true }}
-            style={{ width: '100%', height: '100%' }}
-            useResizeHandler
-          />
-        )}
+      <div className="h-[90vh] min-h-0">
+        <LazyPlot
+          data={scatterTraces}
+          layout={{
+            ...plotLayout,
+            xaxis: {
+              title: { text: 'Load Case', font: { size: 13, color: '#d1d5db' } },
+              tickmode: 'array' as const,
+              tickvals: allLoadCases.map((_, i) => i),
+              ticktext: allLoadCases,
+              range: [-0.5, xRange],
+              gridcolor: 'rgba(60, 65, 75, 0.25)',
+              tickfont: { size: 10 },
+              linecolor: '#3a3f4a', linewidth: 1, mirror: true,
+            },
+            yaxis: {
+              title: { text: yLabel, font: { size: 13, color: '#d1d5db' } },
+              gridcolor: 'rgba(60, 65, 75, 0.3)',
+              zeroline: true,
+              zerolinecolor: '#4a7d89',
+              zerolinewidth: 1,
+              tickfont: { size: 10 },
+              linecolor: '#3a3f4a', linewidth: 1, mirror: true,
+            },
+          }}
+          config={{ displayModeBar: false, responsive: true }}
+          style={{ width: '100%', height: '100%' }}
+          useResizeHandler
+        />
       </div>
     </div>
   )

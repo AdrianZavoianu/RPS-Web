@@ -63,6 +63,7 @@ export interface ResultSet {
   id: number
   name: string
   analysis_type: 'NLTHA' | 'Pushover'
+  has_pushover_cases?: boolean
   description: string
   categories?: ResultCategory[]
   created_at: string

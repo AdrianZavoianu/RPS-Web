@@ -22,3 +22,12 @@ export const COMPARISON_SERIES_COLORS = [
   '#ef4444',
   '#3b82f6',
 ]
+
+export const ROTATION_COMPARISON_COLORS = [
+  '#f97316',
+  '#3b82f6',
+  '#fb923c',
+  '#60a5fa',
+  '#f59e0b',
+  '#93c5fd',
+]

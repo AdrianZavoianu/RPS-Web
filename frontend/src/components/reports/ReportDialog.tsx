@@ -14,6 +14,7 @@ import { ReportPreviewArea } from './ReportPreviewArea'
 
 interface ReportDialogProps {
   projectSlug: string
+  projectName: string
   onClose: () => void
 }
 
@@ -39,6 +40,14 @@ function sectionKey(s: AvailableSection): string {
   return `${s.category}_${s.result_type}_${s.direction}`
 }
 
+function normalizeReportCategory(rawCategory?: string): string {
+  const normalized = (rawCategory || "Global").trim().toLowerCase()
+  if (normalized === "global" || normalized === "globals") return "Global"
+  if (normalized === "element" || normalized === "elements") return "Element"
+  if (normalized === "joint" || normalized === "joints") return "Joint"
+  return rawCategory || "Global"
+}
+
 function buildCategoryGroups(sections: AvailableSection[]): CategoryGroup[] {
   const categoryOrder = ['Global', 'Element', 'Joint']
   const categoryLabels: Record<string, string> = {
@@ -49,12 +58,17 @@ function buildCategoryGroups(sections: AvailableSection[]): CategoryGroup[] {
 
   const grouped: Record<string, AvailableSection[]> = {}
   for (const s of sections) {
-    const cat = s.category || 'Global'
+    const cat = normalizeReportCategory(s.category)
     ;(grouped[cat] ??= []).push(s)
   }
 
+  const orderedCategories = [
+    ...categoryOrder,
+    ...Object.keys(grouped).filter((cat) => !categoryOrder.includes(cat)),
+  ]
+
   const result: CategoryGroup[] = []
-  for (const cat of categoryOrder) {
+  for (const cat of orderedCategories) {
     const items = grouped[cat]
     if (!items?.length) continue
 
@@ -67,11 +81,11 @@ function buildCategoryGroups(sections: AvailableSection[]): CategoryGroup[] {
         label: RESULT_TYPE_LABELS[rt] || rt,
         sections: secs,
       }))
-      result.push({ category: cat, label: categoryLabels[cat], subGroups })
+      result.push({ category: cat, label: categoryLabels[cat] || cat, subGroups })
     } else {
       result.push({
         category: cat,
-        label: categoryLabels[cat],
+        label: categoryLabels[cat] || cat,
         subGroups: [{ label: '', sections: items }],
       })
     }
@@ -80,7 +94,7 @@ function buildCategoryGroups(sections: AvailableSection[]): CategoryGroup[] {
   return result
 }
 
-export function ReportDialog({ projectSlug, onClose }: ReportDialogProps) {
+export function ReportDialog({ projectSlug, projectName, onClose }: ReportDialogProps) {
   const [selectedResultSetId, setSelectedResultSetId] = useState<number | null>(null)
   const [selectedSections, setSelectedSections] = useState<Set<string>>(new Set())
   const [includeTable, setIncludeTable] = useState(true)
@@ -92,6 +106,7 @@ export function ReportDialog({ projectSlug, onClose }: ReportDialogProps) {
   const [previewLoading, setPreviewLoading] = useState(false)
   const sectionCacheRef = useRef<Map<string, SectionData>>(new Map())
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const latestPreviewRequestRef = useRef(0)
 
   const { data: resultSets, isLoading: resultSetsLoading } = useResultSets(projectSlug)
   const { data: preview, isLoading: previewMetaLoading } = useReportPreview(
@@ -99,7 +114,7 @@ export function ReportDialog({ projectSlug, onClose }: ReportDialogProps) {
     selectedResultSetId
   )
   const generateReport = useGenerateReport(projectSlug)
-  const sectionDataMutation = useReportSectionData(projectSlug)
+  const { mutateAsync: fetchSectionData } = useReportSectionData(projectSlug)
 
   const categoryGroups = useMemo(
     () => (preview?.available_sections ? buildCategoryGroups(preview.available_sections) : []),
@@ -183,15 +198,24 @@ export function ReportDialog({ projectSlug, onClose }: ReportDialogProps) {
         // All cached — reorder to match config order
         const ordered = reorderFromConfigs(configs, cache)
         setPreviewSections(ordered)
+        setPreviewLoading(false)
         return
       }
 
+      const requestId = latestPreviewRequestRef.current + 1
+      latestPreviewRequestRef.current = requestId
       setPreviewLoading(true)
       try {
-        const response = await sectionDataMutation.mutateAsync({
+        const response = await fetchSectionData({
           result_set_id: selectedResultSetId,
+          project_name: projectName,
           sections: uncachedConfigs,
         })
+
+        // Ignore stale responses from earlier requests.
+        if (latestPreviewRequestRef.current !== requestId) {
+          return
+        }
 
         // Store in cache
         for (const section of response.sections) {
@@ -205,10 +229,12 @@ export function ReportDialog({ projectSlug, onClose }: ReportDialogProps) {
       } catch {
         // Keep whatever we had
       } finally {
-        setPreviewLoading(false)
+        if (latestPreviewRequestRef.current === requestId) {
+          setPreviewLoading(false)
+        }
       }
     }, 300)
-  }, [selectedResultSetId, selectedSections, includeTable, includeChart, buildSectionConfigs, sectionDataMutation])
+  }, [selectedResultSetId, selectedSections, includeTable, includeChart, buildSectionConfigs, fetchSectionData])
 
   // Trigger preview fetch on selection changes
   useEffect(() => {
@@ -275,6 +301,7 @@ export function ReportDialog({ projectSlug, onClose }: ReportDialogProps) {
     try {
       await generateReport.mutateAsync({
         result_set_id: selectedResultSetId,
+        project_name: projectName,
         sections,
       })
       onClose()
@@ -283,9 +310,6 @@ export function ReportDialog({ projectSlug, onClose }: ReportDialogProps) {
     }
   }
 
-  const projectName = preview?.result_set?.name
-    ? resultSets?.find((rs) => rs.id === selectedResultSetId)?.name || ''
-    : ''
   const resultSetName = preview?.result_set?.name || ''
 
   return (
