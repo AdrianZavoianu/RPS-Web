@@ -6,37 +6,23 @@ import {
   useReactTable,
 } from '@tanstack/react-table'
 import clsx from 'clsx'
+import type { ComparisonDataset } from '../../types'
 import { getGradientColor, getMinMax } from '../../utils/gradients'
-import { getResultTypeDecimals } from '../../utils/resultConfig'
+import { collectNumericValues, formatResultValue } from './tableUtils'
 
 interface ComparisonTableProps {
-  dataset: {
-    rows: Record<string, unknown>[]
-    series: { result_set_name: string; has_data: boolean }[]
-    ratio_column: string | null
-    metric: string
-    result_type: string
-  }
+  dataset: Pick<ComparisonDataset, 'rows' | 'series' | 'ratio_column' | 'metric' | 'result_type'>
   className?: string
 }
 
 function ComparisonTableComponent({ dataset, className }: ComparisonTableProps) {
   const columnHelper = createColumnHelper<Record<string, unknown>>()
-  const decimals = getResultTypeDecimals(dataset.result_type)
 
   const globalMinMax = useMemo(() => {
-    const allValues: number[] = []
-    for (const series of dataset.series) {
-      const colKey = `${series.result_set_name}_${dataset.metric}`
-      for (const row of dataset.rows) {
-        const val = row[colKey] as number | null
-        if (val !== null && val !== undefined && !isNaN(val)) {
-          allValues.push(val)
-        }
-      }
-    }
+    const columnKeys = dataset.series.map((series) => `${series.result_set_name}_${dataset.metric}`)
+    const allValues = collectNumericValues(dataset.rows, columnKeys)
     return getMinMax(allValues)
-  }, [dataset])
+  }, [dataset.metric, dataset.rows, dataset.series])
 
   const columns = useMemo(() => {
     const cols = []
@@ -65,7 +51,7 @@ function ComparisonTableComponent({ dataset, className }: ComparisonTableProps) 
                 className="results-table-value"
                 style={{ color: textColor }}
               >
-                {value.toFixed(decimals)}
+                {formatResultValue(value, dataset.result_type)}
               </span>
             )
           },
@@ -97,7 +83,7 @@ function ComparisonTableComponent({ dataset, className }: ComparisonTableProps) 
     }
 
     return cols
-  }, [dataset, columnHelper, decimals, globalMinMax])
+  }, [dataset, columnHelper, globalMinMax])
 
   const table = useReactTable({
     data: dataset.rows,

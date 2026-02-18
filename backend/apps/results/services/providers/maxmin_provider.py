@@ -2,28 +2,15 @@
 
 from typing import Dict, Optional
 
-from config.result_types import RESULT_TYPE_CONFIG
+from config.result_types import RESULT_TYPE_CONFIG, get_maxmin_raw_source
 
-from apps.results.models import (
-    AbsoluteMaxMinDrift,
-    ElementResultsCache,
-    ResultCategory,
-    ResultSet,
-    StoryAcceleration,
-    StoryDisplacement,
-    StoryDrift,
-    StoryForce,
+from apps.results.data import (
+    AbsoluteMaxMinDriftRepository,
+    ElementResultsCacheRepository,
+    ResultCategoryRepository,
 )
 
 from ..datasets import MaxMinDataset
-
-
-RAW_MODEL_MAP = {
-    "Drifts": (StoryDrift, "drift", "max_drift", "min_drift"),
-    "Accelerations": (StoryAcceleration, "acceleration", "max_acceleration", "min_acceleration"),
-    "Forces": (StoryForce, "force", "max_force", "min_force"),
-    "Displacements": (StoryDisplacement, "displacement", "max_displacement", "min_displacement"),
-}
 
 # Element types that support per-element maxmin from cache
 ELEMENT_MAXMIN_CONFIG = {
@@ -69,16 +56,11 @@ def get_maxmin_dataset(
 
 def _get_drift_maxmin(service, result_set_id: int) -> Optional[MaxMinDataset]:
     """Get max/min drifts from precomputed table."""
-    entries = (
-        AbsoluteMaxMinDrift.objects.filter(
-            project=service.project,
-            result_set_id=result_set_id,
-        )
-        .select_related("story", "load_case")
-        .order_by("-story__sort_order")
+    entries = AbsoluteMaxMinDriftRepository.list_entries(
+        service.project,
+        result_set_id=result_set_id,
     )
-
-    if not entries.exists():
+    if not entries:
         return None
 
     story_data: Dict[str, Dict[str, float]] = {}
@@ -131,19 +113,17 @@ def _get_generic_maxmin(
     if not directions:
         return None
 
-    model_info = RAW_MODEL_MAP.get(base_result_type)
+    model_info = get_maxmin_raw_source(base_result_type)
     if not model_info:
         return None
 
     model_class, primary_field, max_field, min_field = model_info
 
-    try:
-        result_set = ResultSet.objects.get(id=result_set_id)
-    except ResultSet.DoesNotExist:
-        return None
-
-    categories = ResultCategory.objects.filter(result_set=result_set)
-    if not categories.exists():
+    category_ids = ResultCategoryRepository.get_ids_for_project_result_set(
+        service.project,
+        result_set_id=result_set_id,
+    )
+    if not category_ids:
         return None
 
     story_data: Dict[str, Dict[str, float]] = {}
@@ -155,7 +135,7 @@ def _get_generic_maxmin(
         entries = (
             model_class.objects.filter(
                 story__project=service.project,
-                result_category__in=categories,
+                result_category_id__in=category_ids,
                 direction=internal_dir,
             )
             .select_related("story", "load_case")
@@ -240,15 +220,11 @@ def _get_element_maxmin(
 
     for ui_dir in directions:
         cache_type = f"{base_result_type}_{ui_dir}"
-        entries = (
-            ElementResultsCache.objects.filter(
-                project=service.project,
-                result_set_id=result_set_id,
-                result_type=cache_type,
-                element_id=element_id,
-            )
-            .select_related("story")
-            .order_by("-story_sort_order")
+        entries = ElementResultsCacheRepository.list_entries(
+            service.project,
+            result_set_id=result_set_id,
+            result_type=cache_type,
+            element_id=element_id,
         )
 
         for entry in entries:

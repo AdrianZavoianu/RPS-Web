@@ -2,7 +2,7 @@
  * Results API module
  */
 
-import { apiClient } from './client'
+import { apiClient, buildQueryParams } from './client'
 import type {
   ResultSet,
   ResultDataset,
@@ -15,6 +15,7 @@ import type {
   BeamRotationsTableData,
   ColumnRotationsPlotData,
   AvailableResultTypes,
+  ResultTreeMetadata,
   PushoverCase,
   PushoverCurve,
   Element,
@@ -40,6 +41,18 @@ export async function getAvailableResultTypes(projectSlug: string): Promise<Avai
   return apiClient.get<AvailableResultTypes>(`/projects/${projectSlug}/available-types/`)
 }
 
+export async function getResultTreeMetadata(
+  projectSlug: string,
+  resultSetId: number
+): Promise<ResultTreeMetadata> {
+  const query = buildQueryParams({
+    result_set_id: resultSetId,
+  })
+  return apiClient.get<ResultTreeMetadata>(
+    `/projects/${projectSlug}/results/tree-metadata/${query}`
+  )
+}
+
 // --- Global Results ---
 
 export interface GlobalResultsParams {
@@ -53,16 +66,14 @@ export async function getGlobalResults(
   projectSlug: string,
   params: GlobalResultsParams
 ): Promise<ResultDataset> {
-  const searchParams = new URLSearchParams({
-    result_set_id: params.result_set_id.toString(),
+  const query = buildQueryParams({
+    result_set_id: params.result_set_id,
     result_type: params.result_type,
     direction: params.direction,
+    is_pushover: params.is_pushover ? true : undefined,
   })
-  if (params.is_pushover) {
-    searchParams.set('is_pushover', 'true')
-  }
   return apiClient.get<ResultDataset>(
-    `/projects/${projectSlug}/results/global/?${searchParams.toString()}`
+    `/projects/${projectSlug}/results/global/${query}`
   )
 }
 
@@ -80,19 +91,15 @@ export async function getElementResults(
   projectSlug: string,
   params: ElementResultsParams
 ): Promise<ResultDataset> {
-  const searchParams = new URLSearchParams({
-    result_set_id: params.result_set_id.toString(),
-    element_id: params.element_id.toString(),
+  const query = buildQueryParams({
+    result_set_id: params.result_set_id,
+    element_id: params.element_id,
     result_type: params.result_type,
+    direction: params.direction,
+    is_pushover: params.is_pushover ? true : undefined,
   })
-  if (params.direction) {
-    searchParams.set('direction', params.direction)
-  }
-  if (params.is_pushover) {
-    searchParams.set('is_pushover', 'true')
-  }
   return apiClient.get<ResultDataset>(
-    `/projects/${projectSlug}/results/element/?${searchParams.toString()}`
+    `/projects/${projectSlug}/results/element/${query}`
   )
 }
 
@@ -105,12 +112,12 @@ export async function getElementsForType(
   projectSlug: string,
   params: ElementListParams
 ): Promise<{ elements: Element[] }> {
-  const searchParams = new URLSearchParams({
-    result_set_id: params.result_set_id.toString(),
+  const query = buildQueryParams({
+    result_set_id: params.result_set_id,
     result_type: params.result_type,
   })
   return apiClient.get<{ elements: Element[] }>(
-    `/projects/${projectSlug}/results/elements/?${searchParams.toString()}`
+    `/projects/${projectSlug}/results/elements/${query}`
   )
 }
 
@@ -126,15 +133,13 @@ export async function getJointResults(
   projectSlug: string,
   params: JointResultsParams
 ): Promise<ResultDataset> {
-  const searchParams = new URLSearchParams({
-    result_set_id: params.result_set_id.toString(),
+  const query = buildQueryParams({
+    result_set_id: params.result_set_id,
     result_type: params.result_type,
+    is_pushover: params.is_pushover ? true : undefined,
   })
-  if (params.is_pushover) {
-    searchParams.set('is_pushover', 'true')
-  }
   return apiClient.get<ResultDataset>(
-    `/projects/${projectSlug}/results/joint/?${searchParams.toString()}`
+    `/projects/${projectSlug}/results/joint/${query}`
   )
 }
 
@@ -150,17 +155,13 @@ export async function getMaxMinData(
   projectSlug: string,
   params: MaxMinParams
 ): Promise<MaxMinDataset> {
-  const searchParams = new URLSearchParams({
-    result_set_id: params.result_set_id.toString(),
+  const query = buildQueryParams({
+    result_set_id: params.result_set_id,
+    result_type: params.result_type,
+    element_id: params.element_id,
   })
-  if (params.result_type) {
-    searchParams.set('result_type', params.result_type)
-  }
-  if (params.element_id) {
-    searchParams.set('element_id', params.element_id.toString())
-  }
   return apiClient.get<MaxMinDataset>(
-    `/projects/${projectSlug}/results/maxmin/?${searchParams.toString()}`
+    `/projects/${projectSlug}/results/maxmin/${query}`
   )
 }
 
@@ -178,21 +179,15 @@ export async function getComparisonData(
   projectSlug: string,
   params: ComparisonParams
 ): Promise<ComparisonDataset> {
-  const searchParams = new URLSearchParams({
-    result_set_ids: params.result_set_ids.join(','),
+  const query = buildQueryParams({
+    result_set_ids: params.result_set_ids,
     result_type: params.result_type,
+    direction: params.direction,
+    metric: params.metric,
+    element_id: params.element_id,
   })
-  if (params.direction) {
-    searchParams.set('direction', params.direction)
-  }
-  if (params.metric) {
-    searchParams.set('metric', params.metric)
-  }
-  if (params.element_id) {
-    searchParams.set('element_id', params.element_id.toString())
-  }
   return apiClient.get<ComparisonDataset>(
-    `/projects/${projectSlug}/results/comparison/?${searchParams.toString()}`
+    `/projects/${projectSlug}/results/comparison/${query}`
   )
 }
 
@@ -226,16 +221,14 @@ export async function getChartData(
   projectSlug: string,
   params: ChartDataParams
 ): Promise<ChartData> {
-  const searchParams = new URLSearchParams({
-    result_set_id: params.result_set_id.toString(),
+  const query = buildQueryParams({
+    result_set_id: params.result_set_id,
     result_type: params.result_type,
     direction: params.direction,
+    column: params.column,
   })
-  if (params.column) {
-    searchParams.set('column', params.column)
-  }
   return apiClient.get<ChartData>(
-    `/projects/${projectSlug}/results/chart/?${searchParams.toString()}`
+    `/projects/${projectSlug}/results/chart/${query}`
   )
 }
 
@@ -253,11 +246,11 @@ export async function getBeamRotationsPlotData(
   projectSlug: string,
   params: BeamRotationsParams
 ): Promise<BeamRotationsPlotData> {
-  const searchParams = new URLSearchParams({
-    result_set_id: params.result_set_id.toString(),
+  const query = buildQueryParams({
+    result_set_id: params.result_set_id,
   })
   return apiClient.get<BeamRotationsPlotData>(
-    `/projects/${projectSlug}/results/beam-rotations/plot/?${searchParams.toString()}`
+    `/projects/${projectSlug}/results/beam-rotations/plot/${query}`
   )
 }
 
@@ -265,11 +258,11 @@ export async function getBeamRotationsTableData(
   projectSlug: string,
   params: BeamRotationsParams
 ): Promise<BeamRotationsTableData> {
-  const searchParams = new URLSearchParams({
-    result_set_id: params.result_set_id.toString(),
+  const query = buildQueryParams({
+    result_set_id: params.result_set_id,
   })
   return apiClient.get<BeamRotationsTableData>(
-    `/projects/${projectSlug}/results/beam-rotations/table/?${searchParams.toString()}`
+    `/projects/${projectSlug}/results/beam-rotations/table/${query}`
   )
 }
 
@@ -277,11 +270,11 @@ export async function getColumnRotationsPlotData(
   projectSlug: string,
   params: ColumnRotationsParams
 ): Promise<ColumnRotationsPlotData> {
-  const searchParams = new URLSearchParams({
-    result_set_id: params.result_set_id.toString(),
+  const query = buildQueryParams({
+    result_set_id: params.result_set_id,
   })
   return apiClient.get<ColumnRotationsPlotData>(
-    `/projects/${projectSlug}/results/column-rotations/plot/?${searchParams.toString()}`
+    `/projects/${projectSlug}/results/column-rotations/plot/${query}`
   )
 }
 
@@ -291,11 +284,9 @@ export async function getPushoverCases(
   projectSlug: string,
   resultSetId?: number
 ): Promise<{ pushover_cases: PushoverCase[] }> {
-  const searchParams = new URLSearchParams()
-  if (resultSetId) {
-    searchParams.set('result_set_id', resultSetId.toString())
-  }
-  const query = searchParams.toString() ? `?${searchParams.toString()}` : ''
+  const query = buildQueryParams({
+    result_set_id: resultSetId,
+  })
   return apiClient.get<{ pushover_cases: PushoverCase[] }>(
     `/projects/${projectSlug}/pushover-cases/${query}`
   )
@@ -307,6 +298,24 @@ export async function getPushoverCurve(
 ): Promise<PushoverCurve> {
   return apiClient.get<PushoverCurve>(
     `/projects/${projectSlug}/pushover-cases/${caseId}/curve/`
+  )
+}
+
+export interface PushoverCurvesBatchParams {
+  result_set_id: number
+  direction: string
+}
+
+export async function getPushoverCurvesBatch(
+  projectSlug: string,
+  params: PushoverCurvesBatchParams
+): Promise<{ curves: PushoverCurve[] }> {
+  const query = buildQueryParams({
+    result_set_id: params.result_set_id,
+    direction: params.direction,
+  })
+  return apiClient.get<{ curves: PushoverCurve[] }>(
+    `/projects/${projectSlug}/pushover-curves/batch/${query}`
   )
 }
 
@@ -324,13 +333,13 @@ export async function getTimeSeriesAllTypes(
   projectSlug: string,
   params: TimeSeriesAllTypesParams
 ): Promise<TimeSeriesAllTypesData> {
-  const searchParams = new URLSearchParams({
-    result_set_id: params.result_set_id.toString(),
+  const query = buildQueryParams({
+    result_set_id: params.result_set_id,
     load_case: params.load_case,
     direction: params.direction,
   })
   return apiClient.get<TimeSeriesAllTypesData>(
-    `/projects/${projectSlug}/results/time-series/all-types/?${searchParams.toString()}`
+    `/projects/${projectSlug}/results/time-series/all-types/${query}`
   )
 }
 
@@ -345,11 +354,9 @@ export async function getTimeSeriesLoadCases(
   projectSlug: string,
   resultSetId?: number
 ): Promise<{ load_cases: string[] }> {
-  const searchParams = new URLSearchParams()
-  if (resultSetId) {
-    searchParams.set('result_set_id', resultSetId.toString())
-  }
-  const query = searchParams.toString() ? `?${searchParams.toString()}` : ''
+  const query = buildQueryParams({
+    result_set_id: resultSetId,
+  })
   return apiClient.get<{ load_cases: string[] }>(
     `/projects/${projectSlug}/results/time-series/load-cases/${query}`
   )
@@ -359,13 +366,13 @@ export async function getTimeSeriesData(
   projectSlug: string,
   params: TimeSeriesParams
 ): Promise<TimeSeriesData> {
-  const searchParams = new URLSearchParams({
-    result_set_id: params.result_set_id.toString(),
+  const query = buildQueryParams({
+    result_set_id: params.result_set_id,
     load_case: params.load_case,
     result_type: params.result_type,
     direction: params.direction,
   })
   return apiClient.get<TimeSeriesData>(
-    `/projects/${projectSlug}/results/time-series/?${searchParams.toString()}`
+    `/projects/${projectSlug}/results/time-series/${query}`
   )
 }

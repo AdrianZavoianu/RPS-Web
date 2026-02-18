@@ -10,14 +10,16 @@ from apps.importer.models import ImportJob
 from apps.importer.parsers.excel_parser import ExcelParser, TimeHistoryParseResult
 from apps.results.models import ResultCategory, ResultSet
 
-from .detail_result_importers import (
+from .detail_importers.elements import (
     import_beam_rotations as _import_beam_rotations,
     import_column_forces as _import_column_forces,
     import_column_rotations as _import_column_rotations,
     import_quad_rotations as _import_quad_rotations,
+    import_wall_shears as _import_wall_shears,
+)
+from .detail_importers.joints import (
     import_soil_pressures as _import_soil_pressures,
     import_vertical_displacements as _import_vertical_displacements,
-    import_wall_shears as _import_wall_shears,
 )
 from .global_aggregation import build_story_index
 from .global_result_importers import (
@@ -26,9 +28,160 @@ from .global_result_importers import (
     import_story_drifts as _import_story_drifts,
     import_story_forces as _import_story_forces,
 )
+from .import_contracts import NlthaImportStats
+from .import_context import ImportContext
 from .import_preparation import determine_allowed_load_cases
+from .runner_pipeline import SheetImportStep, run_sheet_import_step
+from .sheet_step_definitions import (
+    NLTHA_SHEET_STEP_DEFINITIONS,
+    NLTHA_VERTICAL_DISPLACEMENTS_STEP_DEFINITION,
+)
+from .utils import append_import_error_with_log
 
 logger = logging.getLogger(__name__)
+
+
+def _build_nltha_sheet_importers(
+    import_context: ImportContext,
+) -> dict[str, Callable[[tuple, set[str]], None]]:
+    """Build parser-method keyed importer callbacks for NLTHA sheets."""
+    return {
+        "get_story_drifts": lambda parsed, allowed_cases: _import_story_drifts(
+            import_context,
+            parsed[0],
+            parsed[1],
+            build_story_index(parsed[2]),
+            allowed_cases,
+        ),
+        "get_story_accelerations": lambda parsed, allowed_cases: _import_story_accelerations(
+            import_context,
+            parsed[0],
+            parsed[1],
+            build_story_index(parsed[2]),
+            allowed_cases,
+        ),
+        "get_story_forces": lambda parsed, allowed_cases: _import_story_forces(
+            import_context,
+            parsed[0],
+            parsed[1],
+            build_story_index(parsed[2]),
+            allowed_cases,
+        ),
+        "get_joint_displacements": lambda parsed, allowed_cases: _import_story_displacements(
+            import_context,
+            parsed[0],
+            parsed[1],
+            build_story_index(parsed[2]),
+            allowed_cases,
+        ),
+        "get_pier_forces": lambda parsed, allowed_cases: _import_wall_shears(
+            import_context,
+            parsed[0],
+            parsed[1],
+            build_story_index(parsed[2]),
+            parsed[3],
+            allowed_cases,
+        ),
+        "get_quad_rotations": lambda parsed, allowed_cases: _import_quad_rotations(
+            import_context,
+            parsed[0],
+            parsed[1],
+            build_story_index(parsed[2]),
+            parsed[3],
+            allowed_cases,
+        ),
+        "get_column_forces": lambda parsed, allowed_cases: _import_column_forces(
+            import_context,
+            parsed[0],
+            parsed[1],
+            build_story_index(parsed[2]),
+            parsed[3],
+            allowed_cases,
+        ),
+        "get_fiber_hinge_states": lambda parsed, allowed_cases: _import_column_rotations(
+            import_context,
+            parsed[0],
+            parsed[1],
+            build_story_index(parsed[2]),
+            parsed[3],
+            allowed_cases,
+        ),
+        "get_hinge_states": lambda parsed, allowed_cases: _import_beam_rotations(
+            import_context,
+            parsed[0],
+            parsed[1],
+            build_story_index(parsed[2]),
+            parsed[3],
+            allowed_cases,
+        ),
+        "get_soil_pressures": lambda parsed, allowed_cases: _import_soil_pressures(
+            import_context,
+            parsed[0],
+            parsed[1],
+            allowed_cases,
+        ),
+        "get_vertical_displacements": lambda parsed, allowed_cases: _import_vertical_displacements(
+            import_context,
+            parsed[0],
+            parsed[1],
+            allowed_cases,
+        ),
+    }
+
+
+def _build_selected_case_resolver(
+    allowed_for_file: set[str],
+) -> Callable[[list[str], set[str]], set[str]]:
+    """Resolve allowed cases for one file from the prescan-selected set."""
+
+    def _resolve(load_cases: list[str], _already_imported: set[str]) -> set[str]:
+        return set(load_cases) & allowed_for_file
+
+    return _resolve
+
+
+def _run_nltha_sheet_steps(
+    *,
+    parser: ExcelParser,
+    imported_by_sheet: dict[str, set[str]],
+    import_context: ImportContext,
+    allowed_for_file: set[str],
+    foundation_joints: list[str],
+) -> None:
+    """Run all NLTHA sheet imports for one parser/file pair."""
+    resolve_allowed_cases = _build_selected_case_resolver(allowed_for_file)
+    importers = _build_nltha_sheet_importers(import_context)
+
+    for definition in NLTHA_SHEET_STEP_DEFINITIONS:
+        run_sheet_import_step(
+            parser=parser,
+            imported_by_sheet=imported_by_sheet,
+            step=SheetImportStep(
+                sheet_name=definition.sheet_name,
+                parse_sheet=getattr(parser, definition.parser_method_name),
+                import_sheet=importers[definition.parser_method_name],
+                resolve_allowed_cases=resolve_allowed_cases,
+                skip_if_dataframe_empty=definition.skip_if_dataframe_empty,
+                imported_sheet_name=definition.imported_sheet_name,
+            ),
+        )
+
+    if not foundation_joints:
+        return
+
+    vertical_definition = NLTHA_VERTICAL_DISPLACEMENTS_STEP_DEFINITION
+    run_sheet_import_step(
+        parser=parser,
+        imported_by_sheet=imported_by_sheet,
+        step=SheetImportStep(
+            sheet_name=vertical_definition.sheet_name,
+            parse_sheet=lambda: parser.get_vertical_displacements(foundation_joints),
+            import_sheet=importers[vertical_definition.parser_method_name],
+            resolve_allowed_cases=resolve_allowed_cases,
+            skip_if_dataframe_empty=vertical_definition.skip_if_dataframe_empty,
+            imported_sheet_name=vertical_definition.imported_sheet_name,
+        ),
+    )
 
 
 def run_nltha_import(
@@ -42,10 +195,10 @@ def run_nltha_import(
     result_set_id: Optional[int],
     foundation_joints: List[str],
     progress_callback: Callable[[str, int, int], None],
-) -> Dict:
+) -> NlthaImportStats:
     """Run the NLTHA import process and return import statistics."""
     project = job.project
-    stats = {
+    stats: NlthaImportStats = {
         "files_processed": 0,
         "files_total": len(files),
         "load_cases_imported": 0,
@@ -77,12 +230,14 @@ def run_nltha_import(
             category_name="Envelopes",
             category_type="Global",
         )
+        import_context = ImportContext(
+            project=project,
+            result_set=result_set,
+            result_category=result_category,
+        )
 
     # Track which load cases have been imported per sheet
     imported_by_sheet: Dict[str, Set[str]] = {}
-    stories_map = {}  # name -> Story
-    load_cases_map = {}  # name -> LoadCase
-    elements_map = {}  # (type, unique_name) -> Element
     time_history_results: List[TimeHistoryParseResult] = []  # Collected time-series data
 
     for idx, file_path in enumerate(files):
@@ -106,232 +261,13 @@ def run_nltha_import(
 
         try:
             with ExcelParser(str(file_path)) as parser:
-                # Import story drifts
-                if parser.validate_sheet_exists("Story Drifts"):
-                    df, load_cases, stories = parser.get_story_drifts()
-                    story_index = build_story_index(stories)
-                    _import_story_drifts(
-                        project,
-                        result_set,
-                        result_category,
-                        df,
-                        load_cases,
-                        story_index,
-                        allowed,
-                        stories_map,
-                        load_cases_map,
-                    )
-                    imported_by_sheet.setdefault("Story Drifts", set()).update(
-                        set(load_cases) & allowed
-                    )
-
-                # Import story accelerations
-                if parser.validate_sheet_exists("Diaphragm Accelerations"):
-                    df, load_cases, stories = parser.get_story_accelerations()
-                    story_index = build_story_index(stories)
-                    _import_story_accelerations(
-                        project,
-                        result_set,
-                        result_category,
-                        df,
-                        load_cases,
-                        story_index,
-                        allowed,
-                        stories_map,
-                        load_cases_map,
-                    )
-                    imported_by_sheet.setdefault("Diaphragm Accelerations", set()).update(
-                        set(load_cases) & allowed
-                    )
-
-                # Import story forces
-                if parser.validate_sheet_exists("Story Forces"):
-                    df, load_cases, stories = parser.get_story_forces()
-                    story_index = build_story_index(stories)
-                    _import_story_forces(
-                        project,
-                        result_set,
-                        result_category,
-                        df,
-                        load_cases,
-                        story_index,
-                        allowed,
-                        stories_map,
-                        load_cases_map,
-                    )
-                    imported_by_sheet.setdefault("Story Forces", set()).update(
-                        set(load_cases) & allowed
-                    )
-
-                # Import story displacements
-                if parser.validate_sheet_exists("Joint Displacements"):
-                    df, load_cases, stories = parser.get_joint_displacements()
-                    story_index = build_story_index(stories)
-                    if not df.empty:
-                        _import_story_displacements(
-                            project,
-                            result_set,
-                            result_category,
-                            df,
-                            load_cases,
-                            story_index,
-                            allowed,
-                            stories_map,
-                            load_cases_map,
-                        )
-                        imported_by_sheet.setdefault("Joint Displacements", set()).update(
-                            set(load_cases) & allowed
-                        )
-
-                # --- Element Results ---
-
-                # Import pier/wall shears
-                if parser.validate_sheet_exists("Pier Forces"):
-                    df, load_cases, stories, piers = parser.get_pier_forces()
-                    story_index = build_story_index(stories)
-                    if not df.empty:
-                        _import_wall_shears(
-                            project,
-                            result_set,
-                            result_category,
-                            df,
-                            load_cases,
-                            story_index,
-                            piers,
-                            allowed,
-                            stories_map,
-                            load_cases_map,
-                            elements_map,
-                        )
-                        imported_by_sheet.setdefault("Pier Forces", set()).update(
-                            set(load_cases) & allowed
-                        )
-
-                # Import quad rotations
-                if parser.validate_sheet_exists("Quad Strain Gauge - Rotation"):
-                    df, load_cases, stories, piers = parser.get_quad_rotations()
-                    story_index = build_story_index(stories)
-                    if not df.empty:
-                        _import_quad_rotations(
-                            project,
-                            result_set,
-                            result_category,
-                            df,
-                            load_cases,
-                            story_index,
-                            piers,
-                            allowed,
-                            stories_map,
-                            load_cases_map,
-                            elements_map,
-                        )
-                        imported_by_sheet.setdefault("Quad Strain Gauge - Rotation", set()).update(
-                            set(load_cases) & allowed
-                        )
-
-                # Import column forces (shears and axials)
-                if parser.validate_sheet_exists("Element Forces - Columns"):
-                    df, load_cases, stories, columns = parser.get_column_forces()
-                    story_index = build_story_index(stories)
-                    if not df.empty:
-                        _import_column_forces(
-                            project,
-                            result_set,
-                            result_category,
-                            df,
-                            load_cases,
-                            story_index,
-                            columns,
-                            allowed,
-                            stories_map,
-                            load_cases_map,
-                            elements_map,
-                        )
-                        imported_by_sheet.setdefault("Element Forces - Columns", set()).update(
-                            set(load_cases) & allowed
-                        )
-
-                # Import column rotations (fiber hinge)
-                if parser.validate_sheet_exists("Fiber Hinge States"):
-                    df, load_cases, stories, columns = parser.get_fiber_hinge_states()
-                    story_index = build_story_index(stories)
-                    if not df.empty:
-                        _import_column_rotations(
-                            project,
-                            result_set,
-                            result_category,
-                            df,
-                            load_cases,
-                            story_index,
-                            columns,
-                            allowed,
-                            stories_map,
-                            load_cases_map,
-                            elements_map,
-                        )
-                        imported_by_sheet.setdefault("Fiber Hinge States", set()).update(
-                            set(load_cases) & allowed
-                        )
-
-                # Import beam rotations (hinge states)
-                if parser.validate_sheet_exists("Hinge States"):
-                    df, load_cases, stories, beams = parser.get_hinge_states()
-                    story_index = build_story_index(stories)
-                    if not df.empty:
-                        _import_beam_rotations(
-                            project,
-                            result_set,
-                            result_category,
-                            df,
-                            load_cases,
-                            story_index,
-                            beams,
-                            allowed,
-                            stories_map,
-                            load_cases_map,
-                            elements_map,
-                        )
-                        imported_by_sheet.setdefault("Hinge States", set()).update(
-                            set(load_cases) & allowed
-                        )
-
-                # --- Joint Results ---
-
-                # Import soil pressures
-                if parser.validate_sheet_exists("Soil Pressures"):
-                    df, load_cases, _unique_elements = parser.get_soil_pressures()
-                    if not df.empty:
-                        _import_soil_pressures(
-                            project,
-                            result_set,
-                            result_category,
-                            df,
-                            load_cases,
-                            allowed,
-                            load_cases_map,
-                        )
-                        imported_by_sheet.setdefault("Soil Pressures", set()).update(
-                            set(load_cases) & allowed
-                        )
-
-                # Import vertical displacements (foundation joints)
-                if foundation_joints and parser.validate_sheet_exists("Joint Displacements"):
-                    df, load_cases, _unique_joints = parser.get_vertical_displacements(
-                        foundation_joints
-                    )
-                    if not df.empty:
-                        _import_vertical_displacements(
-                            project,
-                            result_set,
-                            result_category,
-                            df,
-                            load_cases,
-                            allowed,
-                            load_cases_map,
-                        )
-                        imported_by_sheet.setdefault("Vertical Displacements", set()).update(
-                            set(load_cases) & allowed
-                        )
+                _run_nltha_sheet_steps(
+                    parser=parser,
+                    imported_by_sheet=imported_by_sheet,
+                    import_context=import_context,
+                    allowed_for_file=allowed,
+                    foundation_joints=foundation_joints,
+                )
 
                 # --- Time-Series Data ---
                 # Parse time-history step-by-step data if present
@@ -343,14 +279,19 @@ def run_nltha_import(
             stats["files_processed"] += 1
 
         except Exception as exc:
-            stats["errors"].append(f"{file_name}: {str(exc)}")
-            logger.exception("Error processing file %s", file_name)
+            append_import_error_with_log(
+                stats=stats,
+                source=file_name,
+                exc=exc,
+                logger=logger,
+                log_template="Error processing file %s",
+            )
 
     # Count imported items
-    stats["load_cases_imported"] = len(load_cases_map)
-    stats["stories_imported"] = len(stories_map)
-    stats["elements_imported"] = len(elements_map)
+    stats["load_cases_imported"] = len(import_context.load_cases_map)
+    stats["stories_imported"] = len(import_context.stories_map)
+    stats["elements_imported"] = len(import_context.elements_map)
     stats["time_history_results"] = time_history_results
-    stats["stories_map"] = stories_map
+    stats["stories_map"] = import_context.stories_map
 
     return stats

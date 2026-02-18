@@ -5,13 +5,14 @@
 import { useQuery, useMutation } from '@tanstack/react-query'
 import * as reportsApi from '../api/reports'
 import type { GenerateReportRequest, SectionDataRequest } from '../api/reports'
+import { queryKeys } from './queryKeys'
 
 /**
  * Fetch available report sections for a result set
  */
 export function useReportPreview(projectSlug: string, resultSetId: number | null) {
   return useQuery({
-    queryKey: ['reportPreview', projectSlug, resultSetId],
+    queryKey: queryKeys.reportPreview(projectSlug, resultSetId),
     queryFn: () => reportsApi.getReportPreview(projectSlug, resultSetId!),
     enabled: !!projectSlug && !!resultSetId,
   })

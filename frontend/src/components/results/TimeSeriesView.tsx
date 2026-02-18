@@ -15,6 +15,19 @@ import {
 import { LazyPlot } from '../charts/LazyPlot'
 import { ResultsTreeBrowser, type TreeSelection } from '../projects/ResultsTreeBrowser'
 import { isNlthaResultSet } from '../../utils/resultSets'
+import {
+  ACCEL_LINE_COLOR,
+  MARKER_COLOR,
+  MAX_ENVELOPE_COLOR,
+  MIN_ENVELOPE_COLOR,
+  PROFILE_COLOR,
+  TEXT_COLOR,
+} from '../../utils/colors'
+import {
+  PLOTLY_CONFIG_NO_MODE_BAR,
+  createAxisLayout,
+  withPlotlyDefaults,
+} from '../../utils/plotlyDefaults'
 
 // --- Constants ---
 
@@ -35,16 +48,6 @@ const BASE_SUBFRAME_MS = 50
 const SUB_FRAMES = 4
 
 const STORY_AXIS_TOP_PADDING = 0.2
-
-// Plotly dark theme colors
-const PAPER_BG = '#0a0c10'
-const PLOT_BG = '#0f1419'
-const TEXT_COLOR = '#d1d5db'
-const PROFILE_COLOR = '#4a7d89'
-const MAX_ENVELOPE_COLOR = '#e74c3c'
-const MIN_ENVELOPE_COLOR = '#3498db'
-const ACCEL_LINE_COLOR = '#6b7280'
-const MARKER_COLOR = '#e74c3c'
 
 // --- Types ---
 
@@ -173,42 +176,22 @@ export function TimeSeriesView({ projectSlug }: TimeSeriesViewProps) {
     setIsPlaying(false)
   }, [allTypesData])
 
-  const totalSteps = allTypesData?.time_steps.length || 0
-  const stories = allTypesData?.stories || []
-  const timeSteps = allTypesData?.time_steps || []
+  const stories = useMemo(() => allTypesData?.stories ?? [], [allTypesData?.stories])
+  const timeSteps = useMemo(() => allTypesData?.time_steps ?? [], [allTypesData?.time_steps])
+  const totalSteps = timeSteps.length
 
-  // Envelope computation (once per data load)
+  // Envelope values are precomputed by backend to avoid heavy client-side scans.
   const envelopes = useMemo(() => {
-    if (!allTypesData) return {} as Record<string, EnvelopeData>
-
+    if (!allTypesData?.envelopes) return {} as Record<string, EnvelopeData>
     const result: Record<string, EnvelopeData> = {}
-    for (const rt of RESULT_TYPES) {
-      const typeData = allTypesData.types[rt]
-      if (!typeData) continue
-
-      const maxVals: number[] = []
-      const minVals: number[] = []
-
-      for (const story of stories) {
-        const vals = typeData[story]
-        if (!vals || vals.length === 0) {
-          maxVals.push(0)
-          minVals.push(0)
-          continue
-        }
-        let mx = -Infinity
-        let mn = Infinity
-        for (let i = 0; i < vals.length; i++) {
-          if (vals[i] > mx) mx = vals[i]
-          if (vals[i] < mn) mn = vals[i]
-        }
-        maxVals.push(mx)
-        minVals.push(mn)
+    for (const [resultType, envelope] of Object.entries(allTypesData.envelopes)) {
+      result[resultType] = {
+        maxValues: envelope.max_values ?? [],
+        minValues: envelope.min_values ?? [],
       }
-      result[rt] = { maxValues: maxVals, minValues: minVals }
     }
     return result
-  }, [allTypesData, stories])
+  }, [allTypesData?.envelopes])
 
   // Animation loop
   const speedMultiplier = SPEED_LEVELS[speedIndex]
@@ -342,7 +325,7 @@ export function TimeSeriesView({ projectSlug }: TimeSeriesViewProps) {
       category: 'Time-Series',
       categoryType: 'Global',
       resultType: 'Drifts',
-      direction: selectedDirection,
+      direction: selectedDirection === 'Y' ? 'Y' : 'X',
       loadCaseName: selectedLoadCase,
     }
   }, [selectedDirection, selectedLoadCase, selectedResultSetId])
@@ -607,27 +590,23 @@ function ProfilePlot({ resultType, unit, stories, profile, envelope }: ProfilePl
   }, [profile, envelope, stories, resultType])
 
   const layout = useMemo(
-    () => ({
-      xaxis: {
+    () => withPlotlyDefaults({
+      xaxis: createAxisLayout({
         title: { text: `${resultType} (${unit})`, font: { size: 12, color: TEXT_COLOR } },
         showgrid: false,
         zerolinecolor: PROFILE_COLOR,
         zerolinewidth: 1,
         tickfont: { size: 11, color: TEXT_COLOR },
-      },
-      yaxis: {
+      }),
+      yaxis: createAxisLayout({
         showgrid: false,
         tickfont: { size: 11, color: TEXT_COLOR },
         categoryorder: 'array' as const,
         categoryarray: stories,
         range: [0, (stories.length > 0 ? stories.length - 1 : 0) + STORY_AXIS_TOP_PADDING],
-      },
-      paper_bgcolor: PAPER_BG,
-      plot_bgcolor: PLOT_BG,
-      font: { color: TEXT_COLOR, size: 12 },
+      }),
       margin: { l: 62, r: 10, t: 10, b: 40 },
-      showlegend: false,
-      autosize: true,
+      font: { color: TEXT_COLOR, size: 12 },
     }),
     [stories, resultType, unit]
   )
@@ -637,7 +616,7 @@ function ProfilePlot({ resultType, unit, stories, profile, envelope }: ProfilePl
       <LazyPlot
         data={traces}
         layout={layout}
-        config={{ displayModeBar: false, responsive: true }}
+        config={PLOTLY_CONFIG_NO_MODE_BAR}
         style={{ width: '100%', height: '100%' }}
         useResizeHandler
       />
@@ -672,24 +651,20 @@ function BaseAccelerationPlot({ timeSteps, values, currentTime }: BaseAccelerati
   const maxTime = timeSteps.length > 0 ? timeSteps[timeSteps.length - 1] : 1
 
   const layout = useMemo(
-    () => ({
-      xaxis: {
+    () => withPlotlyDefaults({
+      xaxis: createAxisLayout({
         title: { text: 'Time (s)', font: { size: 11, color: TEXT_COLOR } },
         showgrid: false,
         tickfont: { size: 10, color: TEXT_COLOR },
         range: [0, maxTime],
-      },
-      yaxis: {
+      }),
+      yaxis: createAxisLayout({
         title: { text: 'Accel (g)', font: { size: 11, color: TEXT_COLOR } },
         showgrid: false,
         tickfont: { size: 10, color: TEXT_COLOR },
-      },
-      paper_bgcolor: PAPER_BG,
-      plot_bgcolor: PLOT_BG,
-      font: { color: TEXT_COLOR, size: 11 },
+      }),
       margin: { l: 62, r: 10, t: 6, b: 34 },
-      showlegend: false,
-      autosize: true,
+      font: { color: TEXT_COLOR, size: 11 },
       shapes: [
         // Shaded region from start to current time
         {
@@ -721,7 +696,7 @@ function BaseAccelerationPlot({ timeSteps, values, currentTime }: BaseAccelerati
     <LazyPlot
       data={traces}
       layout={layout}
-      config={{ displayModeBar: false, responsive: true }}
+      config={PLOTLY_CONFIG_NO_MODE_BAR}
       style={{ width: '100%', height: '100%' }}
       useResizeHandler
     />

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { login as loginRequest } from '../api/auth'
 import { useAuthStore } from '../stores/authStore'
 import { getApiErrorMessage } from '../types/errors'
 
@@ -17,21 +18,8 @@ export function LoginPage() {
     setIsLoading(true)
 
     try {
-      const response = await fetch('/api/auth/login/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ username, password }),
-      })
-
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.detail || 'Login failed')
-      }
-
-      const data = await response.json()
-      login(data.user, data.access)
+      const data = await loginRequest({ username, password })
+      login(data.user, data.access, data.refresh)
       navigate('/projects')
     } catch (err) {
       setError(getApiErrorMessage(err, 'Login failed'))

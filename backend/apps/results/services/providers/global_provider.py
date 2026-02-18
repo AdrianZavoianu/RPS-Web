@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 
 from config.result_types import RESULT_TYPE_CONFIG
 
-from apps.results.models import GlobalResultsCache
+from apps.results.data import GlobalResultsCacheRepository
 
 from ..datasets import (
     ResultDataset,
@@ -54,17 +54,12 @@ def get_global_results(
     internal_direction = get_internal_direction(result_type, direction)
     cache_type = f"{result_type}_{internal_direction}"
 
-    cache_entries = (
-        GlobalResultsCache.objects.filter(
-            project=service.project,
-            result_set_id=result_set_id,
-            result_type=cache_type,
-        )
-        .select_related("story")
-        .order_by("-story_sort_order")
+    cache_entries = GlobalResultsCacheRepository.list_entries(
+        service.project,
+        result_set_id=result_set_id,
+        result_type=cache_type,
     )
-
-    if not cache_entries.exists():
+    if not cache_entries:
         return None
 
     rows = []
@@ -124,16 +119,11 @@ def get_chart_data(
     aggregate_column_map = {"Avg": "avg_value", "Max": "max_value", "Min": "min_value"}
     if column in aggregate_column_map:
         db_column = aggregate_column_map[column]
-        cache_entries = (
-            GlobalResultsCache.objects.filter(
-                project=service.project,
-                result_set_id=result_set_id,
-                result_type=cache_type,
-            )
-            .exclude(**{f"{db_column}__isnull": True})
-            .select_related("story")
-            .order_by("-story_sort_order")
-            .values("story__name", db_column)
+        cache_entries = GlobalResultsCacheRepository.list_aggregate_rows(
+            service.project,
+            result_set_id=result_set_id,
+            result_type=cache_type,
+            aggregate_column=db_column,
         )
 
         if not cache_entries:

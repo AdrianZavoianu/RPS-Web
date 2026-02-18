@@ -3,6 +3,7 @@ from pathlib import Path
 import pandas as pd
 
 from apps.importer.parsers.excel_parser import ExcelParser
+from apps.importer.parsers.sheets.pushover_parser import PushoverSheetParser
 
 
 class _FakeExcelFile:
@@ -35,6 +36,7 @@ def _build_parser(displ_df: pd.DataFrame, force_df: pd.DataFrame) -> ExcelParser
         "Joint Displacements",
         "Story Forces",
     }
+    parser._pushover_parser = PushoverSheetParser(parser)
     return parser
 
 

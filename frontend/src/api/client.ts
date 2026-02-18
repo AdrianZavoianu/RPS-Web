@@ -10,7 +10,33 @@ import {
 const API_BASE = '/api'
 const DEFAULT_TIMEOUT_MS = 30000
 
+export type QueryParamScalar = string | number | boolean
+export type QueryParamValue = QueryParamScalar | QueryParamScalar[] | null | undefined
+
+export function buildQueryParams(params: Record<string, QueryParamValue>): string {
+  const searchParams = new URLSearchParams()
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null) {
+      continue
+    }
+    if (Array.isArray(value)) {
+      if (value.length === 0) {
+        continue
+      }
+      searchParams.set(key, value.map(item => String(item)).join(','))
+      continue
+    }
+    searchParams.set(key, String(value))
+  }
+
+  const query = searchParams.toString()
+  return query ? `?${query}` : ''
+}
+
 class ApiClient {
+  private refreshInFlight: Promise<string | null> | null = null
+
   private normalizeResponse<T>(data: T): T {
     if (data && typeof data === 'object' && !Array.isArray(data)) {
       const payload = data as {
@@ -29,11 +55,24 @@ class ApiClient {
     return data
   }
 
-  private getHeaders(): HeadersInit {
-    const token = useAuthStore.getState().token
+  private shouldAttemptTokenRefresh(endpoint: string): boolean {
+    return endpoint !== '/auth/login/' && endpoint !== '/auth/refresh/' && endpoint !== '/auth/register/'
+  }
+
+  private getHeaders(accessToken?: string | null): HeadersInit {
+    const token = accessToken === undefined ? useAuthStore.getState().token : accessToken
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
     }
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
+    return headers
+  }
+
+  private getUploadHeaders(accessToken?: string | null): HeadersInit {
+    const token = accessToken === undefined ? useAuthStore.getState().token : accessToken
+    const headers: HeadersInit = {}
     if (token) {
       headers['Authorization'] = `Bearer ${token}`
     }
@@ -44,6 +83,67 @@ class ApiClient {
     if (status === 401) {
       useAuthStore.getState().logout()
     }
+  }
+
+  private async refreshAccessToken(timeoutMs: number = DEFAULT_TIMEOUT_MS): Promise<string | null> {
+    const refreshToken = useAuthStore.getState().refreshToken
+    if (!refreshToken) {
+      return null
+    }
+
+    if (this.refreshInFlight) {
+      return this.refreshInFlight
+    }
+
+    const refreshPromise = (async () => {
+      const response = await this.fetchWithTimeout(
+        '/auth/refresh/',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ refresh: refreshToken }),
+        },
+        timeoutMs
+      )
+
+      if (!response.ok) {
+        useAuthStore.getState().logout()
+        return null
+      }
+
+      let payload: unknown = null
+      try {
+        payload = await response.json()
+      } catch {
+        useAuthStore.getState().logout()
+        return null
+      }
+
+      const accessToken = (payload as { access?: unknown }).access
+      if (typeof accessToken !== 'string' || accessToken.length === 0) {
+        useAuthStore.getState().logout()
+        return null
+      }
+
+      const rotatedRefreshToken = (payload as { refresh?: unknown }).refresh
+      if (typeof rotatedRefreshToken === 'string' && rotatedRefreshToken.length > 0) {
+        useAuthStore.getState().setAccessToken(accessToken, rotatedRefreshToken)
+      } else {
+        useAuthStore.getState().setAccessToken(accessToken)
+      }
+      return accessToken
+    })()
+
+    this.refreshInFlight = refreshPromise
+    refreshPromise.finally(() => {
+      if (this.refreshInFlight === refreshPromise) {
+        this.refreshInFlight = null
+      }
+    })
+
+    return refreshPromise
   }
 
   private extractErrorDetail(payload: unknown): string | null {
@@ -103,17 +203,50 @@ class ApiClient {
     }
   }
 
-  async get<T>(endpoint: string, timeoutMs: number = DEFAULT_TIMEOUT_MS): Promise<T> {
-    const response = await this.fetchWithTimeout(
+  private async requestWithAuthRetry(
+    endpoint: string,
+    optionsFactory: (accessToken: string | null) => RequestInit,
+    timeoutMs: number,
+    allowTokenRefresh: boolean
+  ): Promise<Response> {
+    let response = await this.fetchWithTimeout(
       endpoint,
-      {
-        method: 'GET',
-        headers: this.getHeaders(),
-      },
+      optionsFactory(useAuthStore.getState().token),
       timeoutMs
     )
+
+    if (response.status !== 401 || !allowTokenRefresh) {
+      return response
+    }
+
+    const refreshedAccessToken = await this.refreshAccessToken(timeoutMs)
+    if (!refreshedAccessToken) {
+      return response
+    }
+
+    response = await this.fetchWithTimeout(
+      endpoint,
+      optionsFactory(refreshedAccessToken),
+      timeoutMs
+    )
+    return response
+  }
+
+  async get<T>(endpoint: string, timeoutMs: number = DEFAULT_TIMEOUT_MS): Promise<T> {
+    const allowTokenRefresh = this.shouldAttemptTokenRefresh(endpoint)
+    const response = await this.requestWithAuthRetry(
+      endpoint,
+      (accessToken) => ({
+        method: 'GET',
+        headers: this.getHeaders(accessToken),
+      }),
+      timeoutMs,
+      allowTokenRefresh
+    )
     if (!response.ok) {
-      this.handleUnauthorized(response.status)
+      if (allowTokenRefresh) {
+        this.handleUnauthorized(response.status)
+      }
       throw await this.buildHttpError(response)
     }
     const data = await response.json()
@@ -121,16 +254,20 @@ class ApiClient {
   }
 
   async getBlob(endpoint: string, timeoutMs: number = DEFAULT_TIMEOUT_MS): Promise<Blob> {
-    const response = await this.fetchWithTimeout(
+    const allowTokenRefresh = this.shouldAttemptTokenRefresh(endpoint)
+    const response = await this.requestWithAuthRetry(
       endpoint,
-      {
+      (accessToken) => ({
         method: 'GET',
-        headers: this.getHeaders(),
-      },
-      timeoutMs
+        headers: this.getHeaders(accessToken),
+      }),
+      timeoutMs,
+      allowTokenRefresh
     )
     if (!response.ok) {
-      this.handleUnauthorized(response.status)
+      if (allowTokenRefresh) {
+        this.handleUnauthorized(response.status)
+      }
       throw await this.buildHttpError(response)
     }
     return response.blob()
@@ -141,17 +278,21 @@ class ApiClient {
     data?: unknown,
     timeoutMs: number = DEFAULT_TIMEOUT_MS
   ): Promise<T> {
-    const response = await this.fetchWithTimeout(
+    const allowTokenRefresh = this.shouldAttemptTokenRefresh(endpoint)
+    const response = await this.requestWithAuthRetry(
       endpoint,
-      {
+      (accessToken) => ({
         method: 'POST',
-        headers: this.getHeaders(),
+        headers: this.getHeaders(accessToken),
         body: data ? JSON.stringify(data) : undefined,
-      },
-      timeoutMs
+      }),
+      timeoutMs,
+      allowTokenRefresh
     )
     if (!response.ok) {
-      this.handleUnauthorized(response.status)
+      if (allowTokenRefresh) {
+        this.handleUnauthorized(response.status)
+      }
       throw await this.buildHttpError(response)
     }
     const responseData = await response.json()
@@ -163,17 +304,21 @@ class ApiClient {
     data?: unknown,
     timeoutMs: number = DEFAULT_TIMEOUT_MS
   ): Promise<Blob> {
-    const response = await this.fetchWithTimeout(
+    const allowTokenRefresh = this.shouldAttemptTokenRefresh(endpoint)
+    const response = await this.requestWithAuthRetry(
       endpoint,
-      {
+      (accessToken) => ({
         method: 'POST',
-        headers: this.getHeaders(),
+        headers: this.getHeaders(accessToken),
         body: data ? JSON.stringify(data) : undefined,
-      },
-      timeoutMs
+      }),
+      timeoutMs,
+      allowTokenRefresh
     )
     if (!response.ok) {
-      this.handleUnauthorized(response.status)
+      if (allowTokenRefresh) {
+        this.handleUnauthorized(response.status)
+      }
       throw await this.buildHttpError(response)
     }
     return response.blob()
@@ -184,17 +329,21 @@ class ApiClient {
     data: unknown,
     timeoutMs: number = DEFAULT_TIMEOUT_MS
   ): Promise<T> {
-    const response = await this.fetchWithTimeout(
+    const allowTokenRefresh = this.shouldAttemptTokenRefresh(endpoint)
+    const response = await this.requestWithAuthRetry(
       endpoint,
-      {
+      (accessToken) => ({
         method: 'PATCH',
-        headers: this.getHeaders(),
+        headers: this.getHeaders(accessToken),
         body: JSON.stringify(data),
-      },
-      timeoutMs
+      }),
+      timeoutMs,
+      allowTokenRefresh
     )
     if (!response.ok) {
-      this.handleUnauthorized(response.status)
+      if (allowTokenRefresh) {
+        this.handleUnauthorized(response.status)
+      }
       throw await this.buildHttpError(response)
     }
     const responseData = await response.json()
@@ -202,16 +351,20 @@ class ApiClient {
   }
 
   async delete(endpoint: string, timeoutMs: number = DEFAULT_TIMEOUT_MS): Promise<void> {
-    const response = await this.fetchWithTimeout(
+    const allowTokenRefresh = this.shouldAttemptTokenRefresh(endpoint)
+    const response = await this.requestWithAuthRetry(
       endpoint,
-      {
+      (accessToken) => ({
         method: 'DELETE',
-        headers: this.getHeaders(),
-      },
-      timeoutMs
+        headers: this.getHeaders(accessToken),
+      }),
+      timeoutMs,
+      allowTokenRefresh
     )
     if (!response.ok) {
-      this.handleUnauthorized(response.status)
+      if (allowTokenRefresh) {
+        this.handleUnauthorized(response.status)
+      }
       throw await this.buildHttpError(response)
     }
   }
@@ -221,23 +374,21 @@ class ApiClient {
     formData: FormData,
     timeoutMs: number = DEFAULT_TIMEOUT_MS
   ): Promise<T> {
-    const token = useAuthStore.getState().token
-    const headers: HeadersInit = {}
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`
-    }
-
-    const response = await this.fetchWithTimeout(
+    const allowTokenRefresh = this.shouldAttemptTokenRefresh(endpoint)
+    const response = await this.requestWithAuthRetry(
       endpoint,
-      {
+      (accessToken) => ({
         method: 'POST',
-        headers,
+        headers: this.getUploadHeaders(accessToken),
         body: formData,
-      },
-      timeoutMs
+      }),
+      timeoutMs,
+      allowTokenRefresh
     )
     if (!response.ok) {
-      this.handleUnauthorized(response.status)
+      if (allowTokenRefresh) {
+        this.handleUnauthorized(response.status)
+      }
       throw await this.buildHttpError(response)
     }
     const responseData = await response.json()

@@ -55,7 +55,7 @@ export interface LoadCase {
 export interface Element {
   id: number
   name: string
-  element_type: 'Wall' | 'Column' | 'Beam' | 'Pier' | 'Link'
+  element_type: 'Wall' | 'Quad' | 'Column' | 'Beam' | 'Pier' | 'Link'
 }
 
 // Result Set types
@@ -99,10 +99,15 @@ export type Direction = 'X' | 'Y' | 'UX' | 'UY' | 'VX' | 'VY' | 'V2' | 'V3' | 'R
 export type GlobalResultType = 'Drifts' | 'Accelerations' | 'Forces' | 'Displacements'
 export type ElementResultType = 'WallShears' | 'QuadRotations' | 'ColumnShears' | 'ColumnAxials' | 'ColumnRotations' | 'BeamRotations'
 export type JointResultType = 'SoilPressures' | 'VerticalDisplacements'
+export type ResultType =
+  | GlobalResultType
+  | ElementResultType
+  | JointResultType
+  | 'PushoverCurve'
 
 export interface ResultDatasetMeta {
-  result_type: string
-  direction: string | null
+  result_type: ResultType
+  direction: Direction | null
   result_set_id: number
   display_name: string
   unit?: string
@@ -110,7 +115,7 @@ export interface ResultDatasetMeta {
 
 export interface ResultDataset {
   meta: ResultDatasetMeta | null
-  rows: Record<string, unknown>[]
+  rows: Record<string, number | string | null>[]
   load_case_columns: string[]
   summary_columns: string[]
   story_column: string
@@ -222,12 +227,31 @@ export interface AvailableResultTypes {
   config: Record<string, { unit: string; multiplier: number; directions: string[] | null }>
 }
 
+export interface ResultTreeMetadata {
+  result_set_id: number
+  analysis_type: 'NLTHA' | 'Pushover'
+  time_series_load_cases: string[]
+  pushover_cases: PushoverCase[]
+  elements_by_type: {
+    WallShears: Element[]
+    QuadRotations: Element[]
+    ColumnShears: Element[]
+    ColumnAxials: Element[]
+    ColumnRotations: Element[]
+    BeamRotations: Element[]
+  }
+  joint_availability: {
+    SoilPressures: boolean
+    VerticalDisplacements: boolean
+  }
+}
+
 // --- Pushover Types ---
 
 export interface PushoverCase {
   id: number
   name: string
-  direction: string
+  direction: Direction
   result_set_id: number | null
 }
 
@@ -241,7 +265,7 @@ export interface PushoverCurve {
   case: {
     id: number
     name: string
-    direction: string
+    direction: Direction
   }
   points: PushoverCurvePoint[]
 }
@@ -331,6 +355,7 @@ export interface TimeSeriesAllTypesData {
   stories: string[]
   time_steps: number[]
   types: Record<string, Record<string, number[]>>  // result_type -> story -> values
+  envelopes: Record<string, { max_values: number[]; min_values: number[] }>
   load_case: string
   direction: string
 }

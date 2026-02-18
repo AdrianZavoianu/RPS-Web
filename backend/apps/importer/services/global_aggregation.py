@@ -3,6 +3,26 @@
 from typing import Any, Callable, Dict, Iterable, Optional, Set, Tuple
 
 
+class _TupleRowView:
+    """Row adapter backed by tuple values for faster hot-loop lookups."""
+
+    __slots__ = ("_column_index", "_values")
+
+    def __init__(self, column_index: Dict[str, int]) -> None:
+        self._column_index = column_index
+        self._values: Tuple[Any, ...] = ()
+
+    def bind(self, values: Tuple[Any, ...]) -> "_TupleRowView":
+        self._values = values
+        return self
+
+    def get(self, key: str, default: Any = None) -> Any:
+        idx = self._column_index.get(key)
+        if idx is None:
+            return default
+        return self._values[idx]
+
+
 def parse_numeric(value) -> Optional[float]:
     """Parse numeric values from Excel rows, returning None for invalid/NaN."""
     if value is None:
@@ -64,14 +84,28 @@ def aggregate_by_step_type(
 ) -> Dict[Tuple[Any, ...], Dict[str, Optional[float]]]:
     """Aggregate row values into max/min bounds keyed by result identity."""
     aggregated: Dict[Tuple[Any, ...], Dict[str, Optional[float]]] = {}
-    has_step_type = "Step Type" in df.columns
+    if df.empty or not allowed_load_cases:
+        return aggregated
 
-    for _, row in df.iterrows():
-        case_name = row.get("Output Case")
+    column_index = {name: idx for idx, name in enumerate(df.columns)}
+    case_idx = column_index.get("Output Case")
+    if case_idx is None:
+        return aggregated
+
+    step_type_idx = column_index.get("Step Type")
+    row_view = _TupleRowView(column_index)
+
+    for row_values in df.itertuples(index=False, name=None):
+        case_name = row_values[case_idx]
         if case_name not in allowed_load_cases:
             continue
 
-        step_type = normalize_step_type(row.get("Step Type", "")) if has_step_type else ""
+        if step_type_idx is None:
+            step_type = ""
+        else:
+            step_type = normalize_step_type(row_values[step_type_idx])
+
+        row = row_view.bind(row_values)
         for key, max_candidate, min_candidate in key_value_builder(row, case_name):
             if max_candidate is None and min_candidate is None:
                 continue

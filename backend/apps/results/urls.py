@@ -12,11 +12,13 @@ from .views import (
     ElementListView,
     ElementResultsDataView,
     GlobalResultsDataView,
-    GlobalResultsView,
     JointResultsDataView,
     MaxMinDataView,
     PushoverCasesView,
     PushoverCurveView,
+    PushoverCurvesBatchView,
+    ResultTreeMetadataView,
+    ResultTypeMetadataView,
     ResultSetViewSet,
     TimeSeriesAllTypesView,
     TimeSeriesDataView,
@@ -108,12 +110,27 @@ urlpatterns = [
         PushoverCurveView.as_view(),
         name="pushover-curve",
     ),
+    path(
+        "<slug:project_slug>/pushover-curves/batch/",
+        PushoverCurvesBatchView.as_view(),
+        name="pushover-curves-batch",
+    ),
     # --- Discovery ---
     # Available result types for a project
     path(
         "<slug:project_slug>/available-types/",
         AvailableResultTypesView.as_view(),
         name="available-types",
+    ),
+    path(
+        "<slug:project_slug>/result-type-metadata/",
+        ResultTypeMetadataView.as_view(),
+        name="result-type-metadata",
+    ),
+    path(
+        "<slug:project_slug>/results/tree-metadata/",
+        ResultTreeMetadataView.as_view(),
+        name="result-tree-metadata",
     ),
     # --- Time-Series ---
     # Time-series data for animation
@@ -134,7 +151,4 @@ urlpatterns = [
         TimeSeriesLoadCasesView.as_view(),
         name="time-series-load-cases",
     ),
-    # --- Legacy Raw Data ---
-    # Raw global results (not cached, for debugging)
-    path("<slug:project_slug>/global/", GlobalResultsView.as_view(), name="global-results-raw"),
 ]

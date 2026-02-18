@@ -4,12 +4,22 @@
  */
 
 import clsx from 'clsx'
-import { useCallback, useMemo, useState } from 'react'
+import { memo, useCallback, useMemo, useState } from 'react'
 import type { MaxMinDataset } from '../../types'
 import { LazyPlot } from '../charts/LazyPlot'
 import { PROFILE_SERIES_COLORS } from '../../utils/chartColors'
 import { getGradientColor, getMinMax } from '../../utils/gradients'
 import { getResultTypeDecimals, getResultTypeUnit } from '../../utils/resultConfig'
+import {
+  ACCENT_ZERO_LINE_COLOR,
+  AVERAGE_LINE_COLOR,
+  TEXT_COLOR,
+} from '../../utils/colors'
+import {
+  PLOTLY_CONFIG_NO_MODE_BAR,
+  createAxisLayout,
+  withPlotlyDefaults,
+} from '../../utils/plotlyDefaults'
 
 export interface MaxMinResultsDisplayProps {
   data: MaxMinDataset
@@ -40,7 +50,7 @@ export function MaxMinResultsDisplay({
       }
     }
     return Array.from(lcSet).sort()
-  }, [data])
+  }, [data.rows])
 
   const unit = useMemo(() => getResultTypeUnit(resultType), [resultType])
   const decimals = useMemo(() => getResultTypeDecimals(resultType), [resultType])
@@ -137,11 +147,26 @@ interface DirectionPlotProps {
   decimals: number
 }
 
-function DirectionPlot({ direction, data, loadCases, resultType, unit, decimals }: DirectionPlotProps) {
+interface DirectionTraceEntry {
+  loadCase: string | null
+  trace: Record<string, unknown>
+}
+
+const DirectionPlot = memo(function DirectionPlot({
+  direction,
+  data,
+  loadCases,
+  resultType,
+  unit,
+  decimals,
+}: DirectionPlotProps) {
   const [selectedLoadCases, setSelectedLoadCases] = useState<Set<string>>(new Set())
   const [hoveredLoadCase, setHoveredLoadCase] = useState<string | null>(null)
 
-  const stories = data.rows.map((r) => String(r['Story']))
+  const stories = useMemo(
+    () => data.rows.map((row) => String(row['Story'])),
+    [data.rows]
+  )
 
   const toggleLoadCase = useCallback((lc: string) => {
     setSelectedLoadCases((prev) => {
@@ -152,114 +177,163 @@ function DirectionPlot({ direction, data, loadCases, resultType, unit, decimals 
     })
   }, [])
 
-  const traces = useMemo(() => {
-    const t: Array<Record<string, unknown>> = []
-    const hasSelection = selectedLoadCases.size > 0
+  const baseTraces = useMemo<DirectionTraceEntry[]>(() => {
+    const traces: DirectionTraceEntry[] = []
 
     loadCases.forEach((lc, idx) => {
       const color = PROFILE_SERIES_COLORS[idx % PROFILE_SERIES_COLORS.length]
       const maxKey = `OrigMax_${lc}_${direction}`
       const minKey = `OrigMin_${lc}_${direction}`
 
-      const isSelected = selectedLoadCases.has(lc)
-      const isHovered = hoveredLoadCase === lc
+      const maxValues = data.rows.map((row) => row[maxKey] as number)
+      const minValues = data.rows.map((row) => row[minKey] as number | null)
+
+      traces.push({
+        loadCase: lc,
+        trace: {
+          type: 'scatter',
+          mode: 'lines',
+          name: `${lc} Max`,
+          y: stories,
+          x: maxValues,
+          line: { color, width: 2, dash: 'solid' },
+          legendgroup: lc,
+          showlegend: false,
+          hovertemplate: `${lc} Max<br>%{y}: %{x:.${decimals}f}<extra></extra>`,
+        },
+      })
+
+      traces.push({
+        loadCase: lc,
+        trace: {
+          type: 'scatter',
+          mode: 'lines',
+          name: `${lc} Min`,
+          y: stories,
+          x: minValues.map((value) => {
+            if (value == null) return null
+            return -Math.abs(value)
+          }),
+          line: { color, width: 2, dash: 'dash' },
+          legendgroup: lc,
+          showlegend: false,
+          hovertemplate: `${lc} Min<br>%{y}: %{customdata:.${decimals}f}<extra></extra>`,
+          customdata: minValues,
+        },
+      })
+    })
+
+    if (loadCases.length > 0) {
+      const avgMax = data.rows.map((row) => {
+        const values = loadCases
+          .map((loadCase) => row[`OrigMax_${loadCase}_${direction}`] as number)
+          .filter((value) => value != null)
+        return values.length ? values.reduce((total, value) => total + value, 0) / values.length : 0
+      })
+      const avgMinRaw = data.rows.map((row) => {
+        const values = loadCases
+          .map((loadCase) => row[`OrigMin_${loadCase}_${direction}`] as number)
+          .filter((value) => value != null)
+        return values.length ? values.reduce((total, value) => total + Math.abs(value), 0) / values.length : 0
+      })
+      traces.push({
+        loadCase: null,
+        trace: {
+          type: 'scatter',
+          mode: 'lines',
+          name: 'Avg Max',
+          y: stories,
+          x: avgMax,
+          line: { color: AVERAGE_LINE_COLOR, width: 5, dash: 'solid' },
+          legendgroup: 'avg',
+          showlegend: false,
+          hovertemplate: `Avg Max<br>%{y}: %{x:.${decimals}f}<extra></extra>`,
+        },
+      })
+      traces.push({
+        loadCase: null,
+        trace: {
+          type: 'scatter',
+          mode: 'lines',
+          name: 'Avg Min',
+          y: stories,
+          x: avgMinRaw.map((value) => -value),
+          line: { color: AVERAGE_LINE_COLOR, width: 5, dash: 'dash' },
+          legendgroup: 'avg',
+          showlegend: false,
+          hovertemplate: `Avg Min<br>%{y}: %{customdata:.${decimals}f}<extra></extra>`,
+          customdata: avgMinRaw.map((value) => -value),
+        },
+      })
+    }
+
+    return traces
+  }, [data.rows, loadCases, direction, decimals, stories])
+
+  const traces = useMemo<Array<Record<string, unknown>>>(() => {
+    const hasSelection = selectedLoadCases.size > 0
+
+    return baseTraces.map((entry) => {
+      if (!entry.loadCase) {
+        return entry.trace
+      }
+
+      const isSelected = selectedLoadCases.has(entry.loadCase)
+      const isHovered = hoveredLoadCase === entry.loadCase
       let opacity = 1
       let width = 2
 
       if (isHovered) {
-        opacity = 1; width = 3.5
+        width = 3.5
       } else if (hasSelection && !isSelected) {
-        opacity = 0.25; width = 1.5
+        opacity = 0.25
+        width = 1.5
       } else if (hasSelection && isSelected) {
-        opacity = 0.6; width = 2
+        opacity = 0.6
       } else if (hoveredLoadCase && !isHovered) {
-        opacity = 0.25; width = 1.5
+        opacity = 0.25
+        width = 1.5
       }
 
-      t.push({
-        type: 'scatter', mode: 'lines',
-        name: `${lc} Max`, y: stories,
-        x: data.rows.map((r) => r[maxKey] as number),
-        line: { color, width, dash: 'solid' },
-        opacity, legendgroup: lc, showlegend: false,
-        hovertemplate: `${lc} Max<br>%{y}: %{x:.${decimals}f}<extra></extra>`,
-      })
-
-      t.push({
-        type: 'scatter', mode: 'lines',
-        name: `${lc} Min`, y: stories,
-        x: data.rows.map((r) => {
-          const val = r[minKey] as number
-          return val != null ? -Math.abs(val) : null
-        }),
-        line: { color, width, dash: 'dash' },
-        opacity, legendgroup: lc, showlegend: false,
-        hovertemplate: `${lc} Min<br>%{y}: %{customdata:.${decimals}f}<extra></extra>`,
-        customdata: data.rows.map((r) => r[minKey] as number),
-      })
+      const line = (entry.trace as { line?: Record<string, unknown> }).line ?? {}
+      return {
+        ...entry.trace,
+        opacity,
+        line: {
+          ...line,
+          width,
+        },
+      }
     })
+  }, [baseTraces, selectedLoadCases, hoveredLoadCase])
 
-    // Average lines
-    if (loadCases.length > 0) {
-      const avgMax = data.rows.map((r) => {
-        const vals = loadCases.map((lc) => r[`OrigMax_${lc}_${direction}`] as number).filter((v) => v != null)
-        return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0
-      })
-      const avgMinRaw = data.rows.map((r) => {
-        const vals = loadCases.map((lc) => r[`OrigMin_${lc}_${direction}`] as number).filter((v) => v != null)
-        return vals.length ? vals.reduce((a, b) => a + Math.abs(b), 0) / vals.length : 0
-      })
-      const avgMinDisplay = avgMinRaw.map((v) => -v)
-
-      t.push({
-        type: 'scatter', mode: 'lines',
-        name: 'Avg Max', y: stories, x: avgMax,
-        line: { color: '#ffa500', width: 5, dash: 'solid' },
-        legendgroup: 'avg', showlegend: false,
-        hovertemplate: `Avg Max<br>%{y}: %{x:.${decimals}f}<extra></extra>`,
-      })
-      t.push({
-        type: 'scatter', mode: 'lines',
-        name: 'Avg Min', y: stories, x: avgMinDisplay,
-        line: { color: '#ffa500', width: 5, dash: 'dash' },
-        legendgroup: 'avg', showlegend: false,
-        hovertemplate: `Avg Min<br>%{y}: %{customdata:.${decimals}f}<extra></extra>`,
-        customdata: avgMinRaw.map((v) => -v),
-      })
-    }
-
-    return t
-  }, [data, loadCases, direction, decimals, selectedLoadCases, hoveredLoadCase, stories])
-
-  const layout = useMemo(() => ({
-    xaxis: {
-      title: { text: `${resultType} (${unit})`, font: { size: 14, color: '#d1d5db' }, standoff: 8 },
-      gridcolor: 'rgba(60, 65, 75, 0.3)',
-      zerolinecolor: '#4a90d9',
+  const layout = useMemo(() => withPlotlyDefaults({
+    xaxis: createAxisLayout({
+      title: { text: `${resultType} (${unit})`, font: { size: 14, color: TEXT_COLOR }, standoff: 8 },
+      zerolinecolor: ACCENT_ZERO_LINE_COLOR,
       zerolinewidth: 2,
       zeroline: true,
-      tickfont: { size: 10 },
-      linecolor: '#3a3f4a', linewidth: 1, mirror: true,
-    },
-    yaxis: {
-      title: { text: 'Story', font: { size: 14, color: '#d1d5db' }, standoff: 8 },
-      gridcolor: 'rgba(60, 65, 75, 0.3)',
-      tickfont: { size: 10 },
-      linecolor: '#3a3f4a', linewidth: 1, mirror: true,
+      tickfont: { size: 10, color: TEXT_COLOR },
+    }),
+    yaxis: createAxisLayout({
+      title: { text: 'Story', font: { size: 14, color: TEXT_COLOR }, standoff: 8 },
+      tickfont: { size: 10, color: TEXT_COLOR },
       range: [
         0,
         (stories.length > 0 ? stories.length - 1 : 0) + STORY_AXIS_TOP_PADDING,
       ],
-    },
-    paper_bgcolor: '#0a0c10',
-    plot_bgcolor: 'rgba(22, 27, 34, 0.5)',
-    font: { color: '#d1d5db', size: 11 },
+    }),
     margin: { l: 50, r: 5, t: 40, b: 40 },
-    showlegend: false,
     hovermode: 'closest' as const,
-    autosize: true,
-    title: { text: `${direction} Direction`, font: { size: 14, color: '#d1d5db' }, x: 0.5, y: 0.98 },
-  }), [resultType, unit, stories, direction])
+    title: {
+      text: `${direction} Direction`,
+      font: { size: 14, color: TEXT_COLOR },
+      x: 0.5,
+      y: 0.98,
+    },
+  }), [resultType, unit, stories.length, direction])
+
+  const hasSelection = selectedLoadCases.size > 0
 
   return (
     <div className="maxmin-plot-section flex flex-1 min-w-0">
@@ -267,7 +341,7 @@ function DirectionPlot({ direction, data, loadCases, resultType, unit, decimals 
         <LazyPlot
           data={traces}
           layout={layout}
-          config={{ displayModeBar: false, responsive: true }}
+          config={PLOTLY_CONFIG_NO_MODE_BAR}
           style={{ width: '100%', height: '100%' }}
           useResizeHandler
         />
@@ -278,7 +352,6 @@ function DirectionPlot({ direction, data, loadCases, resultType, unit, decimals 
           const color = PROFILE_SERIES_COLORS[idx % PROFILE_SERIES_COLORS.length]
           const isSelected = selectedLoadCases.has(lc)
           const isHovered = hoveredLoadCase === lc
-          const hasSelection = selectedLoadCases.size > 0
 
           let itemOpacity = 1
           if (isHovered) itemOpacity = 1
@@ -304,14 +377,16 @@ function DirectionPlot({ direction, data, loadCases, resultType, unit, decimals 
           )
         })}
         <div className="maxmin-legend-static flex items-center gap-1 text-[13px] px-1 py-0.5 mt-1">
-          <span className="inline-block w-3 shrink-0" style={{ borderTop: '3px solid #ffa500' }} />
-          <span className="inline-block w-3 shrink-0" style={{ borderTop: '3px dashed #ffa500' }} />
+          <span className="inline-block w-3 shrink-0" style={{ borderTop: `3px solid ${AVERAGE_LINE_COLOR}` }} />
+          <span className="inline-block w-3 shrink-0" style={{ borderTop: `3px dashed ${AVERAGE_LINE_COLOR}` }} />
           <span className="text-text-secondary">Avg</span>
         </div>
       </div>
     </div>
   )
-}
+})
+
+DirectionPlot.displayName = 'DirectionPlot'
 
 /* ─── Tables Tab ─────────────────────────────────────────────── */
 
@@ -351,7 +426,14 @@ interface DirectionTablesProps {
   fmt: (v: number | null | undefined) => string
 }
 
-function DirectionTables({ direction, data, loadCases, resultType, unit, fmt }: DirectionTablesProps) {
+const DirectionTables = memo(function DirectionTables({
+  direction,
+  data,
+  loadCases,
+  resultType,
+  unit,
+  fmt,
+}: DirectionTablesProps) {
   // Build max/min table data
   const { maxRows, minRows, maxRange, minRange } = useMemo(() => {
     const maxR: Array<Record<string, number | string | null>> = []
@@ -391,7 +473,7 @@ function DirectionTables({ direction, data, loadCases, resultType, unit, fmt }: 
       maxRange: getMinMax(allMaxVals),
       minRange: getMinMax(allMinVals),
     }
-  }, [data, loadCases, direction])
+  }, [data.rows, loadCases, direction])
 
   const columns = [...loadCases, 'Avg']
 
@@ -424,7 +506,9 @@ function DirectionTables({ direction, data, loadCases, resultType, unit, fmt }: 
       </div>
     </div>
   )
-}
+})
+
+DirectionTables.displayName = 'DirectionTables'
 
 /* ─── Compact Gradient Table ─────────────────────────────────── */
 
@@ -436,7 +520,13 @@ interface CompactTableProps {
   fmt: (v: number | null | undefined) => string
 }
 
-function CompactTable({ rows, columns, range, resultType, fmt }: CompactTableProps) {
+const CompactTable = memo(function CompactTable({
+  rows,
+  columns,
+  range,
+  resultType,
+  fmt,
+}: CompactTableProps) {
   return (
     <table className="maxmin-compact-table results-table w-full">
       <thead className="sticky top-0 z-10">
@@ -446,7 +536,7 @@ function CompactTable({ rows, columns, range, resultType, fmt }: CompactTablePro
             <th
               key={col}
               className="results-table-header"
-              style={col === 'Avg' ? { color: '#ffa500' } : undefined}
+              style={col === 'Avg' ? { color: AVERAGE_LINE_COLOR } : undefined}
             >
               {col}
             </th>
@@ -468,7 +558,7 @@ function CompactTable({ rows, columns, range, resultType, fmt }: CompactTablePro
                   key={col}
                   className="results-table-cell"
                   style={{
-                    color: isAvg ? '#ffa500' : textColor,
+                    color: isAvg ? AVERAGE_LINE_COLOR : textColor,
                   }}
                 >
                   <span className={isAvg ? 'results-table-summary' : 'results-table-value'}>
@@ -482,4 +572,6 @@ function CompactTable({ rows, columns, range, resultType, fmt }: CompactTablePro
       </tbody>
     </table>
   )
-}
+})
+
+CompactTable.displayName = 'CompactTable'

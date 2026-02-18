@@ -1,0 +1,315 @@
+/* Results feature styles */
+  /* Tree Browser styles - Matching desktop RPS exactly */
+  .tree-browser {
+    @apply select-none;
+    font-size: 15px;
+    background-color: transparent;
+  }
+
+  .tree-header {
+    @apply px-3 py-2;
+    font-size: 18px;
+    background-color: transparent;
+  }
+
+  .tree-content {
+    @apply p-1;
+  }
+
+  .tree-item {
+    @apply flex items-center gap-1 py-1 px-2 rounded cursor-pointer transition-colors;
+    border: none;
+    background: transparent;
+  }
+
+  .tree-item:hover {
+    background-color: rgba(255, 255, 255, 0.03);
+  }
+
+  .tree-item-section {
+    @apply font-medium;
+  }
+
+  .tree-leaf {
+    @apply text-text-muted;
+  }
+
+  .tree-leaf:hover {
+    @apply text-text-secondary;
+  }
+
+  .tree-children {
+    @apply ml-2;
+  }
+
+  .tree-section,
+  .tree-result-set,
+  .tree-category,
+  .tree-category-type,
+  .tree-result-type {
+    @apply select-none;
+  }
+
+  /* Results View side-by-side layout - minimal, no borders */
+  .results-view {
+    @apply h-full flex;
+    background-color: #0a0c10;
+  }
+
+  .results-sidebar {
+    @apply w-[200px] flex flex-col overflow-hidden;
+    background-color: transparent;
+  }
+
+  .results-content {
+    @apply flex-1 flex flex-col overflow-hidden;
+  }
+
+  .results-toolbar {
+    @apply flex items-center px-3 py-1;
+  }
+
+  .results-data {
+    @apply flex-1 flex overflow-hidden;
+  }
+
+  .results-table-panel {
+    @apply overflow-auto;
+  }
+
+  .results-chart-panel {
+    @apply flex-1;
+  }
+
+  /* =====================================================
+   * Results Table - Desktop-style with cell borders
+   * Font sizes: 13px (small) matching desktop
+   * ===================================================== */
+  .results-table-container {
+    @apply overflow-auto;
+  }
+
+  .results-table {
+    @apply w-full font-sans;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .results-table thead {
+    @apply sticky top-0 z-10;
+    background-color: #0a0c10;
+  }
+
+  .results-table-header {
+    @apply text-center font-medium whitespace-nowrap;
+    padding: 4px 4px;
+    color: #4a7d89;
+    border: 1px solid #2c313a;
+    font-size: 14px;
+    min-width: 50px;
+    background-color: rgba(22, 27, 34, 0.5);
+  }
+
+  .results-table-header-story {
+    @apply sticky left-0 z-20 text-center;
+    background-color: #161b22;
+    min-width: 52px;
+    width: 52px;
+  }
+
+  .results-table-header-sortable {
+    @apply cursor-pointer select-none;
+  }
+
+  .results-table-header-sortable:hover {
+    color: #67e8f9;
+  }
+
+  .results-table-header-selectable {
+    @apply cursor-pointer select-none;
+    transition: background-color 0.15s, color 0.15s;
+  }
+
+  .results-table-header-selectable:hover {
+    background-color: #1f2937;
+    color: #67e8f9;
+  }
+
+  .results-table-header-selected {
+    background-color: #1a2a30;
+    color: #67e8f9;
+    font-weight: 600;
+  }
+
+  .results-table-header-hovered {
+    background-color: #1f2937;
+    color: #67e8f9;
+  }
+
+  .results-table-header-text {
+    @apply flex items-center justify-center gap-0.5;
+  }
+
+  .results-table-sort-indicator {
+    @apply text-accent-secondary;
+    font-size: 11px;
+  }
+
+  .results-table-row {
+    background-color: transparent;
+  }
+
+  .results-table-row-selected {
+    background-color: rgba(31, 41, 55, 0.5);
+  }
+
+  .results-table-row-hovered {
+    background-color: rgba(31, 41, 55, 0.3);
+  }
+
+  .results-table-cell {
+    @apply text-center;
+    padding: 3px 4px;
+    color: #d1d5db;
+    border: 1px solid #2c313a;
+    font-size: 14px;
+    font-weight: 400;
+    transition: background-color 0.15s;
+  }
+
+  .results-table-cell-selected {
+    background-color: rgba(26, 42, 48, 0.6);
+  }
+
+  .results-table-cell-col-hovered {
+    background-color: rgba(31, 41, 55, 0.4);
+  }
+
+  .results-table-cell-row-hovered {
+    background-color: rgba(31, 41, 55, 0.3);
+  }
+
+  .results-table-cell-value-hovered {
+    font-weight: 600;
+  }
+
+  .results-table-cell-story {
+    @apply sticky left-0 z-10 text-center;
+    background-color: #0a0c10;
+  }
+
+  .results-table-cell-story-clickable {
+    @apply cursor-pointer select-none;
+  }
+
+  .results-table-cell-story-clickable:hover {
+    background-color: #1f2937;
+    color: #67e8f9;
+  }
+
+  .results-table-cell-row-selected {
+    background-color: rgba(31, 41, 55, 0.5);
+  }
+
+  .results-table-cell-row-selected.results-table-cell-story {
+    background-color: #1f2937;
+  }
+
+  .results-table-row-selected .results-table-cell-story,
+  .results-table-row-hovered .results-table-cell-story {
+    background-color: #1f2937;
+  }
+
+  .results-table-story {
+    color: #d1d5db;
+  }
+
+  .results-table-value {
+    font-weight: 400;
+  }
+
+  .results-table-summary {
+    color: #d1d5db;
+  }
+
+  .results-table-ratio {
+    font-weight: 500;
+  }
+
+  .results-table-ratio-good {
+    color: #10b981;
+  }
+
+  .results-table-ratio-warn {
+    color: #f59e0b;
+  }
+
+  .results-table-ratio-bad {
+    color: #ef4444;
+  }
+
+  .results-table-empty {
+    @apply flex items-center justify-center h-32;
+    color: #7f8b9a;
+  }
+
+  /* Chart legend - matches desktop style */
+  .chart-legend {
+    background-color: transparent;
+    font-size: 10px;
+  }
+
+
+  /* Responsive layout */
+  @media (max-width: 1200px) {
+    .results-chart-panel {
+      @apply min-w-[300px];
+    }
+  }
+
+  /* MaxMin Display */
+  .maxmin-tabs {
+    @apply flex-shrink-0;
+  }
+
+  .maxmin-plot-legend {
+    scrollbar-width: thin;
+  }
+
+  .maxmin-legend-item:hover {
+    @apply bg-bg-hover;
+  }
+
+  .maxmin-compact-table {
+    font-size: 12px;
+  }
+
+  .maxmin-compact-table .results-table-header {
+    padding: 3px 3px;
+    font-size: 14px !important;
+    font-weight: 600;
+    min-width: 40px;
+  }
+
+  .maxmin-compact-table .results-table-header-story {
+    min-width: 42px;
+    width: 42px;
+  }
+
+  .maxmin-compact-table .results-table-cell {
+    padding: 2px 3px;
+  }
+
+  @media (max-width: 900px) {
+    .results-data {
+      @apply flex-col;
+    }
+
+    .results-table-panel {
+      @apply flex-1 border-r-0 border-b border-border-default max-w-none;
+    }
+
+    .results-chart-panel {
+      @apply w-full h-[350px] min-w-0;
+    }
+  }

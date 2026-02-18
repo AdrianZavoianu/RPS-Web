@@ -5,10 +5,11 @@ from .chart_views import ChartDataView, TimeSeriesAllTypesView, TimeSeriesDataVi
 from .column_views import ColumnRotationsPlotDataView
 from .comparison_views import ComparisonDataView, MaxMinDataView
 from .element_views import ElementListView, ElementResultsDataView
-from .global_views import GlobalResultsDataView, GlobalResultsView
+from .global_views import GlobalResultsDataView
+from .metadata_views import ResultTreeMetadataView, ResultTypeMetadataView
 from .joint_views import JointResultsDataView
 from .mixins import AvailableResultTypesView, ProjectResultsMixin
-from .pushover_views import PushoverCasesView, PushoverCurveView
+from .pushover_views import PushoverCasesView, PushoverCurveView, PushoverCurvesBatchView
 from .set_views import ComparisonSetViewSet, ResultSetViewSet
 
 __all__ = [
@@ -22,12 +23,14 @@ __all__ = [
     "ElementListView",
     "ElementResultsDataView",
     "GlobalResultsDataView",
-    "GlobalResultsView",
     "JointResultsDataView",
     "MaxMinDataView",
     "ProjectResultsMixin",
     "PushoverCasesView",
     "PushoverCurveView",
+    "PushoverCurvesBatchView",
+    "ResultTypeMetadataView",
+    "ResultTreeMetadataView",
     "ResultSetViewSet",
     "TimeSeriesAllTypesView",
     "TimeSeriesDataView",

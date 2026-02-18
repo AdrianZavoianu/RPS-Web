@@ -1,12 +1,30 @@
 """WebSocket consumers for import progress updates."""
+from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
+
+from apps.importer.models import ImportJob
+
+
+@database_sync_to_async
+def _user_owns_import_job(*, user_id: int, job_id: int) -> bool:
+    return ImportJob.objects.filter(id=job_id, user_id=user_id).exists()
 
 
 class ImportProgressConsumer(AsyncJsonWebsocketConsumer):
     """WebSocket consumer for real-time import progress updates."""
 
     async def connect(self):
-        self.job_id = self.scope["url_route"]["kwargs"]["job_id"]
+        user = self.scope.get("user")
+        if user is None or not user.is_authenticated:
+            await self.close(code=4401)
+            return
+
+        self.job_id = int(self.scope["url_route"]["kwargs"]["job_id"])
+        has_access = await _user_owns_import_job(user_id=user.id, job_id=self.job_id)
+        if not has_access:
+            await self.close(code=4403)
+            return
+
         self.group_name = f"import_{self.job_id}"
 
         # Join job-specific group

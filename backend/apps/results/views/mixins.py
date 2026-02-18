@@ -1,52 +1,16 @@
 """Shared mixins and discovery views for results endpoints."""
 
-from typing import List, Sequence
+from typing import List, Sequence, Type
 
 from rest_framework import permissions, status
 from rest_framework.response import Response
+from rest_framework.serializers import Serializer
 from rest_framework.views import APIView
 
 from core.mixins import ProjectLookupMixin
 
-from ..models import (
-    StoryAcceleration,
-    StoryDisplacement,
-    StoryDrift,
-    StoryForce,
-    WallShear,
-    QuadRotation,
-    ColumnShear,
-    ColumnAxial,
-    ColumnRotation,
-    BeamRotation,
-    SoilPressure,
-    VerticalDisplacement,
-    PushoverCase,
-    GlobalResultsCache,
-)
-from ..services import ResultDataService, RESULT_TYPE_CONFIG
-
-
-GLOBAL_AVAILABILITY_MAP = {
-    "Drifts": (StoryDrift, "story__project"),
-    "Accelerations": (StoryAcceleration, "story__project"),
-    "Forces": (StoryForce, "story__project"),
-    "Displacements": (StoryDisplacement, "story__project"),
-}
-
-ELEMENT_AVAILABILITY_MAP = {
-    "WallShears": (WallShear, "element__project"),
-    "QuadRotations": (QuadRotation, "element__project"),
-    "ColumnShears": (ColumnShear, "element__project"),
-    "ColumnAxials": (ColumnAxial, "element__project"),
-    "ColumnRotations": (ColumnRotation, "element__project"),
-    "BeamRotations": (BeamRotation, "element__project"),
-}
-
-JOINT_AVAILABILITY_MAP = {
-    "SoilPressures": (SoilPressure, "project"),
-    "VerticalDisplacements": (VerticalDisplacement, "project"),
-}
+from ..application import ResultDataService
+from ..services.availability_service import get_available_result_types_payload
 
 
 class ProjectResultsMixin(ProjectLookupMixin):
@@ -77,7 +41,7 @@ class ProjectResultsMixin(ProjectLookupMixin):
                 message = f"{required_fields[0]} is required"
             else:
                 message = f"{', '.join(required_fields)} are required"
-            return Response({"error": message}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": message}, status=status.HTTP_400_BAD_REQUEST)
 
         return params
 
@@ -87,7 +51,7 @@ class ProjectResultsMixin(ProjectLookupMixin):
             return int(value)
         except (TypeError, ValueError):
             return Response(
-                {"error": f"{field_name} must be an integer"},
+                {"detail": f"{field_name} must be an integer"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -95,14 +59,14 @@ class ProjectResultsMixin(ProjectLookupMixin):
         """Parse comma-separated integer parameter with user-facing error response."""
         if value is None or value == "":
             return Response(
-                {"error": f"{field_name} is required"},
+                {"detail": f"{field_name} is required"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         parts = [part.strip() for part in str(value).split(",")]
         if not all(parts):
             return Response(
-                {"error": f"{field_name} must be comma-separated integers"},
+                {"detail": f"{field_name} must be comma-separated integers"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -117,7 +81,7 @@ class ProjectResultsMixin(ProjectLookupMixin):
                 parsed.append(parsed_value)
         except (TypeError, ValueError):
             return Response(
-                {"error": f"{field_name} must be comma-separated integers"},
+                {"detail": f"{field_name} must be comma-separated integers"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -127,6 +91,15 @@ class ProjectResultsMixin(ProjectLookupMixin):
         """Get ResultDataService for the project."""
         return ResultDataService(self.get_project())
 
+    def validate_query_params(self, serializer_class: Type[Serializer]):
+        """Validate query params through a DRF serializer contract."""
+        serializer = serializer_class(
+            data=self.request.query_params,
+            context={"project": self.get_project(), "request": self.request, "view": self},
+        )
+        serializer.is_valid(raise_exception=True)
+        return serializer.validated_data
+
 
 class AvailableResultTypesView(ProjectResultsMixin, APIView):
     """Get available result types for a project."""
@@ -135,75 +108,4 @@ class AvailableResultTypesView(ProjectResultsMixin, APIView):
 
     def get(self, request, project_slug):
         project = self.get_project()
-
-        global_results = []
-        element_results = []
-        joint_results = []
-
-        for type_name, (model_class, project_field) in GLOBAL_AVAILABILITY_MAP.items():
-            if not model_class.objects.filter(**{project_field: project}).exists():
-                continue
-            config = RESULT_TYPE_CONFIG[type_name]
-            global_results.append(
-                {
-                    "type": type_name,
-                    "directions": config["directions"],
-                    "unit": config["unit"],
-                }
-            )
-
-        # Also detect pushover global results written directly to cache
-        seen_global_types = {r["type"] for r in global_results}
-        cache_types = (
-            GlobalResultsCache.objects.filter(project=project)
-            .values_list("result_type", flat=True)
-            .distinct()
-        )
-        for cache_type in cache_types:
-            # Cache types are like "Drifts_X", "Forces_VX" — extract base type
-            base_type = cache_type.rsplit("_", 1)[0]
-            if base_type in seen_global_types or base_type not in RESULT_TYPE_CONFIG:
-                continue
-            config = RESULT_TYPE_CONFIG[base_type]
-            global_results.append(
-                {
-                    "type": base_type,
-                    "directions": config["directions"],
-                    "unit": config["unit"],
-                }
-            )
-            seen_global_types.add(base_type)
-
-        for type_name, (model_class, project_field) in ELEMENT_AVAILABILITY_MAP.items():
-            if not model_class.objects.filter(**{project_field: project}).exists():
-                continue
-            config = RESULT_TYPE_CONFIG[type_name]
-            element_results.append(
-                {
-                    "type": type_name,
-                    "directions": config["directions"],
-                    "unit": config["unit"],
-                }
-            )
-
-        for type_name, (model_class, project_field) in JOINT_AVAILABILITY_MAP.items():
-            if not model_class.objects.filter(**{project_field: project}).exists():
-                continue
-            joint_results.append(
-                {
-                    "type": type_name,
-                    "unit": RESULT_TYPE_CONFIG[type_name]["unit"],
-                }
-            )
-
-        has_pushover = PushoverCase.objects.filter(project=project).exists()
-
-        return Response(
-            {
-                "global_results": global_results,
-                "element_results": element_results,
-                "joint_results": joint_results,
-                "has_pushover": has_pushover,
-                "config": RESULT_TYPE_CONFIG,
-            }
-        )
+        return Response(get_available_result_types_payload(project))

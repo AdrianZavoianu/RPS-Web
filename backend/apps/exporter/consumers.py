@@ -1,13 +1,31 @@
 """WebSocket consumers for export progress updates."""
 
+from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
+
+from apps.exporter.models import ExportJob
+
+
+@database_sync_to_async
+def _user_owns_export_job(*, user_id: int, job_id: int) -> bool:
+    return ExportJob.objects.filter(id=job_id, user_id=user_id).exists()
 
 
 class ExportProgressConsumer(AsyncJsonWebsocketConsumer):
     """WebSocket consumer for real-time export progress updates."""
 
     async def connect(self):
-        self.job_id = self.scope["url_route"]["kwargs"]["job_id"]
+        user = self.scope.get("user")
+        if user is None or not user.is_authenticated:
+            await self.close(code=4401)
+            return
+
+        self.job_id = int(self.scope["url_route"]["kwargs"]["job_id"])
+        has_access = await _user_owns_export_job(user_id=user.id, job_id=self.job_id)
+        if not has_access:
+            await self.close(code=4403)
+            return
+
         self.group_name = f"export_{self.job_id}"
 
         await self.channel_layer.group_add(self.group_name, self.channel_name)

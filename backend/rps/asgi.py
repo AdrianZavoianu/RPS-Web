@@ -3,14 +3,15 @@ ASGI config for RPS project.
 
 Supports HTTP and WebSocket protocols via Django Channels.
 """
-import os
 
-from channels.auth import AuthMiddlewareStack
 from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.security.websocket import AllowedHostsOriginValidator
 from django.core.asgi import get_asgi_application
 
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "rps.settings.development")
+from rps.settings_bootstrap import configure_django_settings_module
+
+configure_django_settings_module()
+from rps.channels_auth import JWTAuthMiddlewareStack  # noqa: E402
 
 # Initialize Django ASGI application early to ensure the AppRegistry
 # is populated before importing code that may import ORM models.
@@ -26,7 +27,7 @@ application = ProtocolTypeRouter(
     {
         "http": django_asgi_app,
         "websocket": AllowedHostsOriginValidator(
-            AuthMiddlewareStack(URLRouter(websocket_urlpatterns))
+            JWTAuthMiddlewareStack(URLRouter(websocket_urlpatterns))
         ),
     }
 )

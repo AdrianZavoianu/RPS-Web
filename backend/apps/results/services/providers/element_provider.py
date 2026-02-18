@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, List, Optional
 
-from apps.results.models import ElementResultsCache
+from apps.results.data import ElementResultsCacheRepository
 
 from ..datasets import (
     ResultDataset,
@@ -39,18 +39,14 @@ def get_element_results(
     cache_entries = None
     resolved_direction = direction
     for cache_type in cache_types:
-        candidate_qs = (
-            ElementResultsCache.objects.filter(
-                project=service.project,
-                result_set_id=result_set_id,
-                result_type=cache_type,
-                element_id=element_id,
-            )
-            .select_related("story", "element")
-            .order_by("-story_sort_order")
+        candidate_entries = ElementResultsCacheRepository.list_entries(
+            service.project,
+            result_set_id=result_set_id,
+            result_type=cache_type,
+            element_id=element_id,
         )
-        if candidate_qs.exists():
-            cache_entries = candidate_qs
+        if candidate_entries:
+            cache_entries = candidate_entries
             if not direction and "_" in cache_type:
                 resolved_direction = cache_type.split("_", 1)[1]
             break
@@ -105,15 +101,10 @@ def get_all_elements_for_type(
     result_type: str,
 ) -> List[Dict[str, Any]]:
     """Get list of elements that have results for a given type."""
-    cache_entries = (
-        ElementResultsCache.objects.filter(
-            project=service.project,
-            result_set_id=result_set_id,
-            result_type__startswith=result_type,
-        )
-        .select_related("element")
-        .values("element__id", "element__name", "element__element_type")
-        .distinct()
+    cache_entries = ElementResultsCacheRepository.list_distinct_elements_for_type(
+        service.project,
+        result_set_id=result_set_id,
+        result_type_prefix=result_type,
     )
 
     return [

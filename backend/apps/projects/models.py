@@ -92,6 +92,7 @@ class Element(models.Model):
 
     ELEMENT_TYPE_CHOICES = [
         ("Wall", "Wall"),
+        ("Quad", "Quad"),
         ("Column", "Column"),
         ("Beam", "Beam"),
         ("Pier", "Pier"),

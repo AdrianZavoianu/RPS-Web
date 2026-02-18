@@ -4,6 +4,7 @@ Celery tasks for export processing.
 import logging
 from datetime import timedelta
 from io import BytesIO
+from time import monotonic
 
 from celery import shared_task
 from django.core.files.base import ContentFile
@@ -13,8 +14,13 @@ from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 
 from apps.results.models import ResultSet, ElementResultsCache
 from apps.results.services import ResultDataService
+from apps.results.services.data_assembler import (
+    assemble_table_rows,
+    dataset_to_table_projection,
+)
 from apps.results.services.providers.common import sort_load_case_columns
 from config.result_types import RESULT_TYPE_BASE_MAP
+from core.logging import build_correlation_context
 from .models import ExportJob
 from .progress_events import (
     send_complete as send_export_complete,
@@ -23,6 +29,29 @@ from .progress_events import (
 )
 
 logger = logging.getLogger(__name__)
+
+EXPORT_PROGRESS_PERSIST_INTERVAL_SECONDS = 1.0
+EXPORT_PROGRESS_PERSIST_PERCENT_STEP = 5
+
+
+def _export_log_context(
+    job: ExportJob,
+    *,
+    result_set_id: int | None = None,
+    task_id: str | None = None,
+) -> str:
+    """Build a consistent log context for export lifecycle events."""
+    resolved_result_set_id = (
+        result_set_id if result_set_id is not None else (job.export_config or {}).get("result_set_id")
+    )
+    return build_correlation_context(
+        project_id=job.project_id,
+        project_slug=job.project.slug,
+        job_type="export",
+        job_id=job.id,
+        result_set_id=resolved_result_set_id,
+        task_id=task_id,
+    )
 
 
 def _get_export_table_rows(
@@ -45,23 +74,16 @@ def _get_export_table_rows(
         return None
 
     story_column = dataset.story_column
-    load_case_columns = list(dataset.load_case_columns)
-    summary_columns = list(dataset.summary_columns) if include_summary else []
-
-    headers = [story_column, *load_case_columns, *summary_columns]
-    rows = []
-    for row in dataset.rows:
-        if story_column not in row:
-            raise KeyError(f"Missing '{story_column}' in export row for {result_type}_{direction}")
-        rows.append(
-            [
-                row[story_column],
-                *[row.get(col) for col in load_case_columns],
-                *[row.get(col) for col in summary_columns],
-            ]
+    try:
+        projection = dataset_to_table_projection(
+            dataset=dataset,
+            include_summary=include_summary,
+            fixed_columns=[story_column],
+            required_columns=[story_column],
         )
-
-    return headers, rows
+        return projection["headers"], projection["rows"]
+    except KeyError as exc:
+        raise KeyError(f"{exc.args[0]} for {result_type}_{direction}") from exc
 
 
 def _get_element_export_table_rows(
@@ -85,13 +107,12 @@ def _get_element_export_table_rows(
         fixed_cols = table_data["fixed_columns"]
         lc_cols = table_data["load_case_columns"]
         summary_cols = table_data["summary_columns"] if include_summary else []
-        headers = fixed_cols + lc_cols + summary_cols
-
-        rows = []
-        for row in table_data["rows"]:
-            rows.append([row.get(col) for col in headers])
-
-        return headers, rows
+        return assemble_table_rows(
+            rows=table_data["rows"],
+            fixed_columns=fixed_cols,
+            load_case_columns=lc_cols,
+            summary_columns=summary_cols,
+        )
 
     cache_entries = (
         ElementResultsCache.objects.filter(
@@ -102,8 +123,8 @@ def _get_element_export_table_rows(
         .select_related("element", "story")
         .order_by("-story_sort_order", "element__name")
     )
-
-    if not cache_entries.exists():
+    cache_entries = list(cache_entries)
+    if not cache_entries:
         return None
 
     load_case_set = set()
@@ -133,13 +154,12 @@ def _get_element_export_table_rows(
         if include_summary and any("Avg" in r for r in raw_rows)
         else []
     )
-    headers = ["Element", "Story"] + lc_cols + summary_cols
-
-    rows = []
-    for row in raw_rows:
-        rows.append([row.get(col) for col in headers])
-
-    return headers, rows
+    return assemble_table_rows(
+        rows=raw_rows,
+        fixed_columns=["Element", "Story"],
+        load_case_columns=lc_cols,
+        summary_columns=summary_cols,
+    )
 
 
 def _get_joint_export_table_rows(
@@ -159,16 +179,12 @@ def _get_joint_export_table_rows(
     if dataset is None:
         return None
 
-    fixed_cols = ["Shell Object", "Unique Name"]
-    lc_cols = list(dataset.load_case_columns)
-    summary_cols = list(dataset.summary_columns) if include_summary else []
-    headers = fixed_cols + lc_cols + summary_cols
-
-    rows = []
-    for row in dataset.rows:
-        rows.append([row.get(col) for col in headers])
-
-    return headers, rows
+    projection = dataset_to_table_projection(
+        dataset=dataset,
+        include_summary=include_summary,
+        fixed_columns=["Shell Object", "Unique Name"],
+    )
+    return projection["headers"], projection["rows"]
 
 
 def _count_element_steps(element_types):
@@ -179,6 +195,26 @@ def _count_element_steps(element_types):
         variants = base_map.get("variants", (etype,))
         count += len(variants)
     return count
+
+
+def _should_persist_progress(
+    *,
+    current: int,
+    total: int,
+    last_persisted_current: int,
+    last_persisted_at: float,
+    now: float,
+) -> bool:
+    if current <= last_persisted_current:
+        return False
+    if current >= total:
+        return True
+
+    min_step_delta = max(int(total * EXPORT_PROGRESS_PERSIST_PERCENT_STEP / 100), 1)
+    if (current - last_persisted_current) >= min_step_delta:
+        return True
+
+    return (now - last_persisted_at) >= EXPORT_PROGRESS_PERSIST_INTERVAL_SECONDS
 
 
 def _write_excel_sheet(wb, sheet_name, headers, rows, header_fill, header_font, border):
@@ -238,6 +274,14 @@ def process_export_job(self, job_id: int):
         config["progress_total"] = total_units
         job.export_config = config
         job.save(update_fields=["status", "export_config"])
+        logger.info(
+            "Export task started (%s, format=%s, global_types=%s, element_types=%s, joint_types=%s)",
+            _export_log_context(job, result_set_id=result_set_id, task_id=self.request.id),
+            job.export_format,
+            len(result_types),
+            len(element_types),
+            len(joint_types),
+        )
         send_export_progress(
             job_id=job.id,
             message="Preparing export...",
@@ -245,11 +289,26 @@ def process_export_job(self, job_id: int):
             total=total_units,
         )
 
+        progress_state = {
+            "last_persisted_current": 0,
+            "last_persisted_at": monotonic(),
+        }
+
         def update_progress(current: int, total: int) -> None:
             config["progress_current"] = current
             config["progress_total"] = total
-            job.export_config = config
-            job.save(update_fields=["export_config"])
+            now = monotonic()
+            if _should_persist_progress(
+                current=current,
+                total=total,
+                last_persisted_current=progress_state["last_persisted_current"],
+                last_persisted_at=progress_state["last_persisted_at"],
+                now=now,
+            ):
+                job.export_config = config
+                job.save(update_fields=["export_config"])
+                progress_state["last_persisted_current"] = current
+                progress_state["last_persisted_at"] = now
             send_export_progress(
                 job_id=job.id,
                 message="Generating export...",
@@ -304,16 +363,25 @@ def process_export_job(self, job_id: int):
             message="Export completed",
         )
 
-        logger.info(f"Export job {job_id} completed successfully")
+        logger.info(
+            "Export task completed (%s, file_name=%s, file_size=%s)",
+            _export_log_context(job, result_set_id=result_set.id),
+            job.file_name,
+            job.file_size,
+        )
 
     except (ExportJob.DoesNotExist, ResultSet.DoesNotExist, IOError) as e:
-        logger.exception(f"Export job {job_id} failed: {e}")
+        logger.exception(
+            "Export task failed (%s, error=%s)",
+            _export_log_context(job),
+            e,
+        )
         job.status = "failed"
         job.error_message = str(e)
         job.save()
         send_export_error(job.id, "Export failed", str(e))
     except Exception:
-        logger.exception(f"Unexpected export error for job {job_id}")
+        logger.exception("Unexpected export error (%s)", _export_log_context(job))
         job.status = "failed"
         job.error_message = "Unexpected export error"
         job.save()

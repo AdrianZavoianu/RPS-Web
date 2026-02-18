@@ -2,10 +2,14 @@
  * React Query hooks for import operations
  */
 
-import { useEffect, useState } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as importsApi from '../api/imports'
+import { useAuthStore } from '../stores/authStore'
 import type { ImportJob, ImportStartRequest } from '../types'
+import { queryKeys } from './queryKeys'
+import { useWebSocketWithFallback } from './useWebSocket'
+import { invalidateByPrefix } from './invalidation'
 
 type ImportProgressMessage = {
   type: 'progress'
@@ -66,7 +70,7 @@ function toImportSummaryRecord(summary: ImportJob['import_summary']): Record<str
 
 export function useImportJobs(projectSlug: string) {
   return useQuery({
-    queryKey: ['importJobs', projectSlug],
+    queryKey: queryKeys.importJobs(projectSlug),
     queryFn: () => importsApi.getImportJobs(projectSlug),
     enabled: !!projectSlug,
   })
@@ -74,37 +78,21 @@ export function useImportJobs(projectSlug: string) {
 
 export function useImportJob(projectSlug: string, jobId: number | null) {
   const queryClient = useQueryClient()
-  const [socketConnected, setSocketConnected] = useState(false)
+  const token = useAuthStore((state) => state.token)
 
-  useEffect(() => {
-    if (!projectSlug || !jobId || typeof window === 'undefined') {
-      setSocketConnected(false)
-      return
+  const socketUrl = useMemo(() => {
+    if (!jobId || typeof window === 'undefined') {
+      return null
     }
-
-    let socket: WebSocket | null = null
-    let reconnectTimer: number | null = null
-    let cancelled = false
-
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const socketUrl = `${protocol}//${window.location.host}/ws/imports/${jobId}/`
+    const baseUrl = `${protocol}//${window.location.host}/ws/imports/${jobId}/`
+    return token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl
+  }, [jobId, token])
 
-    const clearReconnectTimer = () => {
-      if (reconnectTimer !== null) {
-        window.clearTimeout(reconnectTimer)
-        reconnectTimer = null
-      }
-    }
-
-    const scheduleReconnect = () => {
-      if (cancelled) return
-      clearReconnectTimer()
-      reconnectTimer = window.setTimeout(connect, 1500)
-    }
-
-    const handleSocketMessage = (message: ImportSocketMessage) => {
+  const handleSocketMessage = useCallback(
+    (message: ImportSocketMessage) => {
       queryClient.setQueryData<ImportJob | undefined>(
-        ['importJob', projectSlug, jobId],
+        queryKeys.importJob(projectSlug, jobId),
         (currentJob) => {
           if (!currentJob) {
             return currentJob
@@ -115,10 +103,16 @@ export function useImportJob(projectSlug: string, jobId: number | null) {
               ...currentJob,
               status: mapProgressPhaseToStatus(message.phase),
               current_phase: message.message || currentJob.current_phase,
-              progress_current: typeof message.current === 'number' ? message.current : currentJob.progress_current,
-              progress_total: typeof message.total === 'number' ? message.total : currentJob.progress_total,
+              progress_current:
+                typeof message.current === 'number'
+                  ? message.current
+                  : currentJob.progress_current,
+              progress_total:
+                typeof message.total === 'number' ? message.total : currentJob.progress_total,
               progress_percent:
-                typeof message.percent === 'number' ? message.percent : currentJob.progress_percent,
+                typeof message.percent === 'number'
+                  ? message.percent
+                  : currentJob.progress_percent,
             }
           }
 
@@ -170,52 +164,21 @@ export function useImportJob(projectSlug: string, jobId: number | null) {
       )
 
       if (message.type === 'complete' || message.type === 'error') {
-        queryClient.invalidateQueries({ queryKey: ['importJob', projectSlug, jobId] })
-        queryClient.invalidateQueries({ queryKey: ['importJobs', projectSlug] })
+        invalidateByPrefix(queryClient, queryKeys.importJob(projectSlug, jobId))
+        invalidateByPrefix(queryClient, queryKeys.importJobs(projectSlug))
       }
-    }
+    },
+    [jobId, projectSlug, queryClient]
+  )
 
-    const connect = () => {
-      if (cancelled) return
-      socket = new WebSocket(socketUrl)
-
-      socket.onopen = () => {
-        if (cancelled) return
-        setSocketConnected(true)
-      }
-
-      socket.onmessage = (event) => {
-        const message = parseImportSocketMessage(event.data)
-        if (!message) return
-        handleSocketMessage(message)
-      }
-
-      socket.onerror = () => {
-        if (cancelled) return
-        setSocketConnected(false)
-      }
-
-      socket.onclose = () => {
-        if (cancelled) return
-        setSocketConnected(false)
-        scheduleReconnect()
-      }
-    }
-
-    connect()
-
-    return () => {
-      cancelled = true
-      clearReconnectTimer()
-      setSocketConnected(false)
-      if (socket) {
-        socket.close()
-      }
-    }
-  }, [jobId, projectSlug, queryClient])
+  const socketConnected = useWebSocketWithFallback<ImportSocketMessage>(socketUrl, {
+    enabled: !!projectSlug && !!jobId,
+    parseMessage: parseImportSocketMessage,
+    onMessage: handleSocketMessage,
+  })
 
   return useQuery({
-    queryKey: ['importJob', projectSlug, jobId],
+    queryKey: queryKeys.importJob(projectSlug, jobId),
     queryFn: () => importsApi.getImportJob(projectSlug, jobId!),
     enabled: !!projectSlug && !!jobId,
     refetchInterval: (query) => {
@@ -236,7 +199,7 @@ export function useCancelImportJob(projectSlug: string) {
   return useMutation({
     mutationFn: (jobId: number) => importsApi.cancelImportJob(projectSlug, jobId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['importJobs', projectSlug] })
+      invalidateByPrefix(queryClient, queryKeys.importJobs(projectSlug))
     },
   })
 }
@@ -248,7 +211,7 @@ export function useUploadFiles(projectSlug: string) {
   return useMutation({
     mutationFn: (files: File[]) => importsApi.uploadFiles(projectSlug, files),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['importJobs', projectSlug] })
+      invalidateByPrefix(queryClient, queryKeys.importJobs(projectSlug))
     },
   })
 }
@@ -260,14 +223,14 @@ export function useTriggerPrescan(projectSlug: string) {
   return useMutation({
     mutationFn: (jobId: number) => importsApi.triggerPrescan(projectSlug, jobId),
     onSuccess: (_, jobId) => {
-      queryClient.invalidateQueries({ queryKey: ['importJob', projectSlug, jobId] })
+      invalidateByPrefix(queryClient, queryKeys.importJob(projectSlug, jobId))
     },
   })
 }
 
 export function usePrescanResult(projectSlug: string, jobId: number | null) {
   return useQuery({
-    queryKey: ['prescanResult', projectSlug, jobId],
+    queryKey: queryKeys.prescanResult(projectSlug, jobId),
     queryFn: () => importsApi.getPrescanResult(projectSlug, jobId!),
     enabled: !!projectSlug && !!jobId,
     retry: (failureCount, error) => {
@@ -289,8 +252,8 @@ export function useStartImport(projectSlug: string) {
     mutationFn: ({ jobId, options }: { jobId: number; options: ImportStartRequest }) =>
       importsApi.startImport(projectSlug, jobId, options),
     onSuccess: (_, { jobId }) => {
-      queryClient.invalidateQueries({ queryKey: ['importJob', projectSlug, jobId] })
-      queryClient.invalidateQueries({ queryKey: ['resultSets', projectSlug] })
+      invalidateByPrefix(queryClient, queryKeys.importJob(projectSlug, jobId))
+      invalidateByPrefix(queryClient, queryKeys.resultSets(projectSlug))
     },
   })
 }
@@ -312,9 +275,9 @@ export function useStartPushoverImport(projectSlug: string) {
         resultSetId,
       }),
     onSuccess: (_, { jobId }) => {
-      queryClient.invalidateQueries({ queryKey: ['importJob', projectSlug, jobId] })
-      queryClient.invalidateQueries({ queryKey: ['resultSets', projectSlug] })
-      queryClient.invalidateQueries({ queryKey: ['pushoverCases', projectSlug] })
+      invalidateByPrefix(queryClient, queryKeys.importJob(projectSlug, jobId))
+      invalidateByPrefix(queryClient, queryKeys.resultSets(projectSlug))
+      invalidateByPrefix(queryClient, queryKeys.pushoverCases(projectSlug))
     },
   })
 }
@@ -336,10 +299,10 @@ export function useStartPushoverResultsImport(projectSlug: string) {
         resultSetId,
       }),
     onSuccess: (_, { jobId }) => {
-      queryClient.invalidateQueries({ queryKey: ['importJob', projectSlug, jobId] })
-      queryClient.invalidateQueries({ queryKey: ['resultSets', projectSlug] })
-      queryClient.invalidateQueries({ queryKey: ['globalResults', projectSlug] })
-      queryClient.invalidateQueries({ queryKey: ['availableResultTypes', projectSlug] })
+      invalidateByPrefix(queryClient, queryKeys.importJob(projectSlug, jobId))
+      invalidateByPrefix(queryClient, queryKeys.resultSets(projectSlug))
+      invalidateByPrefix(queryClient, queryKeys.globalResults(projectSlug))
+      invalidateByPrefix(queryClient, queryKeys.availableResultTypes(projectSlug))
     },
   })
 }

@@ -8,8 +8,12 @@ import { useResultSets, useComparisonData, useAvailableResultTypes } from '../..
 import { ComparisonTable } from './ComparisonTable'
 import { ProfileChart } from '../charts/ProfileChart'
 import { ProjectBrowserNav } from '../projects/ProjectBrowserNav'
-import type { GlobalResultType, ProfileChartData } from '../../types'
-import { COMPARISON_SERIES_COLORS } from '../../utils/chartColors'
+import type { GlobalResultType } from '../../types'
+import {
+  buildComparisonProfileChartData,
+  COMPARISON_METRICS,
+  type ComparisonMetric,
+} from './comparisonUtils'
 
 interface ComparisonViewProps {
   projectSlug: string
@@ -19,7 +23,7 @@ export function ComparisonView({ projectSlug }: ComparisonViewProps) {
   const [selectedResultSetIds, setSelectedResultSetIds] = useState<number[]>([])
   const [selectedResultType, setSelectedResultType] = useState<GlobalResultType>('Drifts')
   const [selectedDirection, setSelectedDirection] = useState<string>('X')
-  const [selectedMetric, setSelectedMetric] = useState<'Avg' | 'Max' | 'Min'>('Avg')
+  const [selectedMetric, setSelectedMetric] = useState<ComparisonMetric>('Avg')
   const [viewMode, setViewMode] = useState<'table' | 'chart'>('table')
 
   const { data: resultSets, isLoading: resultSetsLoading } = useResultSets(projectSlug)
@@ -50,30 +54,10 @@ export function ComparisonView({ projectSlug }: ComparisonViewProps) {
     )
   }
 
-  // Convert comparison data to chart format
-  const chartData: ProfileChartData | null = useMemo(() => {
-    if (!comparisonData || !comparisonData.rows.length) return null
-
-    const stories = comparisonData.rows.map((r) => String(r['Story'] || ''))
-    const series = comparisonData.series
-      .filter((s) => s.has_data)
-      .map((s, idx) => {
-        const colKey = `${s.result_set_name}_${comparisonData.metric}`
-        return {
-          name: s.result_set_name,
-          values: comparisonData.rows.map((r) => (r[colKey] as number) || 0),
-          color: COMPARISON_SERIES_COLORS[idx % COMPARISON_SERIES_COLORS.length],
-        }
-      })
-
-    return {
-      stories,
-      series,
-      result_type: selectedResultType,
-      unit: availableTypes?.global_results.find((r) => r.type === selectedResultType)?.unit || '',
-      title: `${selectedResultType} ${selectedDirection} - ${selectedMetric} Comparison`,
-    }
-  }, [comparisonData, availableTypes, selectedResultType, selectedDirection, selectedMetric])
+  const chartData = useMemo(
+    () => buildComparisonProfileChartData(comparisonData, selectedDirection),
+    [comparisonData, selectedDirection]
+  )
 
   return (
     <div className="comparison-view h-full flex">
@@ -152,7 +136,7 @@ export function ComparisonView({ projectSlug }: ComparisonViewProps) {
         <div className="browser-section">
           <h3 className="browser-section-title">Comparison Metric</h3>
           <div className="flex gap-2">
-            {(['Avg', 'Max', 'Min'] as const).map((metric) => (
+            {COMPARISON_METRICS.map((metric) => (
               <button
                 key={metric}
                 onClick={() => setSelectedMetric(metric)}

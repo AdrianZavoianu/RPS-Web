@@ -1,0 +1,234 @@
+/* Reporting preview feature styles */
+  /* =====================================================
+   * Report A4 Preview
+   * ===================================================== */
+  .report-preview-area {
+    background-color: #1a1d23;
+    height: 100%;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+    gap: 20px;
+  }
+
+  .report-page {
+    width: 525px;
+    height: 743px;
+    min-height: 743px;
+    max-height: 743px;
+    background-color: #ffffff;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+    border-radius: 2px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    color: #1f2937;
+    flex-shrink: 0;
+  }
+
+  .report-page-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #d1d5db;
+    margin-bottom: 10px;
+    min-height: 34px;
+    flex-shrink: 0;
+  }
+
+  .report-page-header-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    text-align: right;
+    min-width: 0;
+    gap: 1px;
+  }
+
+  .report-page-logo {
+    width: 92px;
+    height: 22px;
+    background-color: #1f5c6a;
+    flex-shrink: 0;
+  }
+
+  .report-page-project-name {
+    font-size: 10px;
+    font-weight: 600;
+    color: #1f2937;
+    line-height: 1.2;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+  }
+
+  .report-page-result-set {
+    font-size: 8px;
+    color: #6b7280;
+    line-height: 1.2;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+  }
+
+  .report-page-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .report-page-footer {
+    min-height: 20px;
+    flex-shrink: 0;
+    text-align: right;
+    font-size: 9px;
+    font-weight: 500;
+    color: #4b5563;
+    padding-top: 4px;
+    border-top: 1px solid #e5e7eb;
+    margin-top: 6px;
+    line-height: 1.2;
+  }
+
+  .report-section {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .report-section-title {
+    font-size: 9px;
+    font-weight: 700;
+    color: #1f2937;
+    border-bottom: 1px solid #e5e7eb;
+    padding-bottom: 2px;
+    margin-bottom: 3px;
+    flex-shrink: 0;
+  }
+
+  .report-top10-label {
+    font-size: 7px;
+    color: #6b7280;
+    font-style: italic;
+    margin-bottom: 2px;
+    flex-shrink: 0;
+  }
+
+  .report-data-table-wrap {
+    border: 1.5px solid #b8c5d4;
+    border-radius: 4px;
+    overflow: hidden;
+    flex-shrink: 0;
+    background-color: #ffffff;
+  }
+
+  .report-data-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+    font-size: 6.5px;
+    line-height: 1.3;
+    color: #1f2937;
+  }
+
+  .report-label-header,
+  .report-data-header {
+    background-color: #e3eaf2;
+    color: #0f172a;
+    font-weight: 700;
+    text-align: center;
+    padding: 3px 4px;
+    min-height: 16px;
+    border-right: 1.25px solid #b7c4d3;
+    border-bottom: 1.5px solid #aebdce;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 60px;
+    vertical-align: middle;
+  }
+
+  .report-label-header {
+    text-align: center !important;
+    background-color: #d9e3ee;
+  }
+
+  .report-summary-header {
+    background-color: #cddfeb;
+    color: #134252;
+    font-weight: 700;
+  }
+
+  .report-data-table th:last-child {
+    border-right: none;
+  }
+
+  .report-label-cell,
+  .report-data-cell {
+    padding: 2px 4px;
+    min-height: 14px;
+    border-right: 1.1px solid #d6dee8;
+    border-bottom: 1.1px solid #d6dee8;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+  }
+
+  .report-data-cell {
+    text-align: center !important;
+  }
+
+  .report-label-cell {
+    text-align: center !important;
+    font-weight: 600;
+    color: #1f2937;
+    background-color: #f3f7fb;
+  }
+
+  .report-numeric-cell {
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .report-summary-cell {
+    background-color: #edf5f9;
+    color: #134252;
+    font-weight: 600;
+  }
+
+  .report-data-table td:last-child {
+    border-right: none;
+  }
+
+  .report-data-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  .report-data-table tbody tr:nth-child(even) .report-data-cell:not(.report-summary-cell),
+  .report-data-table tbody tr:nth-child(even) .report-label-cell {
+    background-color: #f4f8fc;
+  }
+
+  .report-chart {
+    overflow: hidden;
+    display: flex;
+    align-items: stretch;
+    justify-content: stretch;
+  }
+
+  .report-chart svg {
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 100%;
+    display: block;
+  }

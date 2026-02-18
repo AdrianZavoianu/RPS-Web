@@ -1,13 +1,10 @@
 """Views for importer app."""
 
-import logging
 from pathlib import Path
-from typing import Optional
+from typing import Any, Callable
 
 from django.conf import settings
 from django.shortcuts import get_object_or_404
-from django.utils import timezone
-from django.utils.text import get_valid_filename
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, JSONParser
@@ -18,17 +15,31 @@ from rest_framework.viewsets import ViewSet
 from core.mixins import ProjectLookupMixin
 from apps.projects.models import Project
 from apps.importer.models import ImportJob
-from apps.results.models import ResultSet
 from apps.importer.serializers import (
     ImportJobSerializer,
     ImportJobCreateSerializer,
-    ImportStartSerializer,
-    PushoverImportStartSerializer,
 )
-from apps.importer.services.import_preparation import detect_conflicts
-from apps.importer.tasks import prescan_files_task, process_import_task, import_pushover_curves_task, import_pushover_results_task
-
-logger = logging.getLogger(__name__)
+from apps.importer.services.prescan import (
+    ImportPrescanError,
+    get_prescan_payload_for_job,
+    start_prescan_job,
+)
+from apps.importer.services.start import (
+    ImportStartError,
+    start_nltha_import_job,
+    start_pushover_import_job,
+)
+from apps.importer.services.upload import (
+    create_import_job,
+    create_upload_directory,
+    save_uploaded_files,
+)
+from apps.importer.tasks import (
+    import_pushover_curves_task,
+    import_pushover_results_task,
+    prescan_files_task,
+    process_import_task,
+)
 
 
 class ImportViewSet(ProjectLookupMixin, ViewSet):
@@ -47,21 +58,6 @@ class ImportViewSet(ProjectLookupMixin, ViewSet):
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, JSONParser]
 
-    def validate_result_set_for_project(
-        self,
-        project: Project,
-        result_set_id: int,
-        *,
-        expected_analysis_type: Optional[str] = None,
-    ) -> Optional[ResultSet]:
-        """Validate result set ownership (and optional analysis type) for import targets."""
-        result_set = ResultSet.objects.filter(project=project, id=result_set_id).first()
-        if result_set is None:
-            return None
-        if expected_analysis_type and result_set.analysis_type != expected_analysis_type:
-            return None
-        return result_set
-
     def get_project(self, slug: str) -> Project:
         """Get project by slug."""
         return self.get_project_for_slug(
@@ -74,6 +70,34 @@ class ImportViewSet(ProjectLookupMixin, ViewSet):
         """Get import jobs for project."""
         return ImportJob.objects.filter(project=project)
 
+    def _get_job(self, project: Project, pk: Any) -> ImportJob:
+        return get_object_or_404(ImportJob, project=project, pk=pk)
+
+    def _start_import_action(
+        self,
+        *,
+        project_slug: str | None,
+        pk: Any,
+        request_data: Any,
+        start_handler: Callable[..., dict[str, Any]],
+        task: Any,
+        task_started_message: str,
+    ) -> Response:
+        """Run a start-flow service handler and map domain errors to HTTP responses."""
+        project = self.get_project(project_slug)
+        job = self._get_job(project, pk)
+        try:
+            payload = start_handler(
+                job=job,
+                project=project,
+                request_data=request_data,
+                task=task,
+                task_started_message=task_started_message,
+            )
+        except ImportStartError as exc:
+            return Response({"detail": exc.detail}, status=exc.status_code)
+        return Response(payload)
+
     def list(self, request, project_slug=None):
         """List all import jobs for a project."""
         project = self.get_project(project_slug)
@@ -84,14 +108,14 @@ class ImportViewSet(ProjectLookupMixin, ViewSet):
     def retrieve(self, request, project_slug=None, pk=None):
         """Get a specific import job status."""
         project = self.get_project(project_slug)
-        job = get_object_or_404(ImportJob, project=project, pk=pk)
+        job = self._get_job(project, pk)
         serializer = ImportJobSerializer(job)
         return Response(serializer.data)
 
     def destroy(self, request, project_slug=None, pk=None):
         """Cancel an import job."""
         project = self.get_project(project_slug)
-        job = get_object_or_404(ImportJob, project=project, pk=pk)
+        job = self._get_job(project, pk)
 
         if job.status in ("completed", "failed", "cancelled"):
             return Response(
@@ -129,44 +153,24 @@ class ImportViewSet(ProjectLookupMixin, ViewSet):
         if not files:
             return Response({"detail": "No files uploaded"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Create upload directory per project and upload timestamp
-        upload_root = Path(settings.MEDIA_ROOT) / "imports" / project_slug
-        upload_root.mkdir(parents=True, exist_ok=True)
-        timestamp = timezone.localtime().strftime("%Y%m%d_%H%M%S")
-        upload_dir = upload_root / timestamp
-        counter = 1
-        while upload_dir.exists():
-            upload_dir = upload_root / f"{timestamp}_{counter}"
-            counter += 1
-        upload_dir.mkdir(parents=True, exist_ok=False)
+        upload_dir, upload_timestamp = create_upload_directory(
+            settings.MEDIA_ROOT,
+            project_slug or project.slug,
+        )
+        try:
+            saved_paths = save_uploaded_files(files, upload_dir)
+        except ValueError as exc:
+            return Response(
+                {"detail": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        # Save files
-        saved_paths = []
-        for file in files:
-            filename = file.name.split("/")[-1].split("\\")[-1]
-            safe_filename = get_valid_filename(filename)
-            if safe_filename in {"", ".", ".."}:
-                return Response(
-                    {"detail": f"Invalid filename: {file.name}"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            file_path = upload_dir / safe_filename
-            with open(file_path, "wb") as dest:
-                for chunk in file.chunks():
-                    dest.write(chunk)
-            saved_paths.append(str(file_path))
-
-        # Create import job
-        job = ImportJob.objects.create(
+        job = create_import_job(
             project=project,
             user=request.user,
-            job_config={
-                "upload_dir": str(upload_dir),
-                "upload_timestamp": timestamp,
-            },
-            files=saved_paths,
-            status="pending",
+            upload_dir=upload_dir,
+            upload_timestamp=upload_timestamp,
+            saved_paths=saved_paths,
         )
 
         return Response(
@@ -186,89 +190,27 @@ class ImportViewSet(ProjectLookupMixin, ViewSet):
         GET: Get prescan results (if available)
         """
         project = self.get_project(project_slug)
-        job = get_object_or_404(ImportJob, project=project, pk=pk)
+        job = self._get_job(project, pk)
 
         if request.method == "POST":
-            # Trigger prescan
-            if job.status not in ("pending",):
-                return Response(
-                    {"detail": f"Cannot prescan job in status: {job.status}"},
-                    status=status.HTTP_400_BAD_REQUEST,
+            try:
+                payload = start_prescan_job(
+                    job=job,
+                    task=prescan_files_task,
+                    task_started_message="Prescan started",
                 )
+            except ImportPrescanError as exc:
+                return Response({"detail": exc.detail}, status=exc.status_code)
+            return Response(payload)
 
-            task = prescan_files_task.delay(job.id)
-            job.celery_task_id = task.id
-            job.save(update_fields=["celery_task_id"])
-
+        try:
+            payload = get_prescan_payload_for_job(job)
+        except ImportPrescanError as exc:
             return Response(
-                {
-                    "detail": "Prescan started",
-                    "task_id": task.id,
-                    "job_id": job.id,
-                }
+                {"detail": exc.detail},
+                status=exc.status_code,
             )
-
-        # GET: Return prescan results
-        prescan_data = job.job_config.get("prescan")
-        if not prescan_data:
-            return Response(
-                {"detail": "Prescan not yet complete"}, status=status.HTTP_404_NOT_FOUND
-            )
-
-        # Build load case summary for UI
-        file_load_cases = prescan_data.get("file_load_cases", {})
-
-        # Aggregate all unique load cases with their sources
-        all_load_cases = {}
-        for file_name, sheets in file_load_cases.items():
-            for sheet_name, cases in sheets.items():
-                for case in cases:
-                    if case not in all_load_cases:
-                        all_load_cases[case] = {"files": set(), "sheets": set()}
-                    all_load_cases[case]["files"].add(file_name)
-                    all_load_cases[case]["sheets"].add(sheet_name)
-
-        # Convert to list
-        load_case_list = [
-            {
-                "name": name,
-                "files": sorted(info["files"]),
-                "sheets": sorted(info["sheets"]),
-            }
-            for name, info in sorted(all_load_cases.items())
-        ]
-
-        # Detect conflicts
-        all_case_names = set(all_load_cases.keys())
-        conflicts = detect_conflicts(file_load_cases, all_case_names)
-
-        # Mark load cases with conflicts
-        for item in load_case_list:
-            item["has_conflict"] = item["name"] in conflicts
-
-        # Format conflicts for UI
-        conflict_list = []
-        for load_case, sheet_files in conflicts.items():
-            for sheet, files in sheet_files.items():
-                conflict_list.append(
-                    {
-                        "load_case": load_case,
-                        "sheet": sheet,
-                        "files": files,
-                    }
-                )
-
-        return Response(
-            {
-                "job_id": job.id,
-                "status": job.status,
-                "files_scanned": prescan_data.get("files_scanned", 0),
-                "load_cases": load_case_list,
-                "conflicts": conflict_list,
-                "foundation_joints": prescan_data.get("foundation_joints", []),
-                "errors": prescan_data.get("errors", []),
-            }
-        )
+        return Response(payload)
 
     @action(detail=True, methods=["post"], url_path="start")
     def start(self, request, project_slug=None, pk=None):
@@ -280,69 +222,13 @@ class ImportViewSet(ProjectLookupMixin, ViewSet):
             - result_set_name: Name for the result set
             - result_set_id: Optional existing result set ID
         """
-        project = self.get_project(project_slug)
-        job = get_object_or_404(ImportJob, project=project, pk=pk)
-
-        if job.status != "pending":
-            return Response(
-                {"detail": f"Cannot start job in status: {job.status}"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        prescan_data = job.job_config.get("prescan")
-        if not prescan_data:
-            return Response(
-                {"detail": "Must complete prescan before starting import"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        serializer = ImportStartSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        # Convert conflict resolutions list to dict format
-        conflict_dict = {}
-        for resolution in serializer.validated_data.get("conflict_resolutions", []):
-            sheet = resolution["sheet"]
-            load_case = resolution["load_case"]
-            chosen_file = resolution["chosen_file"]
-            if sheet not in conflict_dict:
-                conflict_dict[sheet] = {}
-            conflict_dict[sheet][load_case] = chosen_file
-
-        # Update job config
-        job.job_config["selected_load_cases"] = serializer.validated_data.get(
-            "selected_load_cases", []
-        )
-        job.job_config["conflict_resolution"] = conflict_dict
-        job.job_config["result_set_name"] = serializer.validated_data.get(
-            "result_set_name", "Imported Results"
-        )
-
-        selected_result_set_id = serializer.validated_data.get("result_set_id")
-        if selected_result_set_id is not None:
-            result_set = self.validate_result_set_for_project(project, selected_result_set_id)
-            if result_set is None:
-                return Response(
-                    {"detail": f"Invalid result_set_id for project: {selected_result_set_id}"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            job.job_config["result_set_id"] = result_set.id
-        else:
-            job.job_config.pop("result_set_id", None)
-
-        job.save()
-
-        # Start import task
-        task = process_import_task.delay(job.id)
-        job.celery_task_id = task.id
-        job.save(update_fields=["celery_task_id"])
-
-        return Response(
-            {
-                "detail": "Import started",
-                "task_id": task.id,
-                "job_id": job.id,
-            }
+        return self._start_import_action(
+            project_slug=project_slug,
+            pk=pk,
+            request_data=request.data,
+            start_handler=start_nltha_import_job,
+            task=process_import_task,
+            task_started_message="Import started",
         )
 
     @action(detail=True, methods=["post"], url_path="start-pushover")
@@ -353,56 +239,13 @@ class ImportViewSet(ProjectLookupMixin, ViewSet):
             - result_set_name: Name for the result set (default: 'Pushover Results')
             - result_set_id: Optional existing result set ID
         """
-        project = self.get_project(project_slug)
-        job = get_object_or_404(ImportJob, project=project, pk=pk)
-
-        if job.status not in ("pending",):
-            return Response(
-                {"detail": f"Cannot start job in status: {job.status}"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        serializer = PushoverImportStartSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        # Update job config
-        job.job_config["result_set_name"] = serializer.validated_data.get(
-            "result_set_name",
-            "Pushover Results",
-        )
-        result_set_id = serializer.validated_data.get("result_set_id")
-        if result_set_id is not None:
-            result_set = self.validate_result_set_for_project(
-                project,
-                result_set_id,
-                expected_analysis_type="Pushover",
-            )
-            if result_set is None:
-                return Response(
-                    {
-                        "detail": (
-                            "result_set_id must belong to this project "
-                            "and have analysis_type='Pushover'"
-                        )
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            job.job_config["result_set_id"] = result_set.id
-        else:
-            job.job_config.pop("result_set_id", None)
-        job.save(update_fields=["job_config"])
-
-        # Start pushover import task
-        task = import_pushover_curves_task.delay(job.id)
-        job.celery_task_id = task.id
-        job.save(update_fields=["celery_task_id"])
-
-        return Response(
-            {
-                "detail": "Pushover import started",
-                "task_id": task.id,
-                "job_id": job.id,
-            }
+        return self._start_import_action(
+            project_slug=project_slug,
+            pk=pk,
+            request_data=request.data,
+            start_handler=start_pushover_import_job,
+            task=import_pushover_curves_task,
+            task_started_message="Pushover import started",
         )
 
     @action(detail=True, methods=["post"], url_path="start-pushover-results")
@@ -413,52 +256,11 @@ class ImportViewSet(ProjectLookupMixin, ViewSet):
             - result_set_name: Name for the result set (default: 'Pushover Results')
             - result_set_id: Optional existing result set ID
         """
-        project = self.get_project(project_slug)
-        job = get_object_or_404(ImportJob, project=project, pk=pk)
-
-        if job.status not in ("pending",):
-            return Response(
-                {"detail": f"Cannot start job in status: {job.status}"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        serializer = PushoverImportStartSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        job.job_config["result_set_name"] = serializer.validated_data.get(
-            "result_set_name",
-            "Pushover Results",
-        )
-        result_set_id = serializer.validated_data.get("result_set_id")
-        if result_set_id is not None:
-            result_set = self.validate_result_set_for_project(
-                project,
-                result_set_id,
-                expected_analysis_type="Pushover",
-            )
-            if result_set is None:
-                return Response(
-                    {
-                        "detail": (
-                            "result_set_id must belong to this project "
-                            "and have analysis_type='Pushover'"
-                        )
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            job.job_config["result_set_id"] = result_set.id
-        else:
-            job.job_config.pop("result_set_id", None)
-        job.save(update_fields=["job_config"])
-
-        task = import_pushover_results_task.delay(job.id)
-        job.celery_task_id = task.id
-        job.save(update_fields=["celery_task_id"])
-
-        return Response(
-            {
-                "detail": "Pushover results import started",
-                "task_id": task.id,
-                "job_id": job.id,
-            }
+        return self._start_import_action(
+            project_slug=project_slug,
+            pk=pk,
+            request_data=request.data,
+            start_handler=start_pushover_import_job,
+            task=import_pushover_results_task,
+            task_started_message="Pushover results import started",
         )

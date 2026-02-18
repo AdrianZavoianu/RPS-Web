@@ -3,6 +3,8 @@ Results serializers for result sets and result data.
 """
 from rest_framework import serializers
 
+from config.result_types import RESULT_TYPE_CONFIG
+
 from .models import (
     ComparisonSet,
     ResultCategory,
@@ -12,6 +14,8 @@ from .models import (
     StoryDrift,
     StoryForce,
 )
+
+VALID_COMPARISON_RESULT_TYPES = frozenset(RESULT_TYPE_CONFIG.keys())
 
 
 class ResultCategorySerializer(serializers.ModelSerializer):
@@ -51,6 +55,96 @@ class ResultSetSerializer(serializers.ModelSerializer):
 
 class ComparisonSetSerializer(serializers.ModelSerializer):
     """Serializer for comparison sets."""
+
+    result_set_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        allow_empty=False,
+        required=True,
+    )
+    result_types = serializers.ListField(
+        child=serializers.CharField(trim_whitespace=True),
+        allow_empty=False,
+        required=True,
+    )
+
+    def _get_project(self):
+        if self.instance is not None:
+            return self.instance.project
+
+        project = self.context.get("project")
+        if project is not None:
+            return project
+
+        view = self.context.get("view")
+        if view is not None and hasattr(view, "get_project"):
+            return view.get_project()
+
+        return None
+
+    def validate_result_set_ids(self, value):
+        if len(value) < 2:
+            raise serializers.ValidationError("Select at least 2 result sets.")
+        if len(set(value)) != len(value):
+            raise serializers.ValidationError("Duplicate result_set_ids are not allowed.")
+        return value
+
+    def validate_result_types(self, value):
+        normalized_types = []
+        for result_type in value:
+            normalized_type = result_type.strip()
+            if normalized_type == "":
+                raise serializers.ValidationError("Result types cannot contain blank values.")
+            normalized_types.append(normalized_type)
+
+        if len(set(normalized_types)) != len(normalized_types):
+            raise serializers.ValidationError("Duplicate result_types are not allowed.")
+
+        invalid_types = sorted(set(normalized_types) - VALID_COMPARISON_RESULT_TYPES)
+        if invalid_types:
+            invalid_types_display = ", ".join(invalid_types)
+            raise serializers.ValidationError(
+                f"Unsupported result_types: {invalid_types_display}"
+            )
+
+        return normalized_types
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+
+        project = self._get_project()
+        if project is None:
+            raise serializers.ValidationError(
+                {"project": "Project context is required for comparison-set validation."}
+            )
+
+        result_set_ids = attrs.get(
+            "result_set_ids",
+            self.instance.result_set_ids if self.instance is not None else None,
+        )
+        if result_set_ids is None:
+            raise serializers.ValidationError({"result_set_ids": "This field is required."})
+
+        existing_ids = set(
+            ResultSet.objects.filter(
+                project=project,
+                id__in=result_set_ids,
+            ).values_list("id", flat=True)
+        )
+        invalid_result_set_ids = [
+            result_set_id for result_set_id in result_set_ids if result_set_id not in existing_ids
+        ]
+        if invalid_result_set_ids:
+            invalid_ids_display = ", ".join(str(result_set_id) for result_set_id in invalid_result_set_ids)
+            raise serializers.ValidationError(
+                {
+                    "result_set_ids": (
+                        "All result_set_ids must belong to the current project. "
+                        f"Invalid IDs: {invalid_ids_display}"
+                    )
+                }
+            )
+
+        return attrs
 
     class Meta:
         model = ComparisonSet

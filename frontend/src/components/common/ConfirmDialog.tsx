@@ -3,6 +3,8 @@
  * Reusable confirmation modal matching app style
  */
 
+import { BaseDialog } from './BaseDialog'
+
 interface ConfirmDialogProps {
   title: string
   message: string
@@ -29,26 +31,11 @@ export function ConfirmDialog({
   }
 
   return (
-    <div className="dialog-overlay fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="dialog-content bg-bg-secondary border border-border-default rounded-lg w-full max-w-md mx-4">
-        {/* Header */}
-        <div className="dialog-header flex items-center justify-between px-6 py-4 border-b border-border-default">
-          <h2 className="text-lg font-semibold text-text-primary">{title}</h2>
-          <button
-            onClick={onCancel}
-            className="text-text-secondary hover:text-text-primary"
-          >
-            ✕
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="dialog-body p-6">
-          <p className="text-text-secondary">{message}</p>
-        </div>
-
-        {/* Footer */}
-        <div className="dialog-footer flex justify-end gap-3 px-6 py-4 border-t border-border-default">
+    <BaseDialog
+      title={title}
+      onClose={onCancel}
+      footer={(
+        <>
           <button
             onClick={onCancel}
             className="px-4 py-2 text-sm font-medium text-text-secondary hover:text-text-primary bg-bg-primary border border-border-default rounded hover:bg-bg-hover transition-colors"
@@ -61,9 +48,11 @@ export function ConfirmDialog({
           >
             {confirmLabel}
           </button>
-        </div>
-      </div>
-    </div>
+        </>
+      )}
+    >
+      <p className="text-text-secondary">{message}</p>
+    </BaseDialog>
   )
 }
 
@@ -95,34 +84,20 @@ export function AlertDialog({
   }
 
   return (
-    <div className="dialog-overlay fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="dialog-content bg-bg-secondary border border-border-default rounded-lg w-full max-w-md mx-4">
-        {/* Header */}
-        <div className="dialog-header flex items-center justify-between px-6 py-4 border-b border-border-default">
-          <h2 className={`text-lg font-semibold ${variantColors[variant]}`}>{title}</h2>
-          <button
-            onClick={onClose}
-            className="text-text-secondary hover:text-text-primary"
-          >
-            ✕
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="dialog-body p-6">
-          <p className="text-text-secondary">{message}</p>
-        </div>
-
-        {/* Footer */}
-        <div className="dialog-footer flex justify-end px-6 py-4 border-t border-border-default">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-white bg-accent-primary hover:bg-accent-primary/90 rounded transition-colors"
-          >
-            {buttonLabel}
-          </button>
-        </div>
-      </div>
-    </div>
+    <BaseDialog
+      title={title}
+      titleClassName={variantColors[variant]}
+      onClose={onClose}
+      footer={(
+        <button
+          onClick={onClose}
+          className="px-4 py-2 text-sm font-medium text-white bg-accent-primary hover:bg-accent-primary/90 rounded transition-colors"
+        >
+          {buttonLabel}
+        </button>
+      )}
+    >
+      <p className="text-text-secondary">{message}</p>
+    </BaseDialog>
   )
 }

@@ -6,7 +6,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from django.db.models import Q
 
-from apps.results.models import ColumnRotation, ElementResultsCache
+from apps.results.data import ElementResultsCacheRepository
+from apps.results.models import ColumnRotation
 
 PLOT_BINS = 50
 
@@ -129,17 +130,12 @@ def _build_payload(
 
 
 def _build_from_cache(service, result_set_id: int) -> Optional[Dict[str, Any]]:
-    cache_entries = (
-        ElementResultsCache.objects.filter(
-            project=service.project,
-            result_set_id=result_set_id,
-            result_type__in=["ColumnRotations_R2", "ColumnRotations_R3"],
-        )
-        .select_related("story", "element")
-        .order_by("story_sort_order", "element__name", "id")
+    cache_entries = ElementResultsCacheRepository.list_entries_for_types(
+        service.project,
+        result_set_id=result_set_id,
+        result_types=["ColumnRotations_R2", "ColumnRotations_R3"],
     )
-
-    if not cache_entries.exists():
+    if not cache_entries:
         return None
 
     story_orders: Dict[str, int] = {}

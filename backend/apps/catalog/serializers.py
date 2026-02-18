@@ -33,14 +33,23 @@ class CatalogProjectSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "slug", "created_at", "updated_at", "last_opened"]
 
     def get_has_data(self, obj):
+        annotated_value = getattr(obj, "has_data", None)
+        if annotated_value is not None:
+            return bool(annotated_value)
         return hasattr(obj, "project_data")
 
     def get_story_count(self, obj):
+        annotated_count = getattr(obj, "story_count", None)
+        if annotated_count is not None:
+            return int(annotated_count)
         if hasattr(obj, "project_data"):
             return obj.project_data.stories.count()
         return 0
 
     def get_load_case_count(self, obj):
+        annotated_count = getattr(obj, "load_case_count", None)
+        if annotated_count is not None:
+            return int(annotated_count)
         if hasattr(obj, "project_data"):
             return obj.project_data.load_cases.count()
         return 0
@@ -108,24 +117,39 @@ class CatalogProjectDetailSerializer(serializers.ModelSerializer):
         ]
 
     def get_has_data(self, obj):
+        annotated_value = getattr(obj, "has_data", None)
+        if annotated_value is not None:
+            return bool(annotated_value)
         return hasattr(obj, "project_data")
 
     def get_story_count(self, obj):
+        annotated_count = getattr(obj, "story_count", None)
+        if annotated_count is not None:
+            return int(annotated_count)
         if hasattr(obj, "project_data"):
             return obj.project_data.stories.count()
         return 0
 
     def get_load_case_count(self, obj):
+        annotated_count = getattr(obj, "load_case_count", None)
+        if annotated_count is not None:
+            return int(annotated_count)
         if hasattr(obj, "project_data"):
             return obj.project_data.load_cases.count()
         return 0
 
     def get_element_count(self, obj):
+        annotated_count = getattr(obj, "element_count", None)
+        if annotated_count is not None:
+            return int(annotated_count)
         if hasattr(obj, "project_data"):
             return obj.project_data.elements.count()
         return 0
 
     def get_result_set_count(self, obj):
+        annotated_count = getattr(obj, "result_set_count", None)
+        if annotated_count is not None:
+            return int(annotated_count)
         if hasattr(obj, "project_data"):
             return obj.project_data.result_sets.count()
         return 0

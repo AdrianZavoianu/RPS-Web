@@ -2,7 +2,7 @@
 
 from typing import List, Optional
 
-from apps.results.models import ResultSet
+from apps.results.data import ResultSetRepository
 
 from ..datasets import ComparisonDataset, ComparisonSeries
 
@@ -54,7 +54,10 @@ def get_comparison_dataset(
     story_order = {}
     warnings = []
 
-    result_sets = {rs.id: rs.name for rs in ResultSet.objects.filter(id__in=result_set_ids)}
+    result_sets = ResultSetRepository.get_project_result_set_name_map(
+        service.project,
+        result_set_ids,
+    )
 
     for rs_id in result_set_ids:
         rs_name = result_sets.get(rs_id, f"ResultSet {rs_id}")

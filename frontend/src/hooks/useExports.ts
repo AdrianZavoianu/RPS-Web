@@ -2,10 +2,14 @@
  * React Query hooks for export operations
  */
 
-import { useEffect, useState } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as exportsApi from '../api/exports'
+import { useAuthStore } from '../stores/authStore'
 import type { ExportJob, ExportRequest } from '../api/exports'
+import { queryKeys } from './queryKeys'
+import { useWebSocketWithFallback } from './useWebSocket'
+import { invalidateByPrefix } from './invalidation'
 
 type ExportProgressMessage = {
   type: 'progress'
@@ -50,37 +54,21 @@ function parseExportSocketMessage(raw: string): ExportSocketMessage | null {
 // Get export job status with polling
 export function useExportJob(projectSlug: string, jobId: number | null) {
   const queryClient = useQueryClient()
-  const [socketConnected, setSocketConnected] = useState(false)
+  const token = useAuthStore((state) => state.token)
 
-  useEffect(() => {
-    if (!projectSlug || !jobId || typeof window === 'undefined') {
-      setSocketConnected(false)
-      return
+  const socketUrl = useMemo(() => {
+    if (!jobId || typeof window === 'undefined') {
+      return null
     }
-
-    let socket: WebSocket | null = null
-    let reconnectTimer: number | null = null
-    let cancelled = false
-
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const socketUrl = `${protocol}//${window.location.host}/ws/exports/${jobId}/`
+    const baseUrl = `${protocol}//${window.location.host}/ws/exports/${jobId}/`
+    return token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl
+  }, [jobId, token])
 
-    const clearReconnectTimer = () => {
-      if (reconnectTimer !== null) {
-        window.clearTimeout(reconnectTimer)
-        reconnectTimer = null
-      }
-    }
-
-    const scheduleReconnect = () => {
-      if (cancelled) return
-      clearReconnectTimer()
-      reconnectTimer = window.setTimeout(connect, 1500)
-    }
-
-    const handleSocketMessage = (message: ExportSocketMessage) => {
+  const handleSocketMessage = useCallback(
+    (message: ExportSocketMessage) => {
       queryClient.setQueryData<ExportJob | undefined>(
-        ['exportJob', projectSlug, jobId],
+        queryKeys.exportJob(projectSlug, jobId),
         (currentJob) => {
           if (!currentJob) {
             return currentJob
@@ -91,9 +79,7 @@ export function useExportJob(projectSlug: string, jobId: number | null) {
               ...currentJob,
               status: 'processing',
               progress:
-                typeof message.percent === 'number'
-                  ? message.percent
-                  : currentJob.progress,
+                typeof message.percent === 'number' ? message.percent : currentJob.progress,
             }
           }
 
@@ -114,52 +100,21 @@ export function useExportJob(projectSlug: string, jobId: number | null) {
       )
 
       if (message.type === 'complete' || message.type === 'error') {
-        queryClient.invalidateQueries({ queryKey: ['exportJob', projectSlug, jobId] })
-        queryClient.invalidateQueries({ queryKey: ['exportJobs', projectSlug] })
+        invalidateByPrefix(queryClient, queryKeys.exportJob(projectSlug, jobId))
+        invalidateByPrefix(queryClient, queryKeys.exportJobs(projectSlug))
       }
-    }
+    },
+    [jobId, projectSlug, queryClient]
+  )
 
-    const connect = () => {
-      if (cancelled) return
-      socket = new WebSocket(socketUrl)
-
-      socket.onopen = () => {
-        if (cancelled) return
-        setSocketConnected(true)
-      }
-
-      socket.onmessage = (event) => {
-        const message = parseExportSocketMessage(event.data)
-        if (!message) return
-        handleSocketMessage(message)
-      }
-
-      socket.onerror = () => {
-        if (cancelled) return
-        setSocketConnected(false)
-      }
-
-      socket.onclose = () => {
-        if (cancelled) return
-        setSocketConnected(false)
-        scheduleReconnect()
-      }
-    }
-
-    connect()
-
-    return () => {
-      cancelled = true
-      clearReconnectTimer()
-      setSocketConnected(false)
-      if (socket) {
-        socket.close()
-      }
-    }
-  }, [jobId, projectSlug, queryClient])
+  const socketConnected = useWebSocketWithFallback<ExportSocketMessage>(socketUrl, {
+    enabled: !!projectSlug && !!jobId,
+    parseMessage: parseExportSocketMessage,
+    onMessage: handleSocketMessage,
+  })
 
   return useQuery({
-    queryKey: ['exportJob', projectSlug, jobId],
+    queryKey: queryKeys.exportJob(projectSlug, jobId),
     queryFn: () => exportsApi.getExportJob(projectSlug, jobId!),
     enabled: !!projectSlug && !!jobId,
     refetchInterval: (query) => {
@@ -178,7 +133,7 @@ export function useExportJob(projectSlug: string, jobId: number | null) {
 // List export jobs
 export function useExportJobs(projectSlug: string) {
   return useQuery({
-    queryKey: ['exportJobs', projectSlug],
+    queryKey: queryKeys.exportJobs(projectSlug),
     queryFn: () => exportsApi.getExportJobs(projectSlug),
     enabled: !!projectSlug,
   })
@@ -190,7 +145,7 @@ export function useStartExport(projectSlug: string) {
   return useMutation({
     mutationFn: (request: ExportRequest) => exportsApi.startExport(projectSlug, request),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['exportJobs', projectSlug] })
+      invalidateByPrefix(queryClient, queryKeys.exportJobs(projectSlug))
     },
   })
 }
@@ -201,8 +156,8 @@ export function useCancelExport(projectSlug: string) {
   return useMutation({
     mutationFn: (jobId: number) => exportsApi.cancelExportJob(projectSlug, jobId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['exportJobs', projectSlug] })
-      queryClient.invalidateQueries({ queryKey: ['exportJob', projectSlug] })
+      invalidateByPrefix(queryClient, queryKeys.exportJobs(projectSlug))
+      invalidateByPrefix(queryClient, queryKeys.exportJob(projectSlug))
     },
   })
 }

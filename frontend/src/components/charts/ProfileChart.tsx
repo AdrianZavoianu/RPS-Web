@@ -9,8 +9,19 @@ import { LazyPlot } from './LazyPlot'
 import type { ChartData, ProfileChartData, ResultDataset } from '../../types'
 import { PROFILE_SERIES_COLORS } from '../../utils/chartColors'
 import { getResultTypeDecimals, getResultTypeUnit } from '../../utils/resultConfig'
+import {
+  AVERAGE_LINE_COLOR,
+  PROFILE_COLOR,
+  PUSHOVER_MULTI_PALETTE,
+  TEXT_COLOR,
+  ZERO_LINE_COLOR,
+} from '../../utils/colors'
+import {
+  PLOTLY_CONFIG_NO_MODE_BAR,
+  createAxisLayout,
+  withPlotlyDefaults,
+} from '../../utils/plotlyDefaults'
 
-const AVERAGE_COLOR = '#ffa500' // Orange for average line
 const STORY_AXIS_TOP_PADDING = 0.2
 
 function getStoryAxisRange(storyCount: number): [number, number] {
@@ -134,7 +145,7 @@ function MultiSeriesProfileChartComponent({
         y: stories,
         x: dataset.rows.map((row) => row['Avg'] as number),
         line: {
-          color: AVERAGE_COLOR,
+          color: AVERAGE_LINE_COLOR,
           width: 4,
           dash: 'dash',
         },
@@ -156,7 +167,7 @@ function MultiSeriesProfileChartComponent({
         name: lc,
         color: PROFILE_SERIES_COLORS[idx % PROFILE_SERIES_COLORS.length],
       })),
-      ...(hasAvg ? [{ name: 'Avg', color: AVERAGE_COLOR, dashed: true }] : []),
+      ...(hasAvg ? [{ name: 'Avg', color: AVERAGE_LINE_COLOR, dashed: true }] : []),
     ],
     [hasAvg, loadCases]
   )
@@ -166,41 +177,21 @@ function MultiSeriesProfileChartComponent({
       <div className="flex-1 min-h-0">
         <LazyPlot
           data={traces}
-          layout={{
-            xaxis: {
-              title: { text: xAxisTitle, font: { size: 14, color: '#d1d5db' }, standoff: 8 },
-              gridcolor: 'rgba(60, 65, 75, 0.3)',
-              gridwidth: 1,
-              zerolinecolor: '#4a7d89',
+          layout={withPlotlyDefaults({
+            xaxis: createAxisLayout({
+              title: { text: xAxisTitle, font: { size: 14, color: TEXT_COLOR }, standoff: 8 },
+              zerolinecolor: ZERO_LINE_COLOR,
               zerolinewidth: 1,
               rangemode: 'tozero',
-              tickfont: { size: 10 },
-              linecolor: '#3a3f4a',
-              linewidth: 1,
-              mirror: true,
-            },
-            yaxis: {
-              title: { text: 'Story', font: { size: 14, color: '#d1d5db' }, standoff: 8 },
-              gridcolor: 'rgba(60, 65, 75, 0.3)',
-              gridwidth: 1,
-              tickfont: { size: 10 },
-              linecolor: '#3a3f4a',
-              linewidth: 1,
-              mirror: true,
+            }),
+            yaxis: createAxisLayout({
+              title: { text: 'Story', font: { size: 14, color: TEXT_COLOR }, standoff: 8 },
               range: getStoryAxisRange(stories.length),
-            },
-            paper_bgcolor: '#0a0c10',
-            plot_bgcolor: 'rgba(22, 27, 34, 0.5)',
-            font: { color: '#d1d5db', size: 11 },
+            }),
             margin: { l: 65, r: 15, t: 2, b: 45 },
-            showlegend: false,
             hovermode: 'closest',
-            autosize: true,
-          }}
-          config={{
-            displayModeBar: false,
-            responsive: true,
-          }}
+          })}
+          config={PLOTLY_CONFIG_NO_MODE_BAR}
           style={{ width: '100%', height: '100%' }}
           useResizeHandler
         />
@@ -234,37 +225,25 @@ export function ProfileChart({
             y: chartData.stories,
             x: chartData.values,
             line: {
-              color: '#4a7d89',
+              color: PROFILE_COLOR,
               width: 2,
             },
             hovertemplate: `%{y}: ${hoverFormat}<extra></extra>`,
           },
         ]}
-        layout={{
-          xaxis: {
-            title: { text: chartData.unit || '', font: { size: 10 } },
-            gridcolor: '#2c313a',
-            zerolinecolor: '#4a7d89',
+        layout={withPlotlyDefaults({
+          xaxis: createAxisLayout({
+            title: { text: chartData.unit || '', font: { size: 10, color: TEXT_COLOR } },
+            zerolinecolor: ZERO_LINE_COLOR,
             zerolinewidth: 1,
             rangemode: 'tozero',
-            tickfont: { size: 10 },
-          },
-          yaxis: {
-            gridcolor: '#2c313a',
-            tickfont: { size: 10 },
+          }),
+          yaxis: createAxisLayout({
             range: getStoryAxisRange(chartData.stories.length),
-          },
-          paper_bgcolor: '#0a0c10',
-          plot_bgcolor: '#0f1419',
-          font: { color: '#d1d5db', size: 11 },
+          }),
           margin: { l: 50, r: 10, t: 10, b: 30 },
-          showlegend: false,
-          autosize: true,
-        }}
-        config={{
-          displayModeBar: false,
-          responsive: true,
-        }}
+        })}
+        config={PLOTLY_CONFIG_NO_MODE_BAR}
         style={{ width: '100%', height: height || '100%' }}
         useResizeHandler
       />
@@ -292,31 +271,19 @@ export function ProfileChart({
         },
         hovertemplate: `${series.name}<br>%{y}: ${profileHoverFormat}<extra></extra>`,
       }))}
-      layout={{
-        xaxis: {
-          title: { text: profileData.unit || '', font: { size: 10 } },
-          gridcolor: '#2c313a',
-          zerolinecolor: '#4a7d89',
+      layout={withPlotlyDefaults({
+        xaxis: createAxisLayout({
+          title: { text: profileData.unit || '', font: { size: 10, color: TEXT_COLOR } },
+          zerolinecolor: ZERO_LINE_COLOR,
           zerolinewidth: 1,
           rangemode: 'tozero',
-          tickfont: { size: 10 },
-        },
-        yaxis: {
-          gridcolor: '#2c313a',
-          tickfont: { size: 10 },
+        }),
+        yaxis: createAxisLayout({
           range: getStoryAxisRange(profileData.stories.length),
-        },
-        paper_bgcolor: '#0a0c10',
-        plot_bgcolor: '#0f1419',
-        font: { color: '#d1d5db', size: 11 },
+        }),
         margin: { l: 50, r: 10, t: 10, b: 30 },
-        showlegend: false,
-        autosize: true,
-      }}
-      config={{
-        displayModeBar: false,
-        responsive: true,
-      }}
+      })}
+      config={PLOTLY_CONFIG_NO_MODE_BAR}
       style={{ width: '100%', height: height || '100%' }}
       useResizeHandler
     />
@@ -349,53 +316,33 @@ export function PushoverCurveChart({
           x: displacements,
           y: shears,
           line: {
-            color: '#4a7d89',
+            color: PROFILE_COLOR,
             width: 2,
           },
           marker: {
-            color: '#4a7d89',
+            color: PROFILE_COLOR,
             size: 6,
           },
           hovertemplate: `${caseName}<br>D: %{x:.2f} mm<br>V: %{y:.0f} kN<extra></extra>`,
         },
       ]}
-      layout={{
-        xaxis: {
-          title: { text: 'Displacement (mm)', font: { size: 14, color: '#d1d5db' }, standoff: 8 },
-          gridcolor: 'rgba(60, 65, 75, 0.3)',
-          gridwidth: 1,
-          zerolinecolor: '#4a7d89',
+      layout={withPlotlyDefaults({
+        xaxis: createAxisLayout({
+          title: { text: 'Displacement (mm)', font: { size: 14, color: TEXT_COLOR }, standoff: 8 },
+          zerolinecolor: ZERO_LINE_COLOR,
           zerolinewidth: 1,
           rangemode: 'tozero',
-          tickfont: { size: 10 },
-          linecolor: '#3a3f4a',
-          linewidth: 1,
-          mirror: true,
-        },
-        yaxis: {
-          title: { text: 'Base Shear (kN)', font: { size: 14, color: '#d1d5db' }, standoff: 8 },
-          gridcolor: 'rgba(60, 65, 75, 0.3)',
-          gridwidth: 1,
-          zerolinecolor: '#4a7d89',
+        }),
+        yaxis: createAxisLayout({
+          title: { text: 'Base Shear (kN)', font: { size: 14, color: TEXT_COLOR }, standoff: 8 },
+          zerolinecolor: ZERO_LINE_COLOR,
           zerolinewidth: 1,
           rangemode: 'tozero',
-          tickfont: { size: 10 },
-          linecolor: '#3a3f4a',
-          linewidth: 1,
-          mirror: true,
-        },
-        paper_bgcolor: '#0a0c10',
-        plot_bgcolor: 'rgba(22, 27, 34, 0.5)',
-        font: { color: '#d1d5db', size: 11 },
+        }),
         margin: { l: 65, r: 15, t: 2, b: 45 },
-        showlegend: false,
         hovermode: 'closest',
-        autosize: true,
-      }}
-      config={{
-        displayModeBar: false,
-        responsive: true,
-      }}
+      })}
+      config={PLOTLY_CONFIG_NO_MODE_BAR}
       style={{ width: '100%', height: height || '100%' }}
       useResizeHandler
     />
@@ -403,11 +350,6 @@ export function PushoverCurveChart({
 }
 
 // --- Pushover Multi-Curve Overlay Chart ---
-
-const PUSHOVER_MULTI_COLORS = [
-  '#4a7d89', '#e07a5f', '#81b29a', '#f2cc8f', '#3d405b',
-  '#7209b7', '#f72585', '#4cc9f0', '#f4a261', '#2a9d8f',
-]
 
 export interface PushoverMultiCurveData {
   name: string
@@ -429,7 +371,7 @@ export function PushoverMultiCurveChart({
     x: curve.points.map((p) => p.displacement),
     y: curve.points.map((p) => p.base_shear),
     line: {
-      color: PUSHOVER_MULTI_COLORS[idx % PUSHOVER_MULTI_COLORS.length],
+      color: PUSHOVER_MULTI_PALETTE[idx % PUSHOVER_MULTI_PALETTE.length],
       width: 2,
     },
     hovertemplate: `${curve.name}<br>D: %{x:.2f} mm<br>V: %{y:.0f} kN<extra></extra>`,
@@ -437,7 +379,7 @@ export function PushoverMultiCurveChart({
 
   const legendItems = curves.map((curve, idx) => ({
     name: curve.name,
-    color: PUSHOVER_MULTI_COLORS[idx % PUSHOVER_MULTI_COLORS.length],
+    color: PUSHOVER_MULTI_PALETTE[idx % PUSHOVER_MULTI_PALETTE.length],
   }))
 
   return (
@@ -445,43 +387,23 @@ export function PushoverMultiCurveChart({
       <div className="flex-1 min-h-0">
         <LazyPlot
           data={traces}
-          layout={{
-            xaxis: {
-              title: { text: 'Displacement (mm)', font: { size: 14, color: '#d1d5db' }, standoff: 8 },
-              gridcolor: 'rgba(60, 65, 75, 0.3)',
-              gridwidth: 1,
-              zerolinecolor: '#4a7d89',
+          layout={withPlotlyDefaults({
+            xaxis: createAxisLayout({
+              title: { text: 'Displacement (mm)', font: { size: 14, color: TEXT_COLOR }, standoff: 8 },
+              zerolinecolor: ZERO_LINE_COLOR,
               zerolinewidth: 1,
               rangemode: 'tozero',
-              tickfont: { size: 10 },
-              linecolor: '#3a3f4a',
-              linewidth: 1,
-              mirror: true,
-            },
-            yaxis: {
-              title: { text: 'Base Shear (kN)', font: { size: 14, color: '#d1d5db' }, standoff: 8 },
-              gridcolor: 'rgba(60, 65, 75, 0.3)',
-              gridwidth: 1,
-              zerolinecolor: '#4a7d89',
+            }),
+            yaxis: createAxisLayout({
+              title: { text: 'Base Shear (kN)', font: { size: 14, color: TEXT_COLOR }, standoff: 8 },
+              zerolinecolor: ZERO_LINE_COLOR,
               zerolinewidth: 1,
               rangemode: 'tozero',
-              tickfont: { size: 10 },
-              linecolor: '#3a3f4a',
-              linewidth: 1,
-              mirror: true,
-            },
-            paper_bgcolor: '#0a0c10',
-            plot_bgcolor: 'rgba(22, 27, 34, 0.5)',
-            font: { color: '#d1d5db', size: 11 },
+            }),
             margin: { l: 65, r: 15, t: 2, b: 45 },
-            showlegend: false,
             hovermode: 'closest',
-            autosize: true,
-          }}
-          config={{
-            displayModeBar: false,
-            responsive: true,
-          }}
+          })}
+          config={PLOTLY_CONFIG_NO_MODE_BAR}
           style={{ width: '100%', height: '100%' }}
           useResizeHandler
         />

@@ -4,9 +4,17 @@ Celery configuration for RPS project.
 import os
 
 from celery import Celery
+from decouple import config
 
-# Set the default Django settings module for the 'celery' program.
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "rps.settings.development")
+from rps.settings_bootstrap import configure_django_settings_module
+
+# Optional celery-specific settings module override.
+celery_settings_module = config("CELERY_DJANGO_SETTINGS_MODULE", default=None)
+if celery_settings_module:
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", celery_settings_module)
+
+# Set Django settings module for Celery.
+configure_django_settings_module()
 
 app = Celery("rps")
 

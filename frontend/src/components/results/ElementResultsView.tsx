@@ -25,7 +25,7 @@ interface ElementResultsViewProps {
 
 const ELEMENT_TYPE_MAP: Record<string, string> = {
   WallShears: 'Wall',
-  QuadRotations: 'Wall',
+  QuadRotations: 'Quad',
   ColumnShears: 'Column',
   ColumnAxials: 'Column',
   ColumnRotations: 'Column',

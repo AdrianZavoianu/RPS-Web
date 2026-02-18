@@ -1,10 +1,13 @@
 """
 Catalog views for project listing and management.
 """
+from django.db.models import Count, Exists, OuterRef
 from django.utils import timezone
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
+
+from apps.projects.models import Project
 
 from .models import CatalogProject
 from .serializers import (
@@ -38,10 +41,17 @@ class CatalogProjectViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Return projects owned by the current user."""
+        project_exists_subquery = Project.objects.filter(catalog_project_id=OuterRef("pk"))
         return (
             CatalogProject.objects.filter(owner=self.request.user)
-            .select_related("owner")
-            .prefetch_related("project_data")
+            .select_related("owner", "project_data")
+            .annotate(
+                has_data=Exists(project_exists_subquery),
+                story_count=Count("project_data__stories", distinct=True),
+                load_case_count=Count("project_data__load_cases", distinct=True),
+                element_count=Count("project_data__elements", distinct=True),
+                result_set_count=Count("project_data__result_sets", distinct=True),
+            )
         )
 
     def get_serializer_class(self):

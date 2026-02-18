@@ -2,7 +2,7 @@
  * React Query hooks for results data
  */
 
-import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as resultsApi from '../api/results'
 import type {
   GlobalResultsParams,
@@ -15,12 +15,15 @@ import type {
   BeamRotationsParams,
   ColumnRotationsParams,
 } from '../api/results'
+import { queryKeys } from './queryKeys'
+import { invalidateByPrefix } from './invalidation'
+import { mapPushoverCurvesToChartCurves } from '../features/results/mappers/pushoverMappers'
 
 // --- Result Sets ---
 
 export function useResultSets(projectSlug: string) {
   return useQuery({
-    queryKey: ['resultSets', projectSlug],
+    queryKey: queryKeys.resultSets(projectSlug),
     queryFn: () => resultsApi.getResultSets(projectSlug),
     enabled: !!projectSlug,
   })
@@ -28,7 +31,7 @@ export function useResultSets(projectSlug: string) {
 
 export function useResultSet(projectSlug: string, id: number) {
   return useQuery({
-    queryKey: ['resultSet', projectSlug, id],
+    queryKey: queryKeys.resultSet(projectSlug, id),
     queryFn: () => resultsApi.getResultSet(projectSlug, id),
     enabled: !!projectSlug && !!id,
   })
@@ -39,7 +42,7 @@ export function useDeleteResultSet(projectSlug: string) {
   return useMutation({
     mutationFn: (id: number) => resultsApi.deleteResultSet(projectSlug, id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['resultSets', projectSlug] })
+      invalidateByPrefix(queryClient, queryKeys.resultSets(projectSlug))
     },
   })
 }
@@ -48,10 +51,19 @@ export function useDeleteResultSet(projectSlug: string) {
 
 export function useAvailableResultTypes(projectSlug: string) {
   return useQuery({
-    queryKey: ['availableResultTypes', projectSlug],
+    queryKey: queryKeys.availableResultTypes(projectSlug),
     queryFn: () => resultsApi.getAvailableResultTypes(projectSlug),
     enabled: !!projectSlug,
     staleTime: 5 * 60 * 1000, // 5 minutes
+  })
+}
+
+export function useResultTreeMetadata(projectSlug: string, resultSetId?: number) {
+  return useQuery({
+    queryKey: queryKeys.resultTreeMetadata(projectSlug, resultSetId),
+    queryFn: () => resultsApi.getResultTreeMetadata(projectSlug, resultSetId!),
+    enabled: !!projectSlug && !!resultSetId,
+    staleTime: 5 * 60 * 1000,
   })
 }
 
@@ -62,7 +74,7 @@ export function useGlobalResults(
   params: GlobalResultsParams | null
 ) {
   return useQuery({
-    queryKey: ['globalResults', projectSlug, params],
+    queryKey: queryKeys.globalResults(projectSlug, params),
     queryFn: () => resultsApi.getGlobalResults(projectSlug, params!),
     enabled: !!projectSlug && !!params,
   })
@@ -75,7 +87,7 @@ export function useElementResults(
   params: ElementResultsParams | null
 ) {
   return useQuery({
-    queryKey: ['elementResults', projectSlug, params],
+    queryKey: queryKeys.elementResults(projectSlug, params),
     queryFn: () => resultsApi.getElementResults(projectSlug, params!),
     enabled: !!projectSlug && !!params,
   })
@@ -86,7 +98,7 @@ export function useElementsForType(
   params: ElementListParams | null
 ) {
   return useQuery({
-    queryKey: ['elementsForType', projectSlug, params],
+    queryKey: queryKeys.elementsForType(projectSlug, params),
     queryFn: () => resultsApi.getElementsForType(projectSlug, params!),
     enabled: !!projectSlug && !!params,
   })
@@ -99,7 +111,7 @@ export function useJointResults(
   params: JointResultsParams | null
 ) {
   return useQuery({
-    queryKey: ['jointResults', projectSlug, params],
+    queryKey: queryKeys.jointResults(projectSlug, params),
     queryFn: () => resultsApi.getJointResults(projectSlug, params!),
     enabled: !!projectSlug && !!params,
   })
@@ -112,7 +124,7 @@ export function useMaxMinData(
   params: MaxMinParams | null
 ) {
   return useQuery({
-    queryKey: ['maxMinData', projectSlug, params],
+    queryKey: queryKeys.maxMinData(projectSlug, params),
     queryFn: () => resultsApi.getMaxMinData(projectSlug, params!),
     enabled: !!projectSlug && !!params,
   })
@@ -125,7 +137,7 @@ export function useComparisonData(
   params: ComparisonParams | null
 ) {
   return useQuery({
-    queryKey: ['comparisonData', projectSlug, params],
+    queryKey: queryKeys.comparisonData(projectSlug, params),
     queryFn: () => resultsApi.getComparisonData(projectSlug, params!),
     enabled: !!projectSlug && !!params && params.result_set_ids.length >= 2,
   })
@@ -135,7 +147,7 @@ export function useComparisonData(
 
 export function useComparisonSets(projectSlug: string) {
   return useQuery({
-    queryKey: ['comparisonSets', projectSlug],
+    queryKey: queryKeys.comparisonSets(projectSlug),
     queryFn: () => resultsApi.getComparisonSets(projectSlug),
     enabled: !!projectSlug,
   })
@@ -147,7 +159,7 @@ export function useCreateComparisonSet(projectSlug: string) {
     mutationFn: (data: Parameters<typeof resultsApi.createComparisonSet>[1]) =>
       resultsApi.createComparisonSet(projectSlug, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['comparisonSets', projectSlug] })
+      invalidateByPrefix(queryClient, queryKeys.comparisonSets(projectSlug))
     },
   })
 }
@@ -157,7 +169,7 @@ export function useDeleteComparisonSet(projectSlug: string) {
   return useMutation({
     mutationFn: (id: number) => resultsApi.deleteComparisonSet(projectSlug, id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['comparisonSets', projectSlug] })
+      invalidateByPrefix(queryClient, queryKeys.comparisonSets(projectSlug))
     },
   })
 }
@@ -169,7 +181,7 @@ export function useChartData(
   params: ChartDataParams | null
 ) {
   return useQuery({
-    queryKey: ['chartData', projectSlug, params],
+    queryKey: queryKeys.chartData(projectSlug, params),
     queryFn: () => resultsApi.getChartData(projectSlug, params!),
     enabled: !!projectSlug && !!params,
   })
@@ -182,7 +194,7 @@ export function useBeamRotationsPlotData(
   params: BeamRotationsParams | null
 ) {
   return useQuery({
-    queryKey: ['beamRotationsPlot', projectSlug, params],
+    queryKey: queryKeys.beamRotationsPlot(projectSlug, params),
     queryFn: () => resultsApi.getBeamRotationsPlotData(projectSlug, params!),
     enabled: !!projectSlug && !!params,
   })
@@ -193,7 +205,7 @@ export function useBeamRotationsTableData(
   params: BeamRotationsParams | null
 ) {
   return useQuery({
-    queryKey: ['beamRotationsTable', projectSlug, params],
+    queryKey: queryKeys.beamRotationsTable(projectSlug, params),
     queryFn: () => resultsApi.getBeamRotationsTableData(projectSlug, params!),
     enabled: !!projectSlug && !!params,
   })
@@ -204,7 +216,7 @@ export function useColumnRotationsPlotData(
   params: ColumnRotationsParams | null
 ) {
   return useQuery({
-    queryKey: ['columnRotationsPlot', projectSlug, params],
+    queryKey: queryKeys.columnRotationsPlot(projectSlug, params),
     queryFn: () => resultsApi.getColumnRotationsPlotData(projectSlug, params!),
     enabled: !!projectSlug && !!params,
   })
@@ -214,15 +226,15 @@ export function useColumnRotationsPlotData(
 
 export function usePushoverCases(projectSlug: string, resultSetId?: number) {
   return useQuery({
-    queryKey: ['pushoverCases', projectSlug, resultSetId],
+    queryKey: queryKeys.pushoverCases(projectSlug, resultSetId),
     queryFn: () => resultsApi.getPushoverCases(projectSlug, resultSetId),
-    enabled: !!projectSlug,
+    enabled: !!projectSlug && !!resultSetId,
   })
 }
 
 export function usePushoverCurve(projectSlug: string, caseId: number | null) {
   return useQuery({
-    queryKey: ['pushoverCurve', projectSlug, caseId],
+    queryKey: queryKeys.pushoverCurve(projectSlug, caseId),
     queryFn: () => resultsApi.getPushoverCurve(projectSlug, caseId!),
     enabled: !!projectSlug && !!caseId,
   })
@@ -233,31 +245,24 @@ export function useAllPushoverCurves(
   resultSetId: number | undefined,
   direction: string | null
 ) {
-  const { data: casesData } = usePushoverCases(projectSlug, resultSetId)
-  const filteredCases = (casesData?.pushover_cases ?? []).filter(
-    (pc) => pc.direction === direction
-  )
+  const batchParams =
+    resultSetId && direction
+      ? {
+          result_set_id: resultSetId,
+          direction,
+        }
+      : null
 
-  const curveQueries = useQueries({
-    queries: filteredCases.map((pc) => ({
-      queryKey: ['pushoverCurve', projectSlug, pc.id],
-      queryFn: () => resultsApi.getPushoverCurve(projectSlug, pc.id),
-      enabled: !!projectSlug && !!direction,
-    })),
+  const batchQuery = useQuery({
+    queryKey: queryKeys.pushoverCurvesBatch(projectSlug, batchParams),
+    queryFn: () => resultsApi.getPushoverCurvesBatch(projectSlug, batchParams!),
+    enabled: !!projectSlug && !!batchParams,
   })
 
-  const isLoading = curveQueries.some((q) => q.isLoading)
-  const curves = curveQueries
-    .map((q, idx) => {
-      if (!q.data) return null
-      return {
-        name: filteredCases[idx].name,
-        points: q.data.points,
-      }
-    })
-    .filter((c): c is NonNullable<typeof c> => c !== null)
-
-  return { curves, isLoading }
+  return {
+    curves: mapPushoverCurvesToChartCurves(batchQuery.data?.curves ?? []),
+    isLoading: batchQuery.isLoading || batchQuery.isFetching,
+  }
 }
 
 // --- Time-Series ---
@@ -267,7 +272,7 @@ export function useTimeSeriesAllTypes(
   params: resultsApi.TimeSeriesAllTypesParams | null
 ) {
   return useQuery({
-    queryKey: ['timeSeriesAllTypes', projectSlug, params],
+    queryKey: queryKeys.timeSeriesAllTypes(projectSlug, params),
     queryFn: () => resultsApi.getTimeSeriesAllTypes(projectSlug, params!),
     enabled: !!projectSlug && !!params,
     staleTime: 10 * 60 * 1000,
@@ -276,9 +281,9 @@ export function useTimeSeriesAllTypes(
 
 export function useTimeSeriesLoadCases(projectSlug: string, resultSetId?: number) {
   return useQuery({
-    queryKey: ['timeSeriesLoadCases', projectSlug, resultSetId],
+    queryKey: queryKeys.timeSeriesLoadCases(projectSlug, resultSetId),
     queryFn: () => resultsApi.getTimeSeriesLoadCases(projectSlug, resultSetId),
-    enabled: !!projectSlug,
+    enabled: !!projectSlug && !!resultSetId,
   })
 }
 
@@ -287,7 +292,7 @@ export function useTimeSeriesData(
   params: resultsApi.TimeSeriesParams | null
 ) {
   return useQuery({
-    queryKey: ['timeSeriesData', projectSlug, params],
+    queryKey: queryKeys.timeSeriesData(projectSlug, params),
     queryFn: () => resultsApi.getTimeSeriesData(projectSlug, params!),
     enabled: !!projectSlug && !!params,
     staleTime: 10 * 60 * 1000, // 10 minutes - time-series data is large, cache longer

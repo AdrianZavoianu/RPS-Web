@@ -2,13 +2,16 @@
 
 import logging
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Callable, List, Optional
 
 from django.db import transaction
 
 from apps.importer.models import ImportJob
 from apps.importer.parsers.excel_parser import ExcelParser
 from apps.results.models import PushoverCase, PushoverCurvePoint, ResultSet
+
+from .import_contracts import PushoverCurveImportStats
+from .utils import append_import_error_with_log
 
 logger = logging.getLogger(__name__)
 
@@ -20,10 +23,10 @@ def run_pushover_import(
     result_set_name: str,
     result_set_id: Optional[int],
     progress_callback: Callable[[str, int, int], None],
-) -> Dict:
+) -> PushoverCurveImportStats:
     """Import pushover curve data from uploaded files."""
     project = job.project
-    stats = {
+    stats: PushoverCurveImportStats = {
         "files_processed": 0,
         "files_total": len(files),
         "pushover_cases_imported": 0,
@@ -93,13 +96,15 @@ def run_pushover_import(
 
                     # Create curve points
                     points_to_create = []
-                    for _, row in case_df.iterrows():
+                    for step_number, displacement, base_shear in case_df[
+                        ["Step", "Displacement", "BaseShear"]
+                    ].itertuples(index=False, name=None):
                         points_to_create.append(
                             PushoverCurvePoint(
                                 pushover_case=pushover_case,
-                                step_number=int(row["Step"]),
-                                displacement=float(row["Displacement"]),
-                                base_shear=float(row["BaseShear"]),
+                                step_number=int(step_number),
+                                displacement=float(displacement),
+                                base_shear=float(base_shear),
                             )
                         )
 
@@ -110,7 +115,12 @@ def run_pushover_import(
             stats["files_processed"] += 1
 
         except Exception as exc:
-            stats["errors"].append(f"{file_path.name}: {str(exc)}")
-            logger.exception("Error processing pushover file %s", file_path.name)
+            append_import_error_with_log(
+                stats=stats,
+                source=file_path.name,
+                exc=exc,
+                logger=logger,
+                log_template="Error processing pushover file %s",
+            )
 
     return stats

@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, Optional
 
-from apps.results.models import JointResultsCache
+from apps.results.data import JointResultsCacheRepository
 
 from ..datasets import ResultDataset
 from .common import build_summary_columns, sort_load_case_columns
@@ -23,12 +23,14 @@ def _resolve_joint_cache_type(service, result_set_id: int, result_type: str) -> 
     if "_" not in result_type:
         candidates.extend([f"{result_type}_Min", f"{result_type}_Max"])
 
+    available_types = JointResultsCacheRepository.list_available_result_types(
+        service.project,
+        result_set_id=result_set_id,
+        candidates=candidates,
+    )
+
     for candidate in candidates:
-        if JointResultsCache.objects.filter(
-            project=service.project,
-            result_set_id=result_set_id,
-            result_type=candidate,
-        ).exists():
+        if candidate in available_types:
             return candidate
     return None
 
@@ -44,11 +46,11 @@ def get_joint_results(
     if not resolved_result_type:
         return None
 
-    cache_entries = JointResultsCache.objects.filter(
-        project=service.project,
+    cache_entries = JointResultsCacheRepository.list_entries(
+        service.project,
         result_set_id=result_set_id,
         result_type=resolved_result_type,
-    ).order_by("unique_name")
+    )
 
     rows = []
     load_case_set = set()

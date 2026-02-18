@@ -72,3 +72,8 @@ jobs:
         env:
           DJANGO_SETTINGS_MODULE: rps.settings.test
         run: pipenv run python manage.py test apps.importer.tests.test_bulk_writes
+
+      - name: API smoke tests
+        env:
+          DJANGO_SETTINGS_MODULE: rps.settings.test
+        run: pipenv run python manage.py test apps.importer.tests.test_api_smoke

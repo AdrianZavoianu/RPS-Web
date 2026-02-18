@@ -2,10 +2,7 @@
 
 from typing import Any, Dict, List, Set
 
-from apps.projects.models import LoadCase, Project, Story
 from apps.results.models import (
-    ResultCategory,
-    ResultSet,
     StoryAcceleration,
     StoryDisplacement,
     StoryDrift,
@@ -14,99 +11,64 @@ from apps.results.models import (
 
 from .bulk_writes import bulk_create_strict
 from .global_aggregation import aggregate_by_step_type, parse_numeric, resolve_bounds
-
-
-def get_or_create_story(
-    project: Project, story_name: str, sort_order: int, stories_map: Dict
-) -> Story:
-    """Get or create a Story, using cache."""
-    if story_name in stories_map:
-        return stories_map[story_name]
-
-    story, _ = Story.objects.get_or_create(
-        project=project,
-        name=story_name,
-        defaults={"sort_order": sort_order},
-    )
-    stories_map[story_name] = story
-    return story
-
-
-def get_or_create_load_case(project: Project, case_name: str, load_cases_map: Dict) -> LoadCase:
-    """Get or create a LoadCase, using cache."""
-    if case_name in load_cases_map:
-        return load_cases_map[case_name]
-
-    load_case, _ = LoadCase.objects.get_or_create(
-        project=project,
-        name=case_name,
-        defaults={"case_type": "Time History"},
-    )
-    load_cases_map[case_name] = load_case
-    return load_case
+from .import_context import ImportContext
 
 
 def import_story_drifts(
-    project: Project,
-    result_set: ResultSet,
-    result_category: ResultCategory,
+    context: ImportContext,
     df,
     load_cases: List[str],
     story_index: Dict[str, int],
     allowed_load_cases: Set[str],
-    stories_map: Dict,
-    load_cases_map: Dict,
 ):
     """Import story drift data with Max/Min computation."""
-    if df.empty:
+    del load_cases  # kept in signature for call-site parity
+
+    if df.empty or not allowed_load_cases:
         return
 
-    drift_data: Dict[tuple, List[float]] = {}
-    story_meta: Dict[tuple, tuple] = {}
+    if "Output Case" not in df.columns:
+        return
 
-    for _, row in df.iterrows():
-        case_name = row.get("Output Case")
-        if case_name not in allowed_load_cases:
-            continue
+    filtered = df[df["Output Case"].isin(allowed_load_cases)].copy()
+    if filtered.empty:
+        return
 
-        story_name = row.get("Story")
-        direction = row.get("Direction", "X")
-        drift_value = row.get("Drift", 0)
+    if "Direction" not in filtered.columns:
+        filtered["Direction"] = "X"
+    if "Story" not in filtered.columns:
+        filtered["Story"] = None
 
-        if drift_value is None:
-            continue
-        try:
-            drift_float = float(drift_value)
-            if drift_float != drift_float:  # NaN
-                continue
-        except (ValueError, TypeError):
-            continue
+    if "Drift" in filtered.columns:
+        filtered["_drift_value"] = filtered["Drift"].map(parse_numeric)
+    else:
+        filtered["_drift_value"] = 0.0
 
-        key = (story_name, direction, case_name)
-        if key not in drift_data:
-            drift_data[key] = []
-            story_meta[key] = (story_name, direction, case_name)
-        drift_data[key].append(float(drift_value))
+    filtered = filtered[filtered["_drift_value"].notna()]
+    if filtered.empty:
+        return
+
+    grouped = (
+        filtered.groupby(["Story", "Direction", "Output Case"], sort=False, dropna=False)[
+            "_drift_value"
+        ]
+        .agg(["max", "min"])
+        .reset_index()
+    )
 
     objects_to_create = []
-    for key, values in drift_data.items():
-        story_name, direction, case_name = story_meta[key]
-        if not values:
-            continue
-
-        max_val = max(values)
-        min_val = min(values)
-        abs_max = max(abs(v) for v in values)
+    for story_name, direction, case_name, max_val, min_val in grouped.itertuples(index=False):
+        abs_max = max(abs(max_val), abs(min_val))
 
         sort_order = story_index.get(story_name, 0)
-        story = get_or_create_story(project, story_name, sort_order, stories_map)
-        load_case = get_or_create_load_case(project, case_name, load_cases_map)
+        story = context.get_or_create_story(story_name, sort_order)
+        load_case = context.get_or_create_load_case(case_name)
 
         objects_to_create.append(
             StoryDrift(
                 story=story,
                 load_case=load_case,
-                result_category=result_category,
+                result_category=context.result_category,
                 direction=direction,
                 story_sort_order=sort_order,
                 drift=abs_max,
@@ -130,17 +92,15 @@ def import_story_drifts(
 
 
 def import_story_accelerations(
-    project: Project,
-    result_set: ResultSet,
-    result_category: ResultCategory,
+    context: ImportContext,
     df,
     load_cases: List[str],
     story_index: Dict[str, int],
     allowed_load_cases: Set[str],
-    stories_map: Dict,
-    load_cases_map: Dict,
 ):
     """Import story acceleration data using Step Type Max/Min rows."""
+    del load_cases  # kept in signature for call-site parity
+
     if df.empty:
         return
 
@@ -166,14 +126,14 @@ def import_story_accelerations(
         resolved_max, resolved_min = resolved_bounds
 
         sort_order = story_index.get(story_name, 0)
-        story = get_or_create_story(project, story_name, sort_order, stories_map)
-        load_case = get_or_create_load_case(project, case_name, load_cases_map)
+        story = context.get_or_create_story(story_name, sort_order)
+        load_case = context.get_or_create_load_case(case_name)
 
         objects_to_create.append(
             StoryAcceleration(
                 story=story,
                 load_case=load_case,
-                result_category=result_category,
+                result_category=context.result_category,
                 direction=direction,
                 story_sort_order=sort_order,
                 acceleration=max(abs(resolved_max), abs(resolved_min)),
@@ -197,17 +157,15 @@ def import_story_accelerations(
 
 
 def import_story_forces(
-    project: Project,
-    result_set: ResultSet,
-    result_category: ResultCategory,
+    context: ImportContext,
     df,
     load_cases: List[str],
     story_index: Dict[str, int],
     allowed_load_cases: Set[str],
-    stories_map: Dict,
-    load_cases_map: Dict,
 ):
     """Import story force data with Max/Min from Step Type rows."""
+    del load_cases  # kept in signature for call-site parity
+
     if df.empty:
         return
 
@@ -229,14 +187,14 @@ def import_story_forces(
 
         abs_envelope = max(abs(resolved_max), abs(resolved_min))
         sort_order = story_index.get(story_name, 0)
-        story = get_or_create_story(project, story_name, sort_order, stories_map)
-        load_case = get_or_create_load_case(project, case_name, load_cases_map)
+        story = context.get_or_create_story(story_name, sort_order)
+        load_case = context.get_or_create_load_case(case_name)
 
         objects_to_create.append(
             StoryForce(
                 story=story,
                 load_case=load_case,
-                result_category=result_category,
+                result_category=context.result_category,
                 direction=direction,
                 location=location,
                 story_sort_order=sort_order,
@@ -262,17 +220,15 @@ def import_story_forces(
 
 
 def import_story_displacements(
-    project: Project,
-    result_set: ResultSet,
-    result_category: ResultCategory,
+    context: ImportContext,
     df,
     load_cases: List[str],
     story_index: Dict[str, int],
     allowed_load_cases: Set[str],
-    stories_map: Dict,
-    load_cases_map: Dict,
 ):
     """Import story displacement data with Max/Min from Step Type rows."""
+    del load_cases  # kept in signature for call-site parity
+
     if df.empty:
         return
 
@@ -293,14 +249,14 @@ def import_story_displacements(
 
         abs_envelope = max(abs(resolved_max), abs(resolved_min))
         sort_order = story_index.get(story_name, 0)
-        story = get_or_create_story(project, story_name, sort_order, stories_map)
-        load_case = get_or_create_load_case(project, case_name, load_cases_map)
+        story = context.get_or_create_story(story_name, sort_order)
+        load_case = context.get_or_create_load_case(case_name)
 
         objects_to_create.append(
             StoryDisplacement(
                 story=story,
                 load_case=load_case,
-                result_category=result_category,
+                result_category=context.result_category,
                 direction=direction,
                 story_sort_order=sort_order,
                 displacement=abs_envelope,

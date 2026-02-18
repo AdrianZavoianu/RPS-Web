@@ -2,8 +2,10 @@
 Result type configurations.
 Ported from RPS_desktop/src/config/result_config.py
 """
+from functools import lru_cache
+from importlib import import_module
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple, Type
 
 
 @dataclass
@@ -306,6 +308,118 @@ def _build_result_type_config() -> Dict[str, Dict]:
 
 # Canonical API/service result type configuration.
 RESULT_TYPE_CONFIG = _build_result_type_config()
+
+
+# Print-optimized palette used in backend report charts.
+PLOT_COLORS = [
+    "#dc2626",  # red
+    "#2563eb",  # blue
+    "#16a34a",  # green
+    "#ea580c",  # orange
+    "#9333ea",  # purple
+    "#0891b2",  # cyan
+    "#ca8a04",  # yellow
+    "#db2777",  # pink
+    "#4f46e5",  # indigo
+    "#059669",  # emerald
+    "#d97706",  # amber
+    "#7c3aed",  # violet
+]
+
+
+_AVAILABILITY_MODEL_PATHS: Dict[str, Dict[str, Tuple[str, str]]] = {
+    "global": {
+        "Drifts": ("apps.results.models.StoryDrift", "story__project"),
+        "Accelerations": ("apps.results.models.StoryAcceleration", "story__project"),
+        "Forces": ("apps.results.models.StoryForce", "story__project"),
+        "Displacements": ("apps.results.models.StoryDisplacement", "story__project"),
+    },
+    "element": {
+        "WallShears": ("apps.results.models.WallShear", "element__project"),
+        "QuadRotations": ("apps.results.models.QuadRotation", "element__project"),
+        "ColumnShears": ("apps.results.models.ColumnShear", "element__project"),
+        "ColumnAxials": ("apps.results.models.ColumnAxial", "element__project"),
+        "ColumnRotations": ("apps.results.models.ColumnRotation", "element__project"),
+        "BeamRotations": ("apps.results.models.BeamRotation", "element__project"),
+    },
+    "joint": {
+        "SoilPressures": ("apps.results.models.SoilPressure", "project"),
+        "VerticalDisplacements": ("apps.results.models.VerticalDisplacement", "project"),
+    },
+}
+
+_MAXMIN_RAW_SOURCE_PATHS: Dict[str, Tuple[str, str, str, str]] = {
+    "Drifts": ("apps.results.models.StoryDrift", "drift", "max_drift", "min_drift"),
+    "Accelerations": (
+        "apps.results.models.StoryAcceleration",
+        "acceleration",
+        "max_acceleration",
+        "min_acceleration",
+    ),
+    "Forces": ("apps.results.models.StoryForce", "force", "max_force", "min_force"),
+    "Displacements": (
+        "apps.results.models.StoryDisplacement",
+        "displacement",
+        "max_displacement",
+        "min_displacement",
+    ),
+}
+
+
+AvailabilityMap = Dict[str, Tuple[Type[Any], str]]
+MaxMinRawSourceMap = Dict[str, Tuple[Type[Any], str, str, str]]
+
+
+def _resolve_dotted_path(path: str) -> Type[Any]:
+    """Resolve dotted-path references to imported class objects."""
+    module_path, class_name = path.rsplit(".", 1)
+    return getattr(import_module(module_path), class_name)
+
+
+@lru_cache(maxsize=1)
+def _build_availability_maps() -> Dict[str, AvailabilityMap]:
+    resolved_maps: Dict[str, AvailabilityMap] = {}
+    for category, mappings in _AVAILABILITY_MODEL_PATHS.items():
+        resolved_maps[category] = {
+            result_type: (_resolve_dotted_path(model_path), project_field)
+            for result_type, (model_path, project_field) in mappings.items()
+        }
+    return resolved_maps
+
+
+@lru_cache(maxsize=1)
+def _build_maxmin_raw_source_map() -> MaxMinRawSourceMap:
+    resolved: MaxMinRawSourceMap = {}
+    for result_type, (model_path, primary_field, max_field, min_field) in _MAXMIN_RAW_SOURCE_PATHS.items():
+        resolved[result_type] = (
+            _resolve_dotted_path(model_path),
+            primary_field,
+            max_field,
+            min_field,
+        )
+    return resolved
+
+
+def get_maxmin_raw_source(result_type: str) -> Optional[Tuple[Type[Any], str, str, str]]:
+    """Get max/min source mapping: (model, primary_field, max_field, min_field)."""
+    return _build_maxmin_raw_source_map().get(result_type)
+
+
+def get_availability_map(category: str) -> AvailabilityMap:
+    """Get availability map for a category: global, element, or joint."""
+    maps = _build_availability_maps()
+    if category not in maps:
+        raise ValueError(f"Unknown availability category '{category}'")
+    return maps[category]
+
+
+def get_plot_color(index: int) -> str:
+    """Get deterministic plot color by index."""
+    if index < 0:
+        raise ValueError("index must be non-negative")
+    if not PLOT_COLORS:
+        raise ValueError("PLOT_COLORS is empty")
+    return PLOT_COLORS[index % len(PLOT_COLORS)]
 
 
 def get_config(result_type: str) -> Optional[ResultTypeConfig]:

@@ -1,0 +1,17 @@
+{
+  "generated_at": "2026-02-17T08:03:15Z",
+  "bundle": {
+    "asset_file_count": 40,
+    "total_asset_bytes": 1916462,
+    "total_js_bytes": 1588439,
+    "total_css_bytes": 106780,
+    "largest_asset": {
+      "path": "frontend/dist/assets/plotly-vendor-_KaW0dHB.js",
+      "bytes": 1098900
+    }
+  },
+  "backend": {
+    "status": "blocked",
+    "reason": "Missing runtime dependencies (django, celery) and offline environment prevented pipenv sync."
+  }
+}

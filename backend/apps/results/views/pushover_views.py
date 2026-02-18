@@ -5,7 +5,9 @@ from rest_framework import permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ..models import PushoverCase, PushoverCurvePoint
+from ..models import PushoverCase
+from ..services.pushover_service import get_curve_data_for_case, get_curves_batch_data
+from .decorators import validated_result_params
 from .mixins import ProjectResultsMixin
 
 
@@ -45,27 +47,26 @@ class PushoverCurveView(ProjectResultsMixin, APIView):
         project = self.get_project()
 
         case = get_object_or_404(PushoverCase, id=case_id, project=project)
-        points = list(PushoverCurvePoint.objects.filter(pushover_case=case).order_by("step_number"))
+        return Response(get_curve_data_for_case(case))
 
-        reference_displacement = 0.0
-        if points:
-            step_zero_point = next((p for p in points if p.step_number == 0), points[0])
-            reference_displacement = float(step_zero_point.displacement)
 
-        curve_data = {
-            "case": {
-                "id": case.id,
-                "name": case.name,
-                "direction": case.direction,
-            },
-            "points": [
-                {
-                    "step": p.step_number,
-                    "displacement": float(p.displacement) - reference_displacement,
-                    "base_shear": p.base_shear,
-                }
-                for p in points
-            ],
-        }
+class PushoverCurvesBatchView(ProjectResultsMixin, APIView):
+    """
+    Get all pushover curves for a result set and direction in a single request.
 
-        return Response(curve_data)
+    Query params:
+    - result_set_id: Required
+    - direction: Required ('X' / 'Y' / 'XY')
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @validated_result_params("result_set_id", "direction")
+    def get(self, request, project_slug, validated_params):
+        project = self.get_project()
+        curves = get_curves_batch_data(
+            project=project,
+            result_set_id=validated_params["result_set_id"],
+            direction=validated_params["direction"],
+        )
+        return Response({"curves": curves})

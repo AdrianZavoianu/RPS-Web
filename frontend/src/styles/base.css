@@ -1,0 +1,26 @@
+body {
+  @apply bg-bg-primary text-text-primary font-sans;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-bg-primary;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-border-default rounded;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-text-muted;
+}
+
+*:focus-visible {
+  @apply outline-none ring-2 ring-accent-primary ring-offset-2 ring-offset-bg-primary;
+}

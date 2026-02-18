@@ -1,33 +1,11 @@
-export const PROFILE_SERIES_COLORS = [
-  '#ff4757',
-  '#1e90ff',
-  '#2ed573',
-  '#ff6348',
-  '#a29bfe',
-  '#00d2d3',
-  '#ffa502',
-  '#ff6b81',
-  '#5f27cd',
-  '#01a3a4',
-  '#48dbfb',
-  '#c44569',
-  '#f8b500',
-]
+import {
+  COMPARISON_SERIES_PALETTE,
+  PROFILE_SERIES_PALETTE,
+  ROTATION_COMPARISON_PALETTE,
+} from './colors'
 
-export const COMPARISON_SERIES_COLORS = [
-  '#4a7d89',
-  '#67e8f9',
-  '#f59e0b',
-  '#10b981',
-  '#ef4444',
-  '#3b82f6',
-]
+export const PROFILE_SERIES_COLORS = [...PROFILE_SERIES_PALETTE]
 
-export const ROTATION_COMPARISON_COLORS = [
-  '#f97316',
-  '#3b82f6',
-  '#fb923c',
-  '#60a5fa',
-  '#f59e0b',
-  '#93c5fd',
-]
+export const COMPARISON_SERIES_COLORS = [...COMPARISON_SERIES_PALETTE]
+
+export const ROTATION_COMPARISON_COLORS = [...ROTATION_COMPARISON_PALETTE]

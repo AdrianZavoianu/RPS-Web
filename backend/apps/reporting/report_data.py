@@ -18,6 +18,11 @@ from apps.results.models import (
     VerticalDisplacement,
 )
 from apps.results.services import ResultDataService
+from apps.results.services.data_assembler import (
+    add_summary_metrics,
+    build_abs_scatter_data,
+    select_top_rows_by_abs_avg,
+)
 from apps.results.services.providers.common import sort_load_case_columns
 
 logger = logging.getLogger(__name__)
@@ -49,19 +54,15 @@ class ReportDataService:
         if not rows and not plot_data:
             return None
 
-        # Compute summary columns
-        for row in rows:
-            numeric = [
-                float(row[lc])
-                for lc in load_case_columns
-                if isinstance(row.get(lc), (int, float))
-            ]
-            if numeric:
-                row["Avg"] = sum(numeric) / len(numeric)
-                row["Max"] = max(numeric)
-                row["Min"] = min(numeric)
-
-        top_10 = self._top_10_by_abs_avg(rows, load_case_columns)
+        add_summary_metrics(
+            rows=rows,
+            load_case_columns=load_case_columns,
+            include_avg=True,
+        )
+        top_10 = select_top_rows_by_abs_avg(
+            rows=rows,
+            load_case_columns=load_case_columns,
+        )
 
         if is_pushover:
             for row in top_10:
@@ -94,8 +95,8 @@ class ReportDataService:
             .select_related("element", "story")
             .order_by("story_sort_order", "element__name")
         )
-
-        if not cache_entries.exists():
+        cache_entries = list(cache_entries)
+        if not cache_entries:
             return [], [], ["Frame/Wall", "Story"]
 
         rows_map: Dict[tuple, Dict[str, Any]] = {}
@@ -151,19 +152,15 @@ class ReportDataService:
         if not rows and not plot_data:
             return None
 
-        # Compute summary columns
-        for row in rows:
-            numeric = [
-                float(row[lc])
-                for lc in load_case_columns
-                if isinstance(row.get(lc), (int, float))
-            ]
-            if numeric:
-                row["Avg"] = sum(numeric) / len(numeric)
-                row["Max"] = max(numeric)
-                row["Min"] = min(numeric)
-
-        top_10 = self._top_10_by_abs_avg(rows, load_case_columns)
+        add_summary_metrics(
+            rows=rows,
+            load_case_columns=load_case_columns,
+            include_avg=True,
+        )
+        top_10 = select_top_rows_by_abs_avg(
+            rows=rows,
+            load_case_columns=load_case_columns,
+        )
 
         if is_pushover:
             for row in top_10:
@@ -196,8 +193,8 @@ class ReportDataService:
             .select_related("element", "story")
             .order_by("story_sort_order", "element__name")
         )
-
-        if not cache_entries.exists():
+        cache_entries = list(cache_entries)
+        if not cache_entries:
             return [], []
 
         rows_map: Dict[tuple, Dict[str, Any]] = {}
@@ -233,8 +230,8 @@ class ReportDataService:
             .select_related("story", "load_case", "element")
             .order_by("story_sort_order", "element__name", "load_case__name")
         )
-
-        if not records.exists():
+        records = list(records)
+        if not records:
             return [], []
 
         rows_map: Dict[tuple, Dict[str, Any]] = {}
@@ -295,20 +292,15 @@ class ReportDataService:
         if not rows:
             return None
 
-        # Compute Avg/Max/Min for soil pressures (joint_provider skips these)
-        for row in rows:
-            numeric = [
-                float(row[lc])
-                for lc in load_case_columns
-                if isinstance(row.get(lc), (int, float))
-            ]
-            if numeric:
-                if not is_pushover:
-                    row["Avg"] = sum(numeric) / len(numeric)
-                row["Max"] = max(numeric)
-                row["Min"] = min(numeric)
-
-        top_10 = self._top_10_by_abs_avg(rows, load_case_columns)
+        add_summary_metrics(
+            rows=rows,
+            load_case_columns=load_case_columns,
+            include_avg=not is_pushover,
+        )
+        top_10 = select_top_rows_by_abs_avg(
+            rows=rows,
+            load_case_columns=load_case_columns,
+        )
 
         if is_pushover:
             for row in top_10:
@@ -317,15 +309,10 @@ class ReportDataService:
         else:
             summary_cols = ["Avg", "Max", "Min"]
 
-        # Build scatter data by load case index: [(load_case_index, abs_value), ...]
-        plot_data: List[Dict[str, Any]] = []
-        for lc_idx, lc_name in enumerate(load_case_columns):
-            for row in rows:
-                value = row.get(lc_name)
-                if isinstance(value, (int, float)):
-                    plot_data.append(
-                        {"load_case_idx": lc_idx, "value": abs(float(value))}
-                    )
+        plot_data = build_abs_scatter_data(
+            rows=rows,
+            load_case_columns=load_case_columns,
+        )
 
         return {
             "top_10": top_10,
@@ -342,8 +329,8 @@ class ReportDataService:
             project=self.project,
             result_set_id=result_set_id,
         ).select_related("load_case")
-
-        if not records.exists():
+        records = list(records)
+        if not records:
             return [], []
 
         rows_map: Dict[str, Dict[str, Any]] = {}
@@ -388,20 +375,15 @@ class ReportDataService:
         if not rows:
             return None
 
-        # Compute Avg/Max/Min for vertical displacements.
-        for row in rows:
-            numeric = [
-                float(row[lc])
-                for lc in load_case_columns
-                if isinstance(row.get(lc), (int, float))
-            ]
-            if numeric:
-                if not is_pushover:
-                    row["Avg"] = sum(numeric) / len(numeric)
-                row["Max"] = max(numeric)
-                row["Min"] = min(numeric)
-
-        top_10 = self._top_10_by_abs_avg(rows, load_case_columns)
+        add_summary_metrics(
+            rows=rows,
+            load_case_columns=load_case_columns,
+            include_avg=not is_pushover,
+        )
+        top_10 = select_top_rows_by_abs_avg(
+            rows=rows,
+            load_case_columns=load_case_columns,
+        )
 
         if is_pushover:
             for row in top_10:
@@ -410,15 +392,10 @@ class ReportDataService:
         else:
             summary_cols = ["Avg", "Max", "Min"]
 
-        # Build scatter data by load case index: [(load_case_index, abs_value), ...]
-        plot_data: List[Dict[str, Any]] = []
-        for lc_idx, lc_name in enumerate(load_case_columns):
-            for row in rows:
-                value = row.get(lc_name)
-                if isinstance(value, (int, float)):
-                    plot_data.append(
-                        {"load_case_idx": lc_idx, "value": abs(float(value))}
-                    )
+        plot_data = build_abs_scatter_data(
+            rows=rows,
+            load_case_columns=load_case_columns,
+        )
 
         return {
             "top_10": top_10,
@@ -435,8 +412,8 @@ class ReportDataService:
             project=self.project,
             result_set_id=result_set_id,
         ).select_related("load_case")
-
-        if not records.exists():
+        records = list(records)
+        if not records:
             return [], []
 
         rows_map: Dict[str, Dict[str, Any]] = {}
@@ -461,20 +438,4 @@ class ReportDataService:
     # Helpers
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _top_10_by_abs_avg(
-        rows: List[Dict[str, Any]], load_case_columns: List[str]
-    ) -> List[Dict[str, Any]]:
-        """Select top 10 rows by absolute average across load cases."""
-        scored = []
-        for row in rows:
-            numeric = [
-                abs(float(row[lc]))
-                for lc in load_case_columns
-                if isinstance(row.get(lc), (int, float))
-            ]
-            abs_avg = sum(numeric) / len(numeric) if numeric else 0.0
-            scored.append((abs_avg, row))
-
-        scored.sort(key=lambda x: x[0], reverse=True)
-        return [dict(row) for _, row in scored[:10]]
+    # Shared top-N and summary helpers are provided by results.services.data_assembler.

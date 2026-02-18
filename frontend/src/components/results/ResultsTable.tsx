@@ -16,7 +16,7 @@ import {
 import clsx from 'clsx'
 import type { ResultDataset } from '../../types'
 import { getGradientColor, getMinMax } from '../../utils/gradients'
-import { getResultTypeDecimals } from '../../utils/resultConfig'
+import { collectNumericValues, formatResultValue } from './tableUtils'
 
 interface ResultsTableProps {
   dataset: ResultDataset
@@ -91,22 +91,12 @@ function ResultsTableComponent({
 
   // Calculate min/max for gradient coloring across all load case columns
   const { globalMinMax } = useMemo(() => {
-    const allValues: number[] = []
-
-    // Collect values from load case columns only
-    for (const lc of loadCaseColumns) {
-      for (const row of dataset.rows) {
-        const val = row[lc] as number | null
-        if (val !== null && val !== undefined && !isNaN(val)) {
-          allValues.push(val)
-        }
-      }
-    }
+    const allValues = collectNumericValues(dataset.rows, loadCaseColumns)
 
     return {
       globalMinMax: getMinMax(allValues),
     }
-  }, [dataset, loadCaseColumns])
+  }, [dataset.rows, loadCaseColumns])
 
   const columns = useMemo(() => {
     const cols = []
@@ -134,7 +124,7 @@ function ResultsTableComponent({
             const value = info.getValue() as number | null
             if (value === null || value === undefined) return '-'
 
-            const formatted = formatValue(value, resultType)
+            const formatted = formatResultValue(value, resultType)
 
             if (showGradient) {
               const textColor = getGradientColor(
@@ -169,7 +159,7 @@ function ResultsTableComponent({
             if (value === null || value === undefined) return '-'
             return (
               <span className="results-table-summary">
-                {formatValue(value, resultType)}
+                {formatResultValue(value, resultType)}
               </span>
             )
           },
@@ -314,11 +304,6 @@ function ResultsTableComponent({
       </table>
     </div>
   )
-}
-
-function formatValue(value: number, resultType?: string): string {
-  const decimals = getResultTypeDecimals(resultType)
-  return value.toFixed(decimals)
 }
 
 export const ResultsTable = memo(ResultsTableComponent)

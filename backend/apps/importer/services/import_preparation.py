@@ -113,13 +113,13 @@ class ImportPreparationService:
                             load_cases_by_sheet[sheet_name] = load_cases
                             sheets_found.append(f"{sheet_name}({len(load_cases)})")
                     except Exception as exc:
-                        sheets_errored.append(f"{sheet_name}: {str(exc)[:30]}")
+                        sheets_errored.append(self._format_scan_error(sheet_name, exc))
 
                 if "Fou" in available_sheets:
                     try:
                         foundation_joints = parser.get_foundation_joints()
                     except Exception as exc:
-                        sheets_errored.append(f"Fou: {str(exc)[:30]}")
+                        sheets_errored.append(self._format_scan_error("Foundation joints", exc))
 
                 if "Joint Displacements" in available_sheets:
                     if result_types_lower is None or "vertical displacements" in result_types_lower:
@@ -131,7 +131,9 @@ class ImportPreparationService:
                                 load_cases_by_sheet["Vertical Displacements"] = load_cases
                                 sheets_found.append(f"Vertical Displacements({len(load_cases)})")
                         except Exception as exc:
-                            sheets_errored.append(f"Joint Displacements: {str(exc)[:30]}")
+                            sheets_errored.append(
+                                self._format_scan_error("Joint Displacements", exc)
+                            )
             finally:
                 parser.close()
 
@@ -248,6 +250,10 @@ class ImportPreparationService:
             _, load_cases, _ = parser.get_soil_pressures()
             return load_cases
         return []
+
+    @staticmethod
+    def _format_scan_error(context: str, exc: Exception) -> str:
+        return f"{context}: {exc}"
 
 
 def detect_conflicts(
