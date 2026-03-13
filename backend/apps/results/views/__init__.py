@@ -3,6 +3,7 @@
 from .beam_views import BeamRotationsPlotDataView, BeamRotationsTableDataView
 from .chart_views import ChartDataView, TimeSeriesAllTypesView, TimeSeriesDataView, TimeSeriesLoadCasesView
 from .column_views import ColumnRotationsPlotDataView
+from .quad_views import QuadRotationsPlotDataView
 from .comparison_views import ComparisonDataView, MaxMinDataView
 from .element_views import ElementListView, ElementResultsDataView
 from .global_views import GlobalResultsDataView
@@ -29,6 +30,7 @@ __all__ = [
     "PushoverCasesView",
     "PushoverCurveView",
     "PushoverCurvesBatchView",
+    "QuadRotationsPlotDataView",
     "ResultTypeMetadataView",
     "ResultTreeMetadataView",
     "ResultSetViewSet",

@@ -147,19 +147,45 @@ class ApiClient {
   }
 
   private extractErrorDetail(payload: unknown): string | null {
+    if (typeof payload === 'string') {
+      const normalized = payload.trim()
+      return normalized.length > 0 ? normalized : null
+    }
+
+    if (Array.isArray(payload)) {
+      for (const item of payload) {
+        const detail = this.extractErrorDetail(item)
+        if (detail) {
+          return detail
+        }
+      }
+      return null
+    }
+
     if (!payload || typeof payload !== 'object') {
       return null
     }
-    const body = payload as { detail?: unknown; error?: unknown; message?: unknown }
-    const candidates = [body.detail, body.error, body.message]
-    for (const candidate of candidates) {
-      if (typeof candidate === 'string' && candidate.length > 0) {
-        return candidate
+
+    const body = payload as Record<string, unknown>
+    const preferredKeys = ['message', 'detail', 'error', 'non_field_errors', 'details']
+
+    for (const key of preferredKeys) {
+      if (!(key in body)) {
+        continue
       }
-      if (Array.isArray(candidate) && candidate.length > 0 && typeof candidate[0] === 'string') {
-        return candidate[0]
+      const detail = this.extractErrorDetail(body[key])
+      if (detail) {
+        return detail
       }
     }
+
+    for (const value of Object.values(body)) {
+      const detail = this.extractErrorDetail(value)
+      if (detail) {
+        return detail
+      }
+    }
+
     return null
   }
 

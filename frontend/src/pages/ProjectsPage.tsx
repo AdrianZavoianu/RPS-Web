@@ -139,7 +139,7 @@ export function ProjectsPage() {
         </div>
       ) : error ? (
         <div className="flex items-center justify-center h-64">
-          <div className="text-red-400">Failed to load projects</div>
+          <div className="text-red-600">Failed to load projects</div>
         </div>
       ) : filteredProjects.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-64">
@@ -202,7 +202,7 @@ export function ProjectsPage() {
             </div>
             <form onSubmit={handleCreateProject} className="space-y-4">
               {createError && (
-                <div className="bg-red-900/20 border border-red-800 text-red-400 px-4 py-3 rounded text-sm">
+                <div className="bg-red-50 border border-red-300 text-red-700 px-4 py-3 rounded text-sm">
                   {createError}
                 </div>
               )}

@@ -278,6 +278,22 @@ export async function getColumnRotationsPlotData(
   )
 }
 
+export interface QuadRotationsParams {
+  result_set_id: number
+}
+
+export async function getQuadRotationsPlotData(
+  projectSlug: string,
+  params: QuadRotationsParams
+): Promise<ColumnRotationsPlotData> {
+  const query = buildQueryParams({
+    result_set_id: params.result_set_id,
+  })
+  return apiClient.get<ColumnRotationsPlotData>(
+    `/projects/${projectSlug}/results/quad-rotations/plot/${query}`
+  )
+}
+
 // --- Pushover ---
 
 export async function getPushoverCases(

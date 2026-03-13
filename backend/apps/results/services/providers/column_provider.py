@@ -9,7 +9,15 @@ from django.db.models import Q
 from apps.results.data import ElementResultsCacheRepository
 from apps.results.models import ColumnRotation
 
+from ..fallback_policy import (
+    FALLBACK_CACHE_ONLY,
+    resolve_fallback,
+)
+from .common import sort_load_case_columns
+
 PLOT_BINS = 50
+TABLE_FIXED_COLUMNS = ["Column", "Story", "Dir"]
+TABLE_SUMMARY_COLUMNS = ["Avg", "Max", "Min"]
 
 
 def _get_column_records(service, result_set_id: int):
@@ -184,11 +192,10 @@ def _build_from_cache(service, result_set_id: int) -> Optional[Dict[str, Any]]:
     )
 
 
-def get_column_rotations_plot_data(service, result_set_id: int) -> Optional[Dict[str, Any]]:
+def _build_plot_from_raw(service, result_set_id: int) -> Optional[Dict[str, Any]]:
     records = list(_get_column_records(service, result_set_id))
     if not records:
-        # Fallback for datasets where raw rows are unavailable but element cache exists.
-        return _build_from_cache(service, result_set_id)
+        return None
 
     story_orders: Dict[str, int] = {}
     directions = set()
@@ -231,3 +238,179 @@ def get_column_rotations_plot_data(service, result_set_id: int) -> Optional[Dict
         max_points=max_points,
         min_points=min_points,
     )
+
+
+def _serialize_table_payload(
+    *,
+    service,
+    result_set_id: int,
+    rows: list[dict[str, Any]],
+    load_case_columns: list[str],
+) -> Dict[str, Any]:
+    summary_columns = TABLE_SUMMARY_COLUMNS if any("Avg" in row for row in rows) else []
+    return {
+        "meta": {
+            "result_type": "ColumnRotationsTable",
+            "result_set_id": result_set_id,
+            "unit": service._build_meta("ColumnRotations", None, result_set_id).unit,
+        },
+        "columns": TABLE_FIXED_COLUMNS + load_case_columns + summary_columns,
+        "rows": rows,
+        "fixed_columns": TABLE_FIXED_COLUMNS,
+        "load_case_columns": load_case_columns,
+        "summary_columns": summary_columns,
+    }
+
+
+def _build_table_from_cache(service, result_set_id: int) -> Optional[Dict[str, Any]]:
+    cache_entries = ElementResultsCacheRepository.list_entries_for_types(
+        service.project,
+        result_set_id=result_set_id,
+        result_types=["ColumnRotations_R2", "ColumnRotations_R3"],
+    )
+    if not cache_entries:
+        return None
+
+    rows: list[tuple[int, dict[str, Any]]] = []
+    load_case_set = set()
+
+    for entry in cache_entries:
+        direction = "R2" if entry.result_type.endswith("_R2") else "R3"
+        row = {
+            "Column": entry.element.name,
+            "Story": entry.story.name,
+            "Dir": direction,
+        }
+
+        for load_case_name, raw_value in (entry.results_matrix or {}).items():
+            try:
+                numeric_value = float(raw_value)
+            except (TypeError, ValueError):
+                continue
+            row[load_case_name] = service._apply_multiplier(numeric_value, "ColumnRotations")
+            load_case_set.add(load_case_name)
+
+        if entry.avg_value is not None:
+            row["Avg"] = service._apply_multiplier(entry.avg_value, "ColumnRotations")
+        if entry.max_value is not None:
+            row["Max"] = service._apply_multiplier(entry.max_value, "ColumnRotations")
+        if entry.min_value is not None:
+            row["Min"] = service._apply_multiplier(entry.min_value, "ColumnRotations")
+
+        sort_order = (
+            entry.story_sort_order
+            if entry.story_sort_order is not None
+            else (entry.story.sort_order if entry.story.sort_order is not None else 0)
+        )
+        rows.append((int(sort_order), row))
+
+    load_case_columns = sort_load_case_columns(list(load_case_set))
+    rows.sort(key=lambda item: (item[0], item[1]["Column"], item[1]["Dir"]))
+    ordered_rows = [row for _, row in rows]
+
+    return _serialize_table_payload(
+        service=service,
+        result_set_id=result_set_id,
+        rows=ordered_rows,
+        load_case_columns=load_case_columns,
+    )
+
+
+def _build_table_from_raw(service, result_set_id: int) -> Optional[Dict[str, Any]]:
+    records = list(_get_column_records(service, result_set_id))
+    if not records:
+        return None
+
+    rows_map: Dict[tuple[str, str, str], dict[str, Any]] = {}
+    row_sort_order: Dict[tuple[str, str, str], int] = {}
+    load_case_set = set()
+
+    for record in records:
+        direction = (record.direction or "").strip() or "R3"
+        story_name = record.story.name
+        key = (story_name, record.element.name, direction)
+        row = rows_map.setdefault(
+            key,
+            {
+                "Column": record.element.name,
+                "Story": story_name,
+                "Dir": direction,
+            },
+        )
+
+        incoming_sort = (
+            record.story_sort_order
+            if record.story_sort_order is not None
+            else (record.story.sort_order if record.story.sort_order is not None else 0)
+        )
+        if key not in row_sort_order:
+            row_sort_order[key] = int(incoming_sort)
+        else:
+            row_sort_order[key] = min(row_sort_order[key], int(incoming_sort))
+
+        resolved_value = None
+        if record.max_rotation is not None and record.min_rotation is not None:
+            max_value = float(record.max_rotation)
+            min_value = float(record.min_rotation)
+            resolved_value = max_value if abs(max_value) >= abs(min_value) else min_value
+        elif record.max_rotation is not None:
+            resolved_value = float(record.max_rotation)
+        elif record.min_rotation is not None:
+            resolved_value = float(record.min_rotation)
+        elif record.rotation is not None:
+            resolved_value = float(record.rotation)
+
+        if resolved_value is None:
+            continue
+
+        load_case_name = record.load_case.name
+        row[load_case_name] = service._apply_multiplier(resolved_value, "ColumnRotations")
+        load_case_set.add(load_case_name)
+
+    load_case_columns = sort_load_case_columns(list(load_case_set))
+    rows: list[tuple[int, dict[str, Any]]] = []
+    for key, row in rows_map.items():
+        numeric_values = [
+            float(row[load_case])
+            for load_case in load_case_columns
+            if isinstance(row.get(load_case), (int, float))
+        ]
+        if numeric_values:
+            row["Avg"] = sum(numeric_values) / len(numeric_values)
+            row["Max"] = max(numeric_values)
+            row["Min"] = min(numeric_values)
+        rows.append((row_sort_order.get(key, 0), row))
+
+    rows.sort(key=lambda item: (item[0], item[1]["Column"], item[1]["Dir"]))
+    ordered_rows = [row for _, row in rows]
+
+    return _serialize_table_payload(
+        service=service,
+        result_set_id=result_set_id,
+        rows=ordered_rows,
+        load_case_columns=load_case_columns,
+    )
+
+
+def get_column_rotations_plot_data(service, result_set_id: int) -> Optional[Dict[str, Any]]:
+    plot_data = _build_plot_from_raw(service, result_set_id)
+    if plot_data is not None:
+        return plot_data
+
+    # Fallback for datasets where raw rows are unavailable but element cache exists.
+    return _build_from_cache(service, result_set_id)
+
+
+def get_column_rotations_table_data(
+    service,
+    result_set_id: int,
+    *,
+    fallback_policy: str = FALLBACK_CACHE_ONLY,
+) -> Optional[Dict[str, Any]]:
+    selected = resolve_fallback(
+        fallback_policy=fallback_policy,
+        cache_loader=lambda: _build_table_from_cache(service, result_set_id),
+        raw_loader=lambda: _build_table_from_raw(service, result_set_id),
+        has_data=lambda payload: bool(payload and payload.get("rows")),
+    )
+    return selected.data

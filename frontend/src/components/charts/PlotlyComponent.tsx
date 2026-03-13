@@ -7,4 +7,5 @@ Plotly.register([scatter, bar])
 
 const Plot = createPlotlyComponent(Plotly)
 
+export { Plotly }
 export default Plot

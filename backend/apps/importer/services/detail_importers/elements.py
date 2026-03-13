@@ -147,7 +147,8 @@ def import_quad_rotations(
     if df.empty or not allowed_load_cases:
         return
 
-    objects_to_create = []
+    # Merge Max/Min step-type rows into one record per unique key.
+    merged: Dict[tuple, dict] = {}
 
     output_cases = _column_values(df, "Output Case")
     stories = _column_values(df, "Story")
@@ -187,7 +188,6 @@ def import_quad_rotations(
         if normalized_step_type in {"nan", "none"}:
             normalized_step_type = ""
         if normalized_step_type not in {"max", "min"}:
-            # Preserve backward compatibility for legacy rows with blank step type.
             if normalized_step_type != "":
                 continue
 
@@ -207,28 +207,61 @@ def import_quad_rotations(
         max_rotation = to_float(max_rotation_raw)
         min_rotation = to_float(min_rotation_raw)
         rotation = to_float(rotation_raw)
+
+        direction_str = str(direction or "Pier")
+        key = (element.id, story.id, load_case.id, context.result_category.id,
+               str(quad_name), direction_str)
+
+        if key not in merged:
+            merged[key] = {
+                "element": element,
+                "story": story,
+                "load_case": load_case,
+                "quad_name": str(quad_name),
+                "direction": direction_str,
+                "sort_order": sort_order,
+                "max_rotation": None,
+                "min_rotation": None,
+                "rotation": None,
+            }
+
+        entry = merged[key]
+        if max_rotation is not None:
+            entry["max_rotation"] = max_rotation
+        if min_rotation is not None:
+            entry["min_rotation"] = min_rotation
+
+        if normalized_step_type == "max" and rotation is not None:
+            entry["max_rotation"] = entry["max_rotation"] or rotation
+            if entry["rotation"] is None:
+                entry["rotation"] = rotation
+        elif normalized_step_type == "min" and rotation is not None:
+            entry["min_rotation"] = entry["min_rotation"] or rotation
+            if entry["rotation"] is None:
+                entry["rotation"] = rotation
+        elif rotation is not None:
+            entry["rotation"] = rotation
+
+    objects_to_create = []
+    for entry in merged.values():
+        rotation = entry["rotation"]
         if rotation is None:
-            if normalized_step_type == "max":
-                rotation = max_rotation
-            elif normalized_step_type == "min":
-                rotation = min_rotation
-            else:
-                rotation = max_rotation if max_rotation is not None else min_rotation
+            rotation = entry["max_rotation"] if entry["max_rotation"] is not None else entry["min_rotation"]
         if rotation is None:
             continue
 
         objects_to_create.append(
             QuadRotation(
-                element=element,
-                story=story,
-                load_case=load_case,
+                element=entry["element"],
+                story=entry["story"],
+                load_case=entry["load_case"],
                 result_category=context.result_category,
-                quad_name=str(quad_name),
-                direction=str(direction or "Pier"),
-                story_sort_order=sort_order,
+                quad_name=entry["quad_name"],
+                direction=entry["direction"],
+                story_sort_order=entry["sort_order"],
                 rotation=rotation,
-                max_rotation=max_rotation,
-                min_rotation=min_rotation,
+                max_rotation=entry["max_rotation"],
+                min_rotation=entry["min_rotation"],
             )
         )
 

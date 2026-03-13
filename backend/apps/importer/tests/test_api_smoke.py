@@ -198,3 +198,25 @@ class Phase0ApiSmokeTests(APITestCase):
         export_job = ExportJob.objects.get(id=response.data["id"])
         self.assertEqual(export_job.celery_task_id, "phase0-export-task")
         self.assertEqual(export_job.project_id, self.project.id)
+
+    def test_import_start_error_envelope(self):
+        self._authenticate()
+        self.import_job.status = "completed"
+        self.import_job.save(update_fields=["status"])
+
+        response = self.client.post(
+            f"/api/projects/{self.catalog_project.slug}/imports/{self.import_job.id}/start/",
+            {
+                "selected_load_cases": ["TH01"],
+                "conflict_resolutions": [],
+                "result_set_name": "Phase 0 Import",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("X-Correlation-ID", response)
+        self.assertIn("error", response.data)
+        self.assertEqual(response.data["error"]["code"], "import_start_error")
+        self.assertEqual(response.data["error"]["status"], status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Cannot start job in status", response.data["error"]["message"])

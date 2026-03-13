@@ -1,17 +1,60 @@
 {
-  "generated_at": "2026-02-17T08:03:15Z",
+  "generated_at": "2026-02-18T06:01:06.773739+00:00",
   "bundle": {
-    "asset_file_count": 40,
-    "total_asset_bytes": 1916462,
-    "total_js_bytes": 1588439,
+    "asset_file_count": 41,
+    "total_asset_bytes": 1920431,
+    "total_js_bytes": 1592408,
     "total_css_bytes": 106780,
     "largest_asset": {
-      "path": "frontend/dist/assets/plotly-vendor-_KaW0dHB.js",
+      "path": "dist/assets/plotly-vendor-Rmh44YE8.js",
       "bytes": 1098900
     }
   },
   "backend": {
-    "status": "blocked",
-    "reason": "Missing runtime dependencies (django, celery) and offline environment prevented pipenv sync."
+    "latency_ms": {
+      "global_results_read": {
+        "count": 12,
+        "min_ms": 2.03,
+        "avg_ms": 2.46,
+        "p50_ms": 2.34,
+        "p95_ms": 3.33,
+        "max_ms": 4.34
+      },
+      "comparison_read": {
+        "count": 12,
+        "min_ms": 4.0,
+        "avg_ms": 4.41,
+        "p50_ms": 4.37,
+        "p95_ms": 4.83,
+        "max_ms": 5.11
+      },
+      "import_start": {
+        "count": 12,
+        "min_ms": 2.41,
+        "avg_ms": 8.2,
+        "p50_ms": 2.64,
+        "p95_ms": 34.6,
+        "max_ms": 47.7
+      },
+      "export_start": {
+        "count": 12,
+        "min_ms": 18.84,
+        "avg_ms": 28.69,
+        "p50_ms": 23.77,
+        "p95_ms": 55.58,
+        "max_ms": 86.95
+      }
+    },
+    "tree_expansion_probe": {
+      "request_count": 4,
+      "total_latency_ms": 18.19,
+      "avg_request_latency_ms": 4.55,
+      "paths": [
+        "/api/projects/phase0-baseline-fb9fd21ea3/result-sets/",
+        "/api/projects/phase0-baseline-fb9fd21ea3/available-types/",
+        "/api/projects/phase0-baseline-fb9fd21ea3/results/global/?result_set_id=1&result_type=Drifts&direction=X",
+        "/api/projects/phase0-baseline-fb9fd21ea3/results/comparison/?result_set_ids=1,2&result_type=Drifts&direction=X&metric=Avg"
+      ]
+    }
   }
 }

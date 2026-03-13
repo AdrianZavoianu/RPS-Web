@@ -7,27 +7,27 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Background layers (from RPS_desktop/DESIGN.md)
-        'bg-primary': '#0a0c10',
-        'bg-secondary': '#161b22',
-        'bg-tertiary': '#1c2128',
-        'bg-hover': 'rgba(255, 255, 255, 0.03)',
+        // Background layers (from CSS vars for theme support)
+        'bg-primary': 'var(--bg-primary)',
+        'bg-secondary': 'var(--bg-secondary)',
+        'bg-tertiary': 'var(--bg-tertiary)',
+        'bg-hover': 'var(--bg-hover)',
 
         // Text
-        'text-primary': '#d1d5db',
-        'text-secondary': '#9ca3af',
-        'text-muted': '#7f8b9a',
-        'text-accent': '#67e8f9',
+        'text-primary': 'var(--text-primary)',
+        'text-secondary': 'var(--text-secondary)',
+        'text-muted': 'var(--text-muted)',
+        'text-accent': 'var(--accent-secondary)',
 
         // Accent
-        'accent-primary': '#4a7d89',
-        'accent-secondary': '#67e8f9',
-        'accent-hover': 'rgba(74, 125, 137, 0.18)',
-        'accent-selected': 'rgba(74, 125, 137, 0.12)',
+        'accent-primary': 'var(--accent-primary)',
+        'accent-secondary': 'var(--accent-secondary)',
+        'accent-hover': 'var(--accent-hover)',
+        'accent-selected': 'var(--accent-selected)',
 
         // Borders
-        'border-default': '#2c313a',
-        'border-subtle': 'rgba(255, 255, 255, 0.05)',
+        'border-default': 'var(--border-default)',
+        'border-subtle': 'var(--border-subtle)',
 
         // Semantic
         'success': '#10b981',

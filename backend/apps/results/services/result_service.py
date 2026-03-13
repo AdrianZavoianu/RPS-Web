@@ -14,6 +14,7 @@ from .datasets import (
     ResultDatasetMeta,
     get_internal_direction,
 )
+from .fallback_policy import FALLBACK_CACHE_ONLY
 from .providers import (
     beam_provider,
     column_provider,
@@ -22,6 +23,7 @@ from .providers import (
     global_provider,
     joint_provider,
     maxmin_provider,
+    quad_provider,
 )
 
 
@@ -59,13 +61,21 @@ class ResultDataService:
         unit: Optional[str] = None,
     ) -> ResultDatasetMeta:
         config = RESULT_TYPE_CONFIG.get(result_type, {})
+        # Fall back to base type config for prefixed types like MaxMin_Drifts
+        if not config and "_" in result_type:
+            base_type = result_type.split("_", 1)[1]
+            config = RESULT_TYPE_CONFIG.get(base_type, {})
         resolved_unit = unit if unit is not None else config.get("unit", "")
+        decimals = config.get("decimals")
+        if not isinstance(decimals, int):
+            decimals = None
         return ResultDatasetMeta(
             result_type=result_type,
             direction=direction,
             result_set_id=result_set_id,
             display_name=display_name or self._get_display_name(result_type, direction),
             unit=resolved_unit,
+            decimals=decimals,
         )
 
     def _apply_multiplier(self, value: float, result_type: str) -> float:
@@ -120,18 +130,37 @@ class ResultDataService:
             result_type=result_type,
         )
 
+    def get_element_type_results(
+        self,
+        result_set_id: int,
+        cache_type: str,
+        base_result_type: str,
+        *,
+        is_pushover: bool = False,
+    ) -> Optional[ResultDataset]:
+        """Get all element rows for one concrete cache-type variant."""
+        return element_provider.get_element_type_results(
+            service=self,
+            result_set_id=result_set_id,
+            cache_type=cache_type,
+            base_result_type=base_result_type,
+            is_pushover=is_pushover,
+        )
+
     def get_joint_results(
         self,
         result_set_id: int,
         result_type: str,
         is_pushover: bool = False,
+        fallback_policy: str = FALLBACK_CACHE_ONLY,
     ) -> Optional[ResultDataset]:
-        """Get joint/foundation results from cache."""
+        """Get joint/foundation results with explicit fallback policy."""
         return joint_provider.get_joint_results(
             service=self,
             result_set_id=result_set_id,
             result_type=result_type,
             is_pushover=is_pushover,
+            fallback_policy=fallback_policy,
         )
 
     def get_maxmin_dataset(
@@ -195,11 +224,14 @@ class ResultDataService:
     def get_beam_rotations_table_data(
         self,
         result_set_id: int,
+        *,
+        fallback_policy: str = FALLBACK_CACHE_ONLY,
     ) -> Optional[Dict[str, Any]]:
         """Get beam R3 plastic rotations table data."""
         return beam_provider.get_beam_rotations_table_data(
             service=self,
             result_set_id=result_set_id,
+            fallback_policy=fallback_policy,
         )
 
     def get_column_rotations_plot_data(
@@ -208,6 +240,29 @@ class ResultDataService:
     ) -> Optional[Dict[str, Any]]:
         """Get all-column rotations scatter/histogram data (R2 and R3)."""
         return column_provider.get_column_rotations_plot_data(
+            service=self,
+            result_set_id=result_set_id,
+        )
+
+    def get_column_rotations_table_data(
+        self,
+        result_set_id: int,
+        *,
+        fallback_policy: str = FALLBACK_CACHE_ONLY,
+    ) -> Optional[Dict[str, Any]]:
+        """Get all-column rotations table data."""
+        return column_provider.get_column_rotations_table_data(
+            service=self,
+            result_set_id=result_set_id,
+            fallback_policy=fallback_policy,
+        )
+
+    def get_quad_rotations_plot_data(
+        self,
+        result_set_id: int,
+    ) -> Optional[Dict[str, Any]]:
+        """Get all-quad rotations scatter/histogram data."""
+        return quad_provider.get_quad_rotations_plot_data(
             service=self,
             result_set_id=result_set_id,
         )

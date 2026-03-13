@@ -6,33 +6,53 @@ from config.result_types import RESULT_TYPE_CONFIG, get_maxmin_raw_source
 
 from apps.results.data import (
     AbsoluteMaxMinDriftRepository,
-    ElementResultsCacheRepository,
     ResultCategoryRepository,
 )
+from apps.results.models import ColumnAxial, ColumnRotation, ColumnShear, WallShear
 
 from ..datasets import MaxMinDataset
 
-# Element types that support per-element maxmin from cache
+# Element types that support per-element maxmin from raw models
 ELEMENT_MAXMIN_CONFIG = {
     "ColumnShears": {
         "directions": ["V2", "V3"],
         "unit": "kN",
         "multiplier": 1.0,
+        "model": ColumnShear,
+        "primary_field": "force",
+        "max_field": "max_force",
+        "min_field": "min_force",
+        "direction_field": "direction",
     },
     "ColumnAxials": {
-        "directions": ["Min", "Max"],
+        "directions": ["P"],
         "unit": "kN",
         "multiplier": 1.0,
+        "model": ColumnAxial,
+        "primary_field": "min_axial",
+        "max_field": "max_axial",
+        "min_field": "min_axial",
+        "direction_field": None,
     },
     "ColumnRotations": {
         "directions": ["R2", "R3"],
         "unit": "%",
         "multiplier": 100.0,
+        "model": ColumnRotation,
+        "primary_field": "max_rotation",
+        "max_field": "max_rotation",
+        "min_field": "min_rotation",
+        "direction_field": "direction",
     },
     "WallShears": {
         "directions": ["V2", "V3"],
         "unit": "kN",
         "multiplier": 1.0,
+        "model": WallShear,
+        "primary_field": "force",
+        "max_field": "max_force",
+        "min_field": "min_force",
+        "direction_field": "direction",
     },
 }
 
@@ -205,58 +225,79 @@ def _get_element_maxmin(
     base_result_type: str,
     element_id: int,
 ) -> Optional[MaxMinDataset]:
-    """Build max/min envelope for a specific element from ElementResultsCache.
+    """Build max/min envelope for a specific element from raw result models.
 
-    Fetches all direction variants for the element, then for each story
-    computes absolute max across all load cases per direction.
+    Queries the underlying model directly so that separate max/min fields
+    are available, producing both Max and Min envelope branches.
     """
     config = ELEMENT_MAXMIN_CONFIG[base_result_type]
     directions = config["directions"]
     unit = config["unit"]
     multiplier = config["multiplier"]
+    model_class = config["model"]
+    direction_field = config.get("direction_field")
+    primary_f = config["primary_field"]
+    max_f = config["max_field"]
+    min_f = config["min_field"]
+
+    category_ids = ResultCategoryRepository.get_ids_for_project_result_set(
+        service.project,
+        result_set_id=result_set_id,
+    )
+    if not category_ids:
+        return None
 
     story_data: Dict[str, Dict[str, float]] = {}
     story_order: Dict[str, int] = {}
 
     for ui_dir in directions:
-        cache_type = f"{base_result_type}_{ui_dir}"
-        entries = ElementResultsCacheRepository.list_entries(
-            service.project,
-            result_set_id=result_set_id,
-            result_type=cache_type,
-            element_id=element_id,
+        filters = {
+            "element_id": element_id,
+            "result_category_id__in": category_ids,
+        }
+        if direction_field:
+            filters[direction_field] = ui_dir
+
+        entries = (
+            model_class.objects.filter(**filters)
+            .select_related("story", "load_case")
+            .order_by("-story__sort_order")
         )
 
         for entry in entries:
             story_name = entry.story.name
+            lc_name = entry.load_case.name
+
             if story_name not in story_data:
                 story_data[story_name] = {}
-                story_order[story_name] = entry.story_sort_order or 0
+                story_order[story_name] = entry.story.sort_order or 0
 
-            for lc_name, value in entry.results_matrix.items():
-                scaled = value * multiplier
-                col_prefix = f"{lc_name}_{ui_dir}"
-                key_max = f"OrigMax_{col_prefix}"
-                key_min = f"OrigMin_{col_prefix}"
+            primary_val = getattr(entry, primary_f) * multiplier
+            max_val = getattr(entry, max_f, None)
+            min_val = getattr(entry, min_f, None)
+            if max_val is not None and max_val != max_val:
+                max_val = None
+            if min_val is not None and min_val != min_val:
+                min_val = None
 
-                orig_max = scaled if scaled >= 0 else 0
-                orig_min = scaled if scaled < 0 else 0
+            orig_max = (max_val * multiplier) if max_val is not None else abs(primary_val)
+            orig_min = (min_val * multiplier) if min_val is not None else -abs(primary_val)
 
-                if key_max in story_data[story_name]:
-                    story_data[story_name][key_max] = max(
-                        story_data[story_name][key_max], orig_max
-                    )
-                    story_data[story_name][key_min] = min(
-                        story_data[story_name][key_min], orig_min
-                    )
-                else:
-                    story_data[story_name][key_max] = orig_max
-                    story_data[story_name][key_min] = orig_min
+            col_prefix = f"{lc_name}_{ui_dir}"
+            key_max = f"OrigMax_{col_prefix}"
+            key_min = f"OrigMin_{col_prefix}"
 
-                story_data[story_name][f"Max_{col_prefix}"] = max(
-                    abs(story_data[story_name][key_max]),
-                    abs(story_data[story_name][key_min]),
-                )
+            if key_max in story_data[story_name]:
+                story_data[story_name][key_max] = max(story_data[story_name][key_max], orig_max)
+                story_data[story_name][key_min] = min(story_data[story_name][key_min], orig_min)
+            else:
+                story_data[story_name][key_max] = orig_max
+                story_data[story_name][key_min] = orig_min
+
+            story_data[story_name][f"Max_{col_prefix}"] = max(
+                abs(story_data[story_name][key_max]),
+                abs(story_data[story_name][key_min]),
+            )
 
     if not story_data:
         return None

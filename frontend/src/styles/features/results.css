@@ -23,7 +23,7 @@
   }
 
   .tree-item:hover {
-    background-color: rgba(255, 255, 255, 0.03);
+    background-color: var(--bg-hover);
   }
 
   .tree-item-section {
@@ -53,7 +53,7 @@
   /* Results View side-by-side layout - minimal, no borders */
   .results-view {
     @apply h-full flex;
-    background-color: #0a0c10;
+    background-color: var(--bg-primary);
   }
 
   .results-sidebar {
@@ -97,22 +97,22 @@
 
   .results-table thead {
     @apply sticky top-0 z-10;
-    background-color: #0a0c10;
+    background-color: var(--bg-primary);
   }
 
   .results-table-header {
     @apply text-center font-medium whitespace-nowrap;
     padding: 4px 4px;
-    color: #4a7d89;
-    border: 1px solid #2c313a;
+    color: var(--accent-primary);
+    border: 1px solid var(--border-default);
     font-size: 14px;
     min-width: 50px;
-    background-color: rgba(22, 27, 34, 0.5);
+    background-color: var(--bg-secondary);
   }
 
   .results-table-header-story {
     @apply sticky left-0 z-20 text-center;
-    background-color: #161b22;
+    background-color: var(--bg-secondary);
     min-width: 52px;
     width: 52px;
   }
@@ -122,7 +122,7 @@
   }
 
   .results-table-header-sortable:hover {
-    color: #67e8f9;
+    color: var(--accent-secondary);
   }
 
   .results-table-header-selectable {
@@ -131,19 +131,19 @@
   }
 
   .results-table-header-selectable:hover {
-    background-color: #1f2937;
-    color: #67e8f9;
+    background-color: var(--bg-tertiary);
+    color: var(--accent-secondary);
   }
 
   .results-table-header-selected {
-    background-color: #1a2a30;
-    color: #67e8f9;
+    background-color: var(--accent-selected);
+    color: var(--accent-secondary);
     font-weight: 600;
   }
 
   .results-table-header-hovered {
-    background-color: #1f2937;
-    color: #67e8f9;
+    background-color: var(--bg-tertiary);
+    color: var(--accent-secondary);
   }
 
   .results-table-header-text {
@@ -160,33 +160,33 @@
   }
 
   .results-table-row-selected {
-    background-color: rgba(31, 41, 55, 0.5);
+    background-color: var(--table-row-selected);
   }
 
   .results-table-row-hovered {
-    background-color: rgba(31, 41, 55, 0.3);
+    background-color: var(--table-row-hovered);
   }
 
   .results-table-cell {
     @apply text-center;
     padding: 3px 4px;
-    color: #d1d5db;
-    border: 1px solid #2c313a;
+    color: var(--text-primary);
+    border: 1px solid var(--border-default);
     font-size: 14px;
     font-weight: 400;
     transition: background-color 0.15s;
   }
 
   .results-table-cell-selected {
-    background-color: rgba(26, 42, 48, 0.6);
+    background-color: var(--table-cell-selected);
   }
 
   .results-table-cell-col-hovered {
-    background-color: rgba(31, 41, 55, 0.4);
+    background-color: var(--table-cell-col-hovered);
   }
 
   .results-table-cell-row-hovered {
-    background-color: rgba(31, 41, 55, 0.3);
+    background-color: var(--table-row-hovered);
   }
 
   .results-table-cell-value-hovered {
@@ -195,7 +195,7 @@
 
   .results-table-cell-story {
     @apply sticky left-0 z-10 text-center;
-    background-color: #0a0c10;
+    background-color: var(--bg-primary);
   }
 
   .results-table-cell-story-clickable {
@@ -203,25 +203,25 @@
   }
 
   .results-table-cell-story-clickable:hover {
-    background-color: #1f2937;
-    color: #67e8f9;
+    background-color: var(--bg-tertiary);
+    color: var(--accent-secondary);
   }
 
   .results-table-cell-row-selected {
-    background-color: rgba(31, 41, 55, 0.5);
+    background-color: var(--table-row-selected);
   }
 
   .results-table-cell-row-selected.results-table-cell-story {
-    background-color: #1f2937;
+    background-color: var(--bg-tertiary);
   }
 
   .results-table-row-selected .results-table-cell-story,
   .results-table-row-hovered .results-table-cell-story {
-    background-color: #1f2937;
+    background-color: var(--bg-tertiary);
   }
 
   .results-table-story {
-    color: #d1d5db;
+    color: var(--text-primary);
   }
 
   .results-table-value {
@@ -229,7 +229,7 @@
   }
 
   .results-table-summary {
-    color: #d1d5db;
+    color: var(--text-primary);
   }
 
   .results-table-ratio {
@@ -250,7 +250,7 @@
 
   .results-table-empty {
     @apply flex items-center justify-center h-32;
-    color: #7f8b9a;
+    color: var(--text-muted);
   }
 
   /* Chart legend - matches desktop style */

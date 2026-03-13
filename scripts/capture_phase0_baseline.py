@@ -120,6 +120,12 @@ def _collect_bundle_metrics(frontend_dir: Path) -> dict[str, object]:
 
 def _setup_django(backend_dir: Path) -> None:
     os.environ.setdefault("RPS_ENV", "test")
+    raw_allowed_hosts = os.getenv("ALLOWED_HOSTS", "")
+    hosts = [host.strip() for host in raw_allowed_hosts.split(",") if host.strip()]
+    if "testserver" not in hosts:
+        hosts.append("testserver")
+    os.environ["ALLOWED_HOSTS"] = ",".join(hosts)
+
     backend_path = str(backend_dir)
     if backend_path not in sys.path:
         sys.path.insert(0, backend_path)
@@ -131,6 +137,13 @@ def _setup_django(backend_dir: Path) -> None:
     import django
 
     django.setup()
+
+
+def _prepare_database() -> None:
+    """Ensure the local baseline DB has the required tables."""
+    from django.core.management import call_command
+
+    call_command("migrate", interactive=False, run_syncdb=True, verbosity=0)
 
 
 def _create_probe_fixture() -> ProbeFixture:
@@ -236,7 +249,9 @@ def _build_authenticated_client(fixture: ProbeFixture):
     return client
 
 
-def _timed_request(client, method: str, path: str, payload: dict | None = None) -> tuple[float, object]:
+def _timed_request(
+    client, method: str, path: str, payload: dict | None = None
+) -> tuple[float, object]:
     start = time.perf_counter()
     if method == "GET":
         response = client.get(path)
@@ -408,18 +423,9 @@ def _render_markdown_report(metrics: dict[str, object], generated_at: str) -> st
             ),
             "",
             "## Tree Expansion Probe",
-            (
-                "- Request count: "
-                f"{tree_probe['request_count']}"
-            ),
-            (
-                "- Total latency (ms): "
-                f"{tree_probe['total_latency_ms']}"
-            ),
-            (
-                "- Avg request latency (ms): "
-                f"{tree_probe['avg_request_latency_ms']}"
-            ),
+            ("- Request count: " f"{tree_probe['request_count']}"),
+            ("- Total latency (ms): " f"{tree_probe['total_latency_ms']}"),
+            ("- Avg request latency (ms): " f"{tree_probe['avg_request_latency_ms']}"),
             "",
             "## Notes",
             "- Import/Export metrics are start-endpoint kickoff latency baselines for Phase 0.",
@@ -471,6 +477,7 @@ def main() -> int:
     bundle_metrics = _collect_bundle_metrics(frontend_dir)
 
     _setup_django(backend_dir)
+    _prepare_database()
     backend_metrics = _collect_backend_metrics(iterations=args.iterations)
 
     generated_at = datetime.now(timezone.utc).isoformat()
@@ -480,11 +487,20 @@ def main() -> int:
         "backend": backend_metrics,
     }
 
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(_render_markdown_report(metrics, generated_at), encoding="utf-8")
+    output_path = args.output if args.output.is_absolute() else root_dir / args.output
+    json_output_path = (
+        args.json_output
+        if args.json_output.is_absolute()
+        else root_dir / args.json_output
+    )
 
-    args.json_output.parent.mkdir(parents=True, exist_ok=True)
-    args.json_output.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        _render_markdown_report(metrics, generated_at), encoding="utf-8"
+    )
+
+    json_output_path.parent.mkdir(parents=True, exist_ok=True)
+    json_output_path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
     return 0
 
 

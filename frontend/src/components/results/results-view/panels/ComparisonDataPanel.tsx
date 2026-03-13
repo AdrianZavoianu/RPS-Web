@@ -1,4 +1,5 @@
 import type { ComparisonDataset, ProfileChartData } from '../../../../types'
+import { buildComparisonTableDataset } from '../../../../features/results/mappers/comparisonPanelMappers'
 import { ProfileChart } from '../../../charts/ProfileChart'
 import { ComparisonTable } from '../../ComparisonTable'
 
@@ -13,6 +14,8 @@ export function ComparisonDataPanel({
   comparisonChartData,
   comparisonLoading,
 }: ComparisonDataPanelProps) {
+  const comparisonTableDataset = buildComparisonTableDataset(comparisonData)
+
   if (comparisonLoading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -21,7 +24,7 @@ export function ComparisonDataPanel({
     )
   }
 
-  if (!comparisonData || !comparisonData.rows.length) {
+  if (!comparisonData || !comparisonData.rows.length || !comparisonTableDataset) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <div className="text-center">
@@ -36,13 +39,7 @@ export function ComparisonDataPanel({
     <>
       <div className="comparison-table-panel overflow-auto">
         <ComparisonTable
-          dataset={{
-            rows: comparisonData.rows,
-            series: comparisonData.series,
-            ratio_column: comparisonData.ratio_column,
-            metric: comparisonData.metric,
-            result_type: comparisonData.result_type,
-          }}
+          dataset={comparisonTableDataset}
         />
       </div>
       {comparisonChartData && (

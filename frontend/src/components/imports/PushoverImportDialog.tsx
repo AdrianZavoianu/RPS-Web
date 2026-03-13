@@ -85,6 +85,7 @@ export function PushoverImportDialog({
   const getExcelFiles = (files: File[]) => {
     const excelFiles = files.filter(
       (file) =>
+        !file.name.startsWith('~$') &&
         (file.name.toLowerCase().endsWith('.xlsx') ||
           file.name.toLowerCase().endsWith('.xls'))
     )

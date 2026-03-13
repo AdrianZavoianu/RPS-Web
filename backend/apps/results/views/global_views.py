@@ -4,9 +4,9 @@ from rest_framework import permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from ..api import GlobalResultsQuerySerializer
 from ..services.data_assembler import dataset_to_response
 
-from .decorators import validated_result_params
 from .mixins import ProjectResultsMixin
 
 
@@ -23,18 +23,15 @@ class GlobalResultsDataView(ProjectResultsMixin, APIView):
 
     permission_classes = [permissions.IsAuthenticated]
 
-    @validated_result_params("result_set_id", "result_type", "direction")
-    def get(self, request, project_slug, validated_params):
-        params = validated_params
-
-        is_pushover = request.query_params.get("is_pushover", "").lower() == "true"
+    def get(self, request, project_slug):
+        params = self.validate_query_params(GlobalResultsQuerySerializer)
 
         service = self.get_result_service()
         dataset = service.get_global_results(
             result_set_id=params["result_set_id"],
             result_type=params["result_type"],
             direction=params["direction"],
-            is_pushover=is_pushover,
+            is_pushover=params["is_pushover"],
         )
 
         if not dataset:
@@ -43,7 +40,7 @@ class GlobalResultsDataView(ProjectResultsMixin, APIView):
         return Response(
             dataset_to_response(
                 dataset=dataset,
-                include_summary=not is_pushover,
+                include_summary=not params["is_pushover"],
                 fixed_columns=[dataset.story_column],
                 required_columns=[dataset.story_column],
             )

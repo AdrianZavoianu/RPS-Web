@@ -279,7 +279,7 @@ RESULT_TYPE_BASE_MAP = {
         "variants": ("SoilPressures_Min",),
         "directions": None,
         "internal_directions": {},
-        "decimals": 2,
+        "decimals": 0,
     },
     "VerticalDisplacements": {
         "variants": ("VerticalDisplacements_Min",),

@@ -16,10 +16,9 @@ describe('results table utilities', () => {
     expect(values).toEqual([1, 2, -4, 0, 6, -1.5])
   })
 
-  it('formats values according to result type precision', () => {
-    expect(formatResultValue(12.75, 'Forces_X')).toBe('13')
-    expect(formatResultValue(0.1234, 'Drifts_X')).toBe('0.12')
-    expect(formatResultValue(1.2345, 'UnknownType')).toBe('1.23')
+  it('formats values using backend-provided decimals', () => {
+    expect(formatResultValue(12.75, 0)).toBe('13')
+    expect(formatResultValue(0.1234, 2)).toBe('0.12')
+    expect(formatResultValue(1.2345, null)).toBe('1.2345')
   })
 })
-

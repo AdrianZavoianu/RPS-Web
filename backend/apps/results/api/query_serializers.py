@@ -30,6 +30,40 @@ JOINT_RESULT_TYPES = {
 }
 ALL_RESULT_TYPES = sorted(RESULT_TYPE_CONFIG.keys())
 COMPARISON_METRICS = ("Avg", "Max", "Min")
+PUSHOVER_DIRECTIONS = ("X", "Y", "XY")
+
+
+def _validate_direction_for_result_type(
+    *,
+    attrs: dict[str, Any],
+    result_type_key: str = "result_type",
+    direction_key: str = "direction",
+    required_when_directional: bool = True,
+) -> None:
+    """Validate direction value against RESULT_TYPE_CONFIG for the selected result type."""
+    result_type = attrs[result_type_key]
+    direction = attrs.get(direction_key)
+    allowed_directions = RESULT_TYPE_CONFIG.get(result_type, {}).get("directions")
+
+    if allowed_directions:
+        if required_when_directional and not direction:
+            allowed_display = ", ".join(allowed_directions)
+            raise serializers.ValidationError(
+                {
+                    direction_key: (
+                        f"{direction_key} is required and must be one of: {allowed_display}"
+                    )
+                }
+            )
+        if direction and direction not in allowed_directions:
+            allowed_display = ", ".join(allowed_directions)
+            raise serializers.ValidationError(
+                {direction_key: (f"Invalid direction '{direction}'. Allowed: {allowed_display}")}
+            )
+    elif direction:
+        raise serializers.ValidationError(
+            {direction_key: f"{result_type} does not accept {direction_key}."}
+        )
 
 
 class CSVIntegerListField(serializers.Field):
@@ -84,7 +118,9 @@ class ProjectScopedQuerySerializer(serializers.Serializer):
     def _validate_result_set_scope(self, result_set_ids: list[int]) -> list[int]:
         project = self._get_project()
         existing_ids = ResultSetRepository.get_project_result_set_ids(project, result_set_ids)
-        invalid_ids = [result_set_id for result_set_id in result_set_ids if result_set_id not in existing_ids]
+        invalid_ids = [
+            result_set_id for result_set_id in result_set_ids if result_set_id not in existing_ids
+        ]
         if invalid_ids:
             invalid_display = ", ".join(str(result_set_id) for result_set_id in invalid_ids)
             raise serializers.ValidationError(
@@ -101,6 +137,88 @@ class ResultSetScopedQuerySerializer(ProjectScopedQuerySerializer):
     def validate_result_set_id(self, value: int) -> int:
         self._validate_result_set_scope([value])
         return value
+
+
+class GlobalResultsQuerySerializer(ResultSetScopedQuerySerializer):
+    """Validation contract for global/story-level results endpoint."""
+
+    result_type = serializers.ChoiceField(choices=sorted(GLOBAL_RESULT_TYPES), required=True)
+    direction = serializers.CharField(required=True, allow_blank=False)
+    is_pushover = serializers.BooleanField(required=False, default=False)
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        attrs = super().validate(attrs)
+        _validate_direction_for_result_type(attrs=attrs)
+        return attrs
+
+
+class ElementResultsQuerySerializer(ResultSetScopedQuerySerializer):
+    """Validation contract for element results endpoint."""
+
+    element_id = serializers.IntegerField(min_value=1, required=True)
+    result_type = serializers.ChoiceField(choices=sorted(ELEMENT_RESULT_TYPES), required=True)
+    direction = serializers.CharField(required=False, allow_blank=False)
+    is_pushover = serializers.BooleanField(required=False, default=False)
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        attrs = super().validate(attrs)
+        _validate_direction_for_result_type(attrs=attrs)
+        return attrs
+
+
+class ElementListQuerySerializer(ResultSetScopedQuerySerializer):
+    """Validation contract for element list endpoint."""
+
+    result_type = serializers.ChoiceField(choices=sorted(ELEMENT_RESULT_TYPES), required=True)
+
+
+class JointResultsQuerySerializer(ResultSetScopedQuerySerializer):
+    """Validation contract for joint/foundation results endpoint."""
+
+    result_type = serializers.CharField(required=True, allow_blank=False)
+    is_pushover = serializers.BooleanField(required=False, default=False)
+
+    def validate_result_type(self, value: str) -> str:
+        normalized = value.strip()
+        if normalized == "":
+            raise serializers.ValidationError("result_type cannot be blank.")
+
+        base_type = normalized.split("_", 1)[0]
+        if base_type not in JOINT_RESULT_TYPES:
+            allowed_display = ", ".join(sorted(JOINT_RESULT_TYPES))
+            raise serializers.ValidationError(
+                f"Unsupported joint result_type '{normalized}'. Allowed base types: {allowed_display}"
+            )
+
+        return normalized
+
+
+class BeamRotationsQuerySerializer(ResultSetScopedQuerySerializer):
+    """Validation contract for beam rotations endpoints."""
+
+
+class ColumnRotationsQuerySerializer(ResultSetScopedQuerySerializer):
+    """Validation contract for column rotations endpoints."""
+
+
+class QuadRotationsQuerySerializer(ResultSetScopedQuerySerializer):
+    """Validation contract for quad rotations endpoints."""
+
+
+class PushoverCasesQuerySerializer(ProjectScopedQuerySerializer):
+    """Validation contract for pushover cases endpoint."""
+
+    result_set_id = serializers.IntegerField(min_value=1, required=False)
+
+    def validate_result_set_id(self, value: int) -> int:
+        self._validate_result_set_scope([value])
+        return value
+
+
+class PushoverCurvesBatchQuerySerializer(ResultSetScopedQuerySerializer):
+    """Validation contract for batched pushover curves endpoint."""
+
+    direction = serializers.ChoiceField(choices=PUSHOVER_DIRECTIONS, required=True)
 
 
 class MaxMinDataQuerySerializer(ResultSetScopedQuerySerializer):
@@ -135,28 +253,9 @@ class ComparisonDataQuerySerializer(ProjectScopedQuerySerializer):
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         attrs = super().validate(attrs)
 
-        result_type = attrs["result_type"]
-        direction = attrs.get("direction")
-        element_id = attrs.get("element_id")
+        _validate_direction_for_result_type(attrs=attrs)
 
-        allowed_directions = RESULT_TYPE_CONFIG.get(result_type, {}).get("directions")
-        if allowed_directions:
-            if not direction:
-                allowed_display = ", ".join(allowed_directions)
-                raise serializers.ValidationError(
-                    {"direction": f"direction is required and must be one of: {allowed_display}"}
-                )
-            if direction not in allowed_directions:
-                allowed_display = ", ".join(allowed_directions)
-                raise serializers.ValidationError(
-                    {"direction": f"Invalid direction '{direction}'. Allowed: {allowed_display}"}
-                )
-        elif direction:
-            raise serializers.ValidationError(
-                {"direction": f"{result_type} does not accept direction."}
-            )
-
-        if element_id is not None and result_type not in ELEMENT_RESULT_TYPES:
+        if attrs.get("element_id") is not None and attrs["result_type"] not in ELEMENT_RESULT_TYPES:
             raise serializers.ValidationError(
                 {"element_id": "element_id is only valid for element result types."}
             )
@@ -173,14 +272,7 @@ class ChartDataQuerySerializer(ResultSetScopedQuerySerializer):
 
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         attrs = super().validate(attrs)
-
-        allowed_directions = RESULT_TYPE_CONFIG[attrs["result_type"]]["directions"] or []
-        if attrs["direction"] not in allowed_directions:
-            allowed_display = ", ".join(allowed_directions)
-            raise serializers.ValidationError(
-                {"direction": f"Invalid direction '{attrs['direction']}'. Allowed: {allowed_display}"}
-            )
-
+        _validate_direction_for_result_type(attrs=attrs)
         return attrs
 
 
@@ -198,12 +290,7 @@ class TimeSeriesDataQuerySerializer(ResultSetScopedQuerySerializer):
         if attrs["load_case"] == "":
             raise serializers.ValidationError({"load_case": "load_case cannot be blank."})
 
-        allowed_directions = RESULT_TYPE_CONFIG[attrs["result_type"]]["directions"] or []
-        if attrs["direction"] not in allowed_directions:
-            allowed_display = ", ".join(allowed_directions)
-            raise serializers.ValidationError(
-                {"direction": f"Invalid direction '{attrs['direction']}'. Allowed: {allowed_display}"}
-            )
+        _validate_direction_for_result_type(attrs=attrs)
 
         return attrs
 

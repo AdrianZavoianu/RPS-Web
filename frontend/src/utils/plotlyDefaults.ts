@@ -1,24 +1,4 @@
-import {
-  AXIS_LINE_COLOR,
-  GRID_COLOR,
-  PAPER_BG,
-  PLOT_BG,
-  TEXT_COLOR,
-} from './colors'
-
-const BASE_FONT: Partial<Plotly.Font> = {
-  color: TEXT_COLOR,
-  size: 11,
-}
-
-const BASE_AXIS: Partial<Plotly.LayoutAxis> = {
-  gridcolor: GRID_COLOR,
-  gridwidth: 1,
-  tickfont: { size: 10, color: TEXT_COLOR },
-  linecolor: AXIS_LINE_COLOR,
-  linewidth: 1,
-  mirror: true,
-}
+import { getChartColors } from './colors'
 
 export const PLOTLY_CONFIG_NO_MODE_BAR = {
   displayModeBar: false,
@@ -28,8 +8,14 @@ export const PLOTLY_CONFIG_NO_MODE_BAR = {
 export function createAxisLayout(
   overrides: Partial<Plotly.LayoutAxis>
 ): Partial<Plotly.LayoutAxis> {
+  const c = getChartColors()
   return {
-    ...BASE_AXIS,
+    gridcolor: c.gridColor,
+    gridwidth: 1,
+    tickfont: { size: 10, color: c.textColor },
+    linecolor: c.axisLineColor,
+    linewidth: 1,
+    mirror: true,
     ...overrides,
   }
 }
@@ -37,16 +23,18 @@ export function createAxisLayout(
 export function withPlotlyDefaults(
   layout: Partial<Plotly.Layout>
 ): Partial<Plotly.Layout> {
+  const c = getChartColors()
   const xaxis = layout.xaxis as Partial<Plotly.LayoutAxis> | undefined
   const yaxis = layout.yaxis as Partial<Plotly.LayoutAxis> | undefined
   const font = layout.font as Partial<Plotly.Font> | undefined
 
   return {
     ...layout,
-    paper_bgcolor: layout.paper_bgcolor ?? PAPER_BG,
-    plot_bgcolor: layout.plot_bgcolor ?? PLOT_BG,
+    paper_bgcolor: layout.paper_bgcolor ?? c.paperBg,
+    plot_bgcolor: layout.plot_bgcolor ?? c.plotBg,
     font: {
-      ...BASE_FONT,
+      color: c.textColor,
+      size: 11,
       ...(font ?? {}),
     },
     showlegend: layout.showlegend ?? false,

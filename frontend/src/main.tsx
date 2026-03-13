@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter } from 'react-router-dom'
+import './stores/themeStore' // Initialize theme before render
 import App from './App'
 import './styles/structure.css'
 import './styles/tokens.css'

@@ -5,9 +5,9 @@ from rest_framework import permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from ..api import PushoverCasesQuerySerializer, PushoverCurvesBatchQuerySerializer
 from ..models import PushoverCase
 from ..services.pushover_service import get_curve_data_for_case, get_curves_batch_data
-from .decorators import validated_result_params
 from .mixins import ProjectResultsMixin
 
 
@@ -16,17 +16,18 @@ class PushoverCasesView(ProjectResultsMixin, APIView):
     Get pushover cases for a result set.
 
     Query params:
-    - result_set_id: Required
+    - result_set_id: Optional
     """
 
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, project_slug):
-        result_set_id = request.query_params.get("result_set_id")
+        params = self.validate_query_params(PushoverCasesQuerySerializer)
         project = self.get_project()
 
         queryset = PushoverCase.objects.filter(project=project)
-        if result_set_id:
+        result_set_id = params.get("result_set_id")
+        if result_set_id is not None:
             queryset = queryset.filter(result_set_id=result_set_id)
 
         cases = list(queryset.values("id", "name", "direction", "result_set_id"))
@@ -61,12 +62,12 @@ class PushoverCurvesBatchView(ProjectResultsMixin, APIView):
 
     permission_classes = [permissions.IsAuthenticated]
 
-    @validated_result_params("result_set_id", "direction")
-    def get(self, request, project_slug, validated_params):
+    def get(self, request, project_slug):
+        params = self.validate_query_params(PushoverCurvesBatchQuerySerializer)
         project = self.get_project()
         curves = get_curves_batch_data(
             project=project,
-            result_set_id=validated_params["result_set_id"],
-            direction=validated_params["direction"],
+            result_set_id=params["result_set_id"],
+            direction=params["direction"],
         )
         return Response({"curves": curves})

@@ -10,6 +10,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
+from core.errors import api_error_response
+
 from .serializers import ChangePasswordSerializer, UserCreateSerializer, UserSerializer
 
 User = get_user_model()
@@ -59,12 +61,13 @@ class ChangePasswordView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        serializer = ChangePasswordSerializer(data=request.data, context={"request": request})
-        if serializer.is_valid():
-            request.user.set_password(serializer.validated_data["new_password"])
-            request.user.save()
-            return Response({"message": "Password changed successfully."})
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        serializer = ChangePasswordSerializer(
+            data=request.data, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        request.user.set_password(serializer.validated_data["new_password"])
+        request.user.save()
+        return Response({"message": "Password changed successfully."})
 
 
 class LogoutView(APIView):
@@ -80,4 +83,9 @@ class LogoutView(APIView):
                 token.blacklist()
             return Response({"message": "Successfully logged out."})
         except TokenError:
-            return Response({"detail": "Invalid token."}, status=status.HTTP_400_BAD_REQUEST)
+            return api_error_response(
+                request=request,
+                status_code=status.HTTP_400_BAD_REQUEST,
+                code="invalid_token",
+                message="Invalid token.",
+            )

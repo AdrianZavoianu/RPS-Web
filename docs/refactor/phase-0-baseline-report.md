@@ -1,34 +1,26 @@
 # Phase 0 Baseline Report
 
-- Generated at: 2026-02-17T08:03:15Z
-- Method:
-  - Frontend bundle: `npm run build`
-  - Bundle byte totals: `find dist/assets ...`
-  - Backend baseline probes: blocked in this environment (details below)
+- Generated at: 2026-02-18T06:01:06.773739+00:00
+- Method: `scripts/capture_phase0_baseline.py`
 
 ## Frontend Bundle
+- Asset files: 41
+- Total assets (bytes): 1920431
+- Total JS (bytes): 1592408
+- Total CSS (bytes): 106780
+- Largest asset: dist/assets/plotly-vendor-Rmh44YE8.js (1098900 bytes)
 
-- Asset files: `40`
-- Total assets (bytes): `1916462`
-- Total JS (bytes): `1588439`
-- Total CSS (bytes): `106780`
-- Largest asset: `frontend/dist/assets/plotly-vendor-_KaW0dHB.js` (`1098900` bytes)
+## Backend API Latency (ms)
+- Global results read: avg=2.46, p95=3.33
+- Comparison read: avg=4.41, p95=4.83
+- Import start (kickoff): avg=8.2, p95=34.6
+- Export start (kickoff): avg=28.69, p95=55.58
 
-## Backend Baseline Probe Status
+## Tree Expansion Probe
+- Request count: 4
+- Total latency (ms): 18.19
+- Avg request latency (ms): 4.55
 
-- Status: `blocked`
-- Blocker:
-  - Python runtime in this environment is missing backend dependencies (`django`, `celery`).
-  - Network access is restricted, so `pipenv sync --dev` could not install required packages.
-- Impact:
-  - API latency baseline
-  - tree expansion request probe
-  - import/export kickoff latency
-
-## Next Capture Command (when backend deps are present)
-
-From `RPS-App/`:
-
-```bash
-backend/.venv/bin/python scripts/capture_phase0_baseline.py
-```
+## Notes
+- Import/Export metrics are start-endpoint kickoff latency baselines for Phase 0.
+- Full background-job runtime baselines will be captured after stable fixture datasets are added.

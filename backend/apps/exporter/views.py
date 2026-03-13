@@ -1,27 +1,28 @@
 """
 Views for exporter app.
 """
+from celery.result import AsyncResult
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from rest_framework import permissions, status
-from rest_framework.views import APIView
-from rest_framework.response import Response
 from rest_framework.request import Request
-from celery.result import AsyncResult
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from core.mixins import ProjectLookupMixin
+
 from .models import ExportJob
-from .serializers import ExportJobSerializer, ExportRequestSerializer
 from .progress_events import send_error as send_export_error
+from .serializers import ExportJobSerializer, ExportRequestSerializer
 from .tasks import process_export_job
 
 
 class ExportProjectMixin(ProjectLookupMixin):
     permission_classes = [permissions.IsAuthenticated]
 
-    def get_project(self, slug: str):
+    def get_project(self, project_slug: str):
         return self.get_project_for_slug(
-            slug,
+            project_slug,
             create_if_missing=False,
             user=self.request.user,
         )
@@ -30,16 +31,16 @@ class ExportProjectMixin(ProjectLookupMixin):
 class ExportJobListView(ExportProjectMixin, APIView):
     """List export jobs or create new export."""
 
-    def get(self, request: Request, slug: str) -> Response:
+    def get(self, request: Request, project_slug: str) -> Response:
         """List export jobs for project."""
-        project = self.get_project(slug)
+        project = self.get_project(project_slug)
         jobs = ExportJob.objects.filter(project=project).order_by("-created_at")[:20]
         serializer = ExportJobSerializer(jobs, many=True, context={"request": request})
         return Response(serializer.data)
 
-    def post(self, request: Request, slug: str) -> Response:
+    def post(self, request: Request, project_slug: str) -> Response:
         """Start a new export job."""
-        project = self.get_project(slug)
+        project = self.get_project(project_slug)
 
         serializer = ExportRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -73,16 +74,16 @@ class ExportJobListView(ExportProjectMixin, APIView):
 class ExportJobDetailView(ExportProjectMixin, APIView):
     """Get export job status or cancel job."""
 
-    def get(self, request: Request, slug: str, job_id: int) -> Response:
+    def get(self, request: Request, project_slug: str, job_id: int) -> Response:
         """Get export job status."""
-        project = self.get_project(slug)
+        project = self.get_project(project_slug)
         job = get_object_or_404(ExportJob, id=job_id, project=project)
         serializer = ExportJobSerializer(job, context={"request": request})
         return Response(serializer.data)
 
-    def delete(self, request: Request, slug: str, job_id: int) -> Response:
+    def delete(self, request: Request, project_slug: str, job_id: int) -> Response:
         """Cancel export job."""
-        project = self.get_project(slug)
+        project = self.get_project(project_slug)
         job = get_object_or_404(ExportJob, id=job_id, project=project)
 
         if job.status in ["pending", "processing"]:
@@ -99,9 +100,9 @@ class ExportJobDetailView(ExportProjectMixin, APIView):
 class ExportDownloadView(ExportProjectMixin, APIView):
     """Download exported file."""
 
-    def get(self, request: Request, slug: str, job_id: int) -> FileResponse:
+    def get(self, request: Request, project_slug: str, job_id: int) -> FileResponse:
         """Download the exported file."""
-        project = self.get_project(slug)
+        project = self.get_project(project_slug)
         job = get_object_or_404(ExportJob, id=job_id, project=project)
 
         if job.status != "completed" or not job.output_file:

@@ -62,6 +62,9 @@ export const queryKeys = {
 
   reportPreview: (projectSlug: string, resultSetId: number | null) =>
     projectScopedKey('reportPreview', projectSlug, resultSetId),
+  reportJobs: (projectSlug: string) => projectScopedKey('reportJobs', projectSlug),
+  reportJob: (projectSlug: string, jobId?: number | null) =>
+    projectScopedKey('reportJob', projectSlug, jobId),
 
   resultSets: (projectSlug: string) => projectScopedKey('resultSets', projectSlug),
   resultSet: (projectSlug: string, id: number) => projectScopedKey('resultSet', projectSlug, id),
@@ -90,6 +93,8 @@ export const queryKeys = {
     projectScopedKey('beamRotationsTable', projectSlug, params),
   columnRotationsPlot: (projectSlug: string, params?: unknown) =>
     projectScopedKey('columnRotationsPlot', projectSlug, params),
+  quadRotationsPlot: (projectSlug: string, params?: unknown) =>
+    projectScopedKey('quadRotationsPlot', projectSlug, params),
   pushoverCases: (projectSlug: string, resultSetId?: number | null) =>
     projectScopedKey('pushoverCases', projectSlug, resultSetId),
   pushoverCurve: (projectSlug: string, caseId?: number | null) =>

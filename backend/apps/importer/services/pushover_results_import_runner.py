@@ -87,17 +87,9 @@ def _import_column_sheets(
     *,
     import_context: ImportContext,
 ) -> None:
-    """Import column forces and rotations from one parsed sheet payload."""
+    """Import column forces from one parsed sheet payload."""
     story_index = build_story_index(parsed[2])
     _import_column_forces(
-        import_context,
-        parsed[0],
-        parsed[1],
-        story_index,
-        parsed[3],
-        allowed_cases,
-    )
-    _import_column_rotations(
         import_context,
         parsed[0],
         parsed[1],

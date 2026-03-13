@@ -32,6 +32,8 @@ interface ResultsTableProps {
   onRowSelectionChange?: (selected: Set<number>) => void
 }
 
+const columnHelper = createColumnHelper<Record<string, unknown>>()
+
 function ResultsTableComponent({
   dataset,
   className,
@@ -72,7 +74,6 @@ function ResultsTableComponent({
     onRowSelectionChange(newSelection)
   }, [selectedRows, onRowSelectionChange])
 
-  const columnHelper = createColumnHelper<Record<string, unknown>>()
   const loadCaseColumns = useMemo(
     () => (Array.isArray(dataset.load_case_columns) ? dataset.load_case_columns : []),
     [dataset.load_case_columns]
@@ -90,13 +91,13 @@ function ResultsTableComponent({
   )
 
   // Calculate min/max for gradient coloring across all load case columns
-  const { globalMinMax } = useMemo(() => {
-    const allValues = collectNumericValues(dataset.rows, loadCaseColumns)
-
-    return {
-      globalMinMax: getMinMax(allValues),
+  const globalMinMax = useMemo(() => {
+    if (!showGradient) {
+      return { min: 0, max: 0 }
     }
-  }, [dataset.rows, loadCaseColumns])
+    const allValues = collectNumericValues(dataset.rows, loadCaseColumns)
+    return getMinMax(allValues)
+  }, [dataset.rows, loadCaseColumns, showGradient])
 
   const columns = useMemo(() => {
     const cols = []
@@ -112,8 +113,9 @@ function ResultsTableComponent({
       })
     )
 
-    // Get result type for formatting
+    // Metadata-backed display formatting from backend contract.
     const resultType = dataset.meta?.result_type
+    const resultDecimals = dataset.meta?.decimals
 
     // Load case columns with gradient coloring
     for (const lc of loadCaseColumns) {
@@ -124,7 +126,7 @@ function ResultsTableComponent({
             const value = info.getValue() as number | null
             if (value === null || value === undefined) return '-'
 
-            const formatted = formatResultValue(value, resultType)
+            const formatted = formatResultValue(value, resultDecimals)
 
             if (showGradient) {
               const textColor = getGradientColor(
@@ -159,7 +161,7 @@ function ResultsTableComponent({
             if (value === null || value === undefined) return '-'
             return (
               <span className="results-table-summary">
-                {formatResultValue(value, resultType)}
+                {formatResultValue(value, resultDecimals)}
               </span>
             )
           },
@@ -168,7 +170,7 @@ function ResultsTableComponent({
     }
 
     return cols
-  }, [dataset, columnHelper, showGradient, globalMinMax, loadCaseColumns, summaryColumns, storyColumn])
+  }, [dataset, showGradient, globalMinMax, loadCaseColumns, summaryColumns, storyColumn])
 
   const table = useReactTable({
     data: dataset.rows,

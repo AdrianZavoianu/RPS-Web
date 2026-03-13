@@ -95,6 +95,9 @@ class GenerateReportViewTests(_ReportViewTestMixin, APITestCase):
         self._authenticate()
         response = self.client.post(self.url, {}, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("X-Correlation-ID", response)
+        self.assertIn("error", response.data)
+        self.assertEqual(response.data["error"]["status"], status.HTTP_400_BAD_REQUEST)
 
     def test_missing_sections(self):
         self._authenticate()
@@ -116,6 +119,19 @@ class GenerateReportViewTests(_ReportViewTestMixin, APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_validation_rejects_global_section_without_direction(self):
+        self._authenticate()
+        response = self.client.post(
+            self.url,
+            {
+                "result_set_id": self.result_set.id,
+                "sections": [{"result_type": "Drifts", "category": "Global", "direction": ""}],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("sections", response.data)
 
     @patch("apps.reporting.views.PDFReportService")
     def test_pdf_content_type(self, MockService):
@@ -170,6 +186,8 @@ class ReportSectionDataViewTests(_ReportViewTestMixin, APITestCase):
         self._authenticate()
         response = self.client.post(self.url, {}, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("error", response.data)
+        self.assertEqual(response.data["error"]["status"], status.HTTP_400_BAD_REQUEST)
 
     @patch("apps.reporting.views.PDFReportService")
     def test_structured_response(self, MockService):
@@ -224,9 +242,7 @@ class ReportPreviewViewTests(_ReportViewTestMixin, APITestCase):
 
     def test_global_availability(self):
         self._authenticate()
-        response = self.client.get(
-            self.url_base, {"result_set_id": self.result_set.id}
-        )
+        response = self.client.get(self.url_base, {"result_set_id": self.result_set.id})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         sections = response.data["available_sections"]
         global_sections = [s for s in sections if s["category"] == "Global"]
@@ -244,9 +260,7 @@ class ReportPreviewViewTests(_ReportViewTestMixin, APITestCase):
             load_case_count=1,
         )
         self._authenticate()
-        response = self.client.get(
-            self.url_base, {"result_set_id": self.result_set.id}
-        )
+        response = self.client.get(self.url_base, {"result_set_id": self.result_set.id})
         sections = response.data["available_sections"]
         joint_sections = [s for s in sections if s["category"] == "Joint"]
         self.assertTrue(len(joint_sections) > 0)

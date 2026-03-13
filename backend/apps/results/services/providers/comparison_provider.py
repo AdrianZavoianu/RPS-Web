@@ -2,6 +2,8 @@
 
 from typing import List, Optional
 
+from config.result_types import RESULT_TYPE_CONFIG
+
 from apps.results.data import ResultSetRepository
 
 from ..datasets import ComparisonDataset, ComparisonSeries
@@ -127,6 +129,12 @@ def get_comparison_dataset(
                 continue
             row[ratio_column] = last_val / first_val
 
+    config = RESULT_TYPE_CONFIG.get(result_type, {})
+    unit = config.get("unit", "")
+    decimals = config.get("decimals")
+    if not isinstance(decimals, int):
+        decimals = None
+
     return ComparisonDataset(
         result_type=result_type,
         direction=direction,
@@ -134,5 +142,7 @@ def get_comparison_dataset(
         series=series_list,
         rows=rows,
         ratio_column=ratio_column,
+        unit=unit,
+        decimals=decimals,
         warnings=warnings,
     )

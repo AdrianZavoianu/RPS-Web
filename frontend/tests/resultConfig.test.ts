@@ -1,28 +1,44 @@
 import { describe, expect, it } from 'vitest'
 
-import { getResultTypeDecimals, getResultTypeUnit } from '../src/utils/resultConfig'
+import { buildComparisonProfileChartData } from '../src/components/results/comparisonUtils'
+import { formatResultValue } from '../src/components/results/tableUtils'
 
-describe('result config helpers', () => {
-  it('resolves decimals for normalized result types', () => {
-    expect(getResultTypeDecimals('Forces_X')).toBe(0)
-    expect(getResultTypeDecimals('Drifts_Y')).toBe(2)
-    expect(getResultTypeDecimals('ColumnRotations_R3')).toBe(2)
+describe('result formatting helpers', () => {
+  it('formats values using backend-provided decimals when available', () => {
+    expect(formatResultValue(1.23456, 2)).toBe('1.23')
+    expect(formatResultValue(10, 0)).toBe('10')
   })
 
-  it('uses provided fallback for unknown result types', () => {
-    expect(getResultTypeDecimals('UnknownType', 4)).toBe(4)
-    expect(getResultTypeDecimals(undefined, 3)).toBe(3)
+  it('falls back to raw numeric string when decimals are not provided', () => {
+    expect(formatResultValue(1.23456, null)).toBe('1.23456')
+    expect(formatResultValue(1.23456, undefined)).toBe('1.23456')
   })
 
-  it('resolves units for normalized result types', () => {
-    expect(getResultTypeUnit('Forces_X')).toBe('kN')
-    expect(getResultTypeUnit('SoilPressures_Min')).toBe('kN/m²')
-    expect(getResultTypeUnit('VerticalDisplacements')).toBe('mm')
-  })
+  it('builds comparison chart data with backend metadata fields', () => {
+    const chartData = buildComparisonProfileChartData(
+      {
+        result_type: 'Drifts',
+        direction: 'X',
+        metric: 'Avg',
+        unit: '%',
+        decimals: 2,
+        series: [
+          { result_set_id: 1, result_set_name: 'RS-1', has_data: true, warning: null },
+          { result_set_id: 2, result_set_name: 'RS-2', has_data: true, warning: null },
+        ],
+        rows: [
+          { Story: 'L2', 'RS-1_Avg': 0.1, 'RS-2_Avg': 0.2 },
+          { Story: 'L1', 'RS-1_Avg': 0.15, 'RS-2_Avg': 0.25 },
+        ],
+        ratio_column: null,
+        warnings: [],
+      },
+      'X'
+    )
 
-  it('returns empty unit for unknown or missing types', () => {
-    expect(getResultTypeUnit('UnknownType')).toBe('')
-    expect(getResultTypeUnit(undefined)).toBe('')
+    expect(chartData).not.toBeNull()
+    expect(chartData?.unit).toBe('%')
+    expect(chartData?.decimals).toBe(2)
+    expect(chartData?.series).toHaveLength(2)
   })
 })
-

@@ -79,6 +79,7 @@ function filterExcelFiles(files: File[]): File[] {
     const lowercaseName = file.name.toLowerCase()
     return (
       isTopLevelFile(file) &&
+      !file.name.startsWith('~$') &&
       (lowercaseName.endsWith('.xlsx') || lowercaseName.endsWith('.xls'))
     )
   })

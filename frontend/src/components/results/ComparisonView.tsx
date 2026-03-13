@@ -218,6 +218,7 @@ export function ComparisonView({ projectSlug }: ComparisonViewProps) {
                     ratio_column: comparisonData.ratio_column,
                     metric: comparisonData.metric,
                     result_type: comparisonData.result_type,
+                    decimals: comparisonData.decimals,
                   }}
                   className="h-full"
                 />

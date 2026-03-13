@@ -19,6 +19,7 @@ export function mapPushoverCurveToDataset(
       result_set_id: resultSetId,
       display_name: curve.case.name,
       unit: '',
+      decimals: 0,
     },
     rows: curve.points.map((point) => ({
       Step: point.step,

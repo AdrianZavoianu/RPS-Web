@@ -17,6 +17,8 @@ const comparisonDataset: ComparisonDataset = {
     { Story: 'L2', 'RS-A_Avg': 1.0 },
   ],
   ratio_column: null,
+  unit: '%',
+  decimals: 2,
   warnings: [],
 }
 
@@ -48,6 +50,7 @@ describe('comparison helpers', () => {
       },
     ])
     expect(chartData?.unit).toBe('%')
+    expect(chartData?.decimals).toBe(2)
     expect(chartData?.title).toBe('Drifts X - Avg Comparison')
   })
 

@@ -124,6 +124,15 @@ export function ResultsTreeBrowser({
         : null
 
     collapseToActiveSet(activeResultSetId, activeComparisonSetId)
+
+    // Ensure time-series branch nodes are expanded when a TS leaf is selected
+    if (selection.type === 'time_series' && activeResultSetId !== null) {
+      setExpandedCategories(prev => new Set([...prev, `${activeResultSetId}-Time-Series`]))
+      if (selection.loadCaseName) {
+        setExpandedCategoryTypes(prev => new Set([...prev, `${activeResultSetId}-Time-Series-${selection.loadCaseName}`]))
+      }
+    }
+
     onSelect(selection)
   }, [collapseToActiveSet, onSelect])
 
@@ -131,6 +140,34 @@ export function ResultsTreeBrowser({
     () => availableTypes?.global_results || DEFAULT_GLOBAL_RESULTS,
     [availableTypes?.global_results]
   )
+
+  // Auto-expand tree to show externally-provided selection (e.g. URL navigation)
+  useEffect(() => {
+    if (!currentSelection) return
+    const rsId = currentSelection.resultSetId
+    if (!rsId || rsId <= 0) return
+
+    // Ensure result set is expanded
+    setExpandedResultSets(prev => {
+      if (prev.has(rsId)) return prev
+      return new Set([rsId])
+    })
+
+    if (currentSelection.type === 'time_series') {
+      const catKey = `${rsId}-Time-Series`
+      setExpandedCategories(prev => {
+        if (prev.has(catKey)) return prev
+        return new Set([...prev, catKey])
+      })
+      if (currentSelection.loadCaseName) {
+        const ctKey = `${rsId}-Time-Series-${currentSelection.loadCaseName}`
+        setExpandedCategoryTypes(prev => {
+          if (prev.has(ctKey)) return prev
+          return new Set([...prev, ctKey])
+        })
+      }
+    }
+  }, [currentSelection])
 
   useEffect(() => {
     if (disableInitialAutoSelect) return

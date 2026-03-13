@@ -13,6 +13,7 @@ def build_correlation_context(
     job_id: int | str | None,
     result_set_id: int | str | None = None,
     task_id: Optional[str] = None,
+    correlation_id: Optional[str] = None,
 ) -> str:
     """Return stable key=value context tokens for cross-job log correlation."""
     normalized_job_type = str(job_type).strip()
@@ -28,4 +29,6 @@ def build_correlation_context(
     ]
     if task_id:
         context_tokens.append(f"task_id={task_id}")
+    if correlation_id:
+        context_tokens.append(f"correlation_id={correlation_id}")
     return " ".join(context_tokens)

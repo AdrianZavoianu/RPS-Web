@@ -277,6 +277,22 @@ const panelRenderers: Record<TreeSelectionType, PanelRenderer> = {
     )
   },
 
+  quad_rotations_plot: (controller) => {
+    if (controller.quadRotationsPlotLoading) {
+      return <LoadingState message="Loading quad rotation plot data..." />
+    }
+
+    if (!controller.quadRotationsPlotData) {
+      return <EmptyState title="No quad rotation data available" />
+    }
+
+    return (
+      <ColumnRotationsPlotPanel
+        data={controller.quadRotationsPlotData as ColumnRotationsPlotData}
+      />
+    )
+  },
+
   element: (controller) => {
     const isLoading =
       controller.elementsLoading ||

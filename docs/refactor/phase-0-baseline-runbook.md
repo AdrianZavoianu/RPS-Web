@@ -5,7 +5,7 @@ Use this runbook to regenerate the Phase 0 baseline artifact after major backend
 ## Prerequisites
 
 - Frontend dependencies installed in `frontend/node_modules`.
-- Backend dependencies installed in `backend/.venv`.
+- Backend dependencies installed from `backend/Pipfile.lock`.
 - Required env vars exported:
   - `SECRET_KEY`
   - `DB_CORE_NAME`
@@ -17,7 +17,8 @@ Use this runbook to regenerate the Phase 0 baseline artifact after major backend
 From `RPS-App/`:
 
 ```bash
-backend/.venv/bin/python scripts/capture_phase0_baseline.py
+cd backend
+pipenv run python ../scripts/capture_phase0_baseline.py
 ```
 
 ## Outputs
@@ -36,3 +37,11 @@ backend/.venv/bin/python scripts/capture_phase0_baseline.py
 - Tree expansion request probe:
   - request count
   - aggregate latency
+
+## CI Automation
+
+- GitHub Actions workflow: `.github/workflows/ci.yml`
+- Job: `Phase 0 Baseline Capture`
+- Artifact: `phase0-baseline-report`
+  - `docs/refactor/phase-0-baseline-report.md`
+  - `docs/refactor/phase-0-baseline-report.json`

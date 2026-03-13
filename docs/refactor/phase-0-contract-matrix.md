@@ -1,7 +1,7 @@
 # Phase 0 Contract Matrix
 
 Scope date: 2026-02-17  
-Plan source: `RPS_APP_REFACTOR_PLAN.md` (Phase 0)
+Plan source: `RPS_APP_GENERAL_REFACTOR_PLAN.md` (Phase 0)
 
 ## Critical Flow Contracts
 
@@ -22,6 +22,11 @@ Plan source: `RPS_APP_REFACTOR_PLAN.md` (Phase 0)
 - Import start returns task metadata and persists queued task id.
 - Export start returns job metadata and persists queued task id.
 - Reporting failures log correlation context with stable keys.
+- Error responses include standardized envelope fields:
+  - `error.code`
+  - `error.message`
+  - `error.status`
+  - `error.correlation_id`
 - Importer/exporter/reporting logs use standardized fields:
   - `project_id`
   - `project_slug`
@@ -33,7 +38,7 @@ Plan source: `RPS_APP_REFACTOR_PLAN.md` (Phase 0)
 ## Smoke Execution
 
 - Local:
-  - `DJANGO_SETTINGS_MODULE=rps.settings.test python manage.py test apps.importer.tests.test_api_smoke`
+  - `DJANGO_SETTINGS_MODULE=rps.settings.test python -m pytest apps/importer/tests/test_api_smoke.py`
 - CI:
   - Workflow: `.github/workflows/ci.yml`
-  - Job step: `API smoke tests`
+  - Job step: `Backend smoke and refactor guards`

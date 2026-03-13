@@ -222,6 +222,17 @@ export function useColumnRotationsPlotData(
   })
 }
 
+export function useQuadRotationsPlotData(
+  projectSlug: string,
+  params: resultsApi.QuadRotationsParams | null
+) {
+  return useQuery({
+    queryKey: queryKeys.quadRotationsPlot(projectSlug, params),
+    queryFn: () => resultsApi.getQuadRotationsPlotData(projectSlug, params!),
+    enabled: !!projectSlug && !!params,
+  })
+}
+
 // --- Pushover ---
 
 export function usePushoverCases(projectSlug: string, resultSetId?: number) {

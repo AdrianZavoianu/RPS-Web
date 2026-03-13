@@ -15,6 +15,7 @@ class ResultDatasetMeta:
     result_set_id: int
     display_name: str
     unit: str = ""
+    decimals: int | None = None
 
 
 @dataclass
@@ -36,6 +37,7 @@ class ResultDataset:
                 "result_set_id": self.meta.result_set_id,
                 "display_name": self.meta.display_name,
                 "unit": self.meta.unit,
+                "decimals": self.meta.decimals,
             },
             "rows": self.rows,
             "load_case_columns": self.load_case_columns,
@@ -62,6 +64,7 @@ class MaxMinDataset:
                 "result_set_id": self.meta.result_set_id,
                 "display_name": self.meta.display_name,
                 "unit": self.meta.unit,
+                "decimals": self.meta.decimals,
             },
             "rows": self.rows,
             "directions": self.directions,
@@ -90,6 +93,8 @@ class ComparisonDataset:
     series: List[ComparisonSeries]
     rows: List[Dict[str, Any]]
     ratio_column: Optional[str] = None
+    unit: str = ""
+    decimals: int | None = None
     warnings: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -109,6 +114,8 @@ class ComparisonDataset:
             ],
             "rows": self.rows,
             "ratio_column": self.ratio_column,
+            "unit": self.unit,
+            "decimals": self.decimals,
             "warnings": self.warnings,
         }
 

@@ -34,6 +34,51 @@ export interface GenerateReportRequest {
   project_name?: string
 }
 
+export interface ReportJob {
+  id: number
+  status: 'pending' | 'processing' | 'completed' | 'failed'
+  progress: number
+  file_name: string
+  download_url: string | null
+  error_message: string | null
+  created_at: string
+  completed_at: string | null
+}
+
+export interface ReportJobRequest extends GenerateReportRequest {}
+
+export async function getReportJobs(projectSlug: string): Promise<ReportJob[]> {
+  return apiClient.get<ReportJob[]>(`/projects/${projectSlug}/reports/jobs/`)
+}
+
+export async function getReportJob(
+  projectSlug: string,
+  jobId: number
+): Promise<ReportJob> {
+  return apiClient.get<ReportJob>(`/projects/${projectSlug}/reports/jobs/${jobId}/`)
+}
+
+export async function startReportJob(
+  projectSlug: string,
+  request: ReportJobRequest
+): Promise<ReportJob> {
+  return apiClient.post<ReportJob>(`/projects/${projectSlug}/reports/jobs/`, request)
+}
+
+export async function cancelReportJob(
+  projectSlug: string,
+  jobId: number
+): Promise<void> {
+  return apiClient.delete(`/projects/${projectSlug}/reports/jobs/${jobId}/`)
+}
+
+export async function downloadReportFile(
+  projectSlug: string,
+  jobId: number
+): Promise<Blob> {
+  return apiClient.getBlob(`/projects/${projectSlug}/reports/jobs/${jobId}/download/`)
+}
+
 /**
  * Get available report sections for a result set
  */

@@ -37,7 +37,8 @@ export async function uploadFiles(
   })
   return apiClient.upload<UploadResponse>(
     `/projects/${projectSlug}/imports/upload/`,
-    formData
+    formData,
+    300_000 // 5 minutes for large Excel files
   )
 }
 

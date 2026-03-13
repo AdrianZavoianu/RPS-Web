@@ -199,7 +199,7 @@ export function ReportDialogView({ onClose, projectName, state }: ReportDialogVi
                 {state.selectedSections.size} section{state.selectedSections.size !== 1 ? 's' : ''}{' '}
                 selected
               </div>
-              {state.previewError && <p className="text-xs text-red-400">{state.previewError}</p>}
+              {state.previewError && <p className="text-xs text-red-600">{state.previewError}</p>}
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -226,7 +226,7 @@ export function ReportDialogView({ onClose, projectName, state }: ReportDialogVi
               </div>
 
               {state.generateErrorMessage && (
-                <p className="text-xs text-red-400">{state.generateErrorMessage}</p>
+                <p className="text-xs text-red-600">{state.generateErrorMessage}</p>
               )}
             </div>
           </div>

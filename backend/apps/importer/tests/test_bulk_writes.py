@@ -1,5 +1,7 @@
 """Tests for strict bulk write helpers."""
 
+from unittest.mock import patch
+
 from django.contrib.auth.models import Group
 from django.test import SimpleTestCase, TestCase
 
@@ -47,6 +49,36 @@ class BulkCreateStrictTests(TestCase):
             )
 
         self.assertIn("database constraint conflict", str(raised.exception).lower())
+
+    def test_bulk_create_strict_uses_chunked_bulk_batches(self):
+        rows = [Group(name=f"group-{index}") for index in range(5)]
+
+        with patch.object(
+            Group.objects,
+            "bulk_create",
+            wraps=Group.objects.bulk_create,
+        ) as bulk_create:
+            created_count = bulk_create_strict(
+                Group,
+                rows,
+                context="chunked write",
+                batch_size=2,
+            )
+
+        self.assertEqual(created_count, 5)
+        self.assertEqual(bulk_create.call_count, 3)
+        self.assertTrue(
+            all(call.kwargs.get("batch_size") == 2 for call in bulk_create.call_args_list)
+        )
+
+    def test_bulk_create_strict_rejects_non_positive_batch_size(self):
+        with self.assertRaises(ValueError):
+            bulk_create_strict(
+                Group,
+                [Group(name="engineering")],
+                context="invalid batch size",
+                batch_size=0,
+            )
 
 
 class ImportErrorNormalizationTests(SimpleTestCase):

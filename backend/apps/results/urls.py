@@ -7,6 +7,7 @@ from .views import (
     BeamRotationsTableDataView,
     ChartDataView,
     ColumnRotationsPlotDataView,
+    QuadRotationsPlotDataView,
     ComparisonDataView,
     ComparisonSetViewSet,
     ElementListView,
@@ -100,6 +101,11 @@ urlpatterns = [
         "<slug:project_slug>/results/column-rotations/plot/",
         ColumnRotationsPlotDataView.as_view(),
         name="column-rotations-plot-data",
+    ),
+    path(
+        "<slug:project_slug>/results/quad-rotations/plot/",
+        QuadRotationsPlotDataView.as_view(),
+        name="quad-rotations-plot-data",
     ),
     # --- Pushover ---
     # Pushover cases

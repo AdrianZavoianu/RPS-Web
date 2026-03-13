@@ -2,14 +2,13 @@
  * React Query hooks for import operations
  */
 
-import { useCallback, useMemo } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import * as importsApi from '../api/imports'
 import { useAuthStore } from '../stores/authStore'
 import type { ImportJob, ImportStartRequest } from '../types'
-import { queryKeys } from './queryKeys'
-import { useWebSocketWithFallback } from './useWebSocket'
 import { invalidateByPrefix } from './invalidation'
+import { useJobProgressTransport } from './useJobProgressTransport'
+import { queryKeys } from './queryKeys'
 
 type ImportProgressMessage = {
   type: 'progress'
@@ -35,7 +34,12 @@ type ImportErrorMessage = {
 
 type ImportSocketMessage = ImportProgressMessage | ImportCompleteMessage | ImportErrorMessage
 
-const ACTIVE_IMPORT_STATUSES: ImportJob['status'][] = ['pending', 'scanning', 'processing', 'building_cache']
+const ACTIVE_IMPORT_STATUSES: ImportJob['status'][] = [
+  'pending',
+  'scanning',
+  'processing',
+  'building_cache',
+]
 
 function mapProgressPhaseToStatus(phase: string | undefined): ImportJob['status'] {
   if (phase === 'scanning') return 'scanning'
@@ -66,6 +70,74 @@ function toImportSummaryRecord(summary: ImportJob['import_summary']): Record<str
   return {}
 }
 
+function updateImportJobFromMessage(
+  currentJob: ImportJob,
+  message: ImportSocketMessage
+): ImportJob {
+  if (message.type === 'progress') {
+    return {
+      ...currentJob,
+      status: mapProgressPhaseToStatus(message.phase),
+      current_phase: message.message || currentJob.current_phase,
+      progress_current:
+        typeof message.current === 'number' ? message.current : currentJob.progress_current,
+      progress_total:
+        typeof message.total === 'number' ? message.total : currentJob.progress_total,
+      progress_percent:
+        typeof message.percent === 'number' ? message.percent : currentJob.progress_percent,
+    }
+  }
+
+  if (message.type === 'complete') {
+    const completionStatus = message.status ?? 'success'
+    if (completionStatus === 'failed') {
+      return {
+        ...currentJob,
+        status: 'failed',
+        current_phase: message.message || currentJob.current_phase,
+        error_message: message.message || currentJob.error_message,
+      }
+    }
+
+    const importSummary = toImportSummaryRecord(currentJob.import_summary)
+    const summaryWithWarnings =
+      completionStatus === 'warning'
+        ? {
+            ...importSummary,
+            has_warnings: true,
+            warning_count:
+              typeof importSummary.warning_count === 'number'
+                ? importSummary.warning_count
+                : 1,
+            errors:
+              Array.isArray(importSummary.errors) && importSummary.errors.length > 0
+                ? importSummary.errors
+                : message.message
+                  ? [message.message]
+                  : [],
+          }
+        : importSummary
+
+    return {
+      ...currentJob,
+      status: 'completed',
+      current_phase: message.message || currentJob.current_phase,
+      import_summary: summaryWithWarnings,
+    }
+  }
+
+  return {
+    ...currentJob,
+    status: 'failed',
+    current_phase: 'Import failed',
+    error_message: message.message || currentJob.error_message,
+  }
+}
+
+function isImportTerminalMessage(message: ImportSocketMessage): boolean {
+  return message.type === 'complete' || message.type === 'error'
+}
+
 // --- Import Jobs ---
 
 export function useImportJobs(projectSlug: string) {
@@ -77,104 +149,18 @@ export function useImportJobs(projectSlug: string) {
 }
 
 export function useImportJob(projectSlug: string, jobId: number | null) {
-  const queryClient = useQueryClient()
   const token = useAuthStore((state) => state.token)
 
-  const socketUrl = useMemo(() => {
-    if (!jobId || typeof window === 'undefined') {
-      return null
-    }
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const baseUrl = `${protocol}//${window.location.host}/ws/imports/${jobId}/`
-    return token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl
-  }, [jobId, token])
-
-  const handleSocketMessage = useCallback(
-    (message: ImportSocketMessage) => {
-      queryClient.setQueryData<ImportJob | undefined>(
-        queryKeys.importJob(projectSlug, jobId),
-        (currentJob) => {
-          if (!currentJob) {
-            return currentJob
-          }
-
-          if (message.type === 'progress') {
-            return {
-              ...currentJob,
-              status: mapProgressPhaseToStatus(message.phase),
-              current_phase: message.message || currentJob.current_phase,
-              progress_current:
-                typeof message.current === 'number'
-                  ? message.current
-                  : currentJob.progress_current,
-              progress_total:
-                typeof message.total === 'number' ? message.total : currentJob.progress_total,
-              progress_percent:
-                typeof message.percent === 'number'
-                  ? message.percent
-                  : currentJob.progress_percent,
-            }
-          }
-
-          if (message.type === 'complete') {
-            const completionStatus = message.status ?? 'success'
-            if (completionStatus === 'failed') {
-              return {
-                ...currentJob,
-                status: 'failed',
-                current_phase: message.message || currentJob.current_phase,
-                error_message: message.message || currentJob.error_message,
-              }
-            }
-
-            const importSummary = toImportSummaryRecord(currentJob.import_summary)
-            const summaryWithWarnings =
-              completionStatus === 'warning'
-                ? {
-                    ...importSummary,
-                    has_warnings: true,
-                    warning_count:
-                      typeof importSummary.warning_count === 'number'
-                        ? importSummary.warning_count
-                        : 1,
-                    errors:
-                      Array.isArray(importSummary.errors) && importSummary.errors.length > 0
-                        ? importSummary.errors
-                        : message.message
-                          ? [message.message]
-                          : [],
-                  }
-                : importSummary
-
-            return {
-              ...currentJob,
-              status: 'completed',
-              current_phase: message.message || currentJob.current_phase,
-              import_summary: summaryWithWarnings,
-            }
-          }
-
-          return {
-            ...currentJob,
-            status: 'failed',
-            current_phase: 'Import failed',
-            error_message: message.message || currentJob.error_message,
-          }
-        }
-      )
-
-      if (message.type === 'complete' || message.type === 'error') {
-        invalidateByPrefix(queryClient, queryKeys.importJob(projectSlug, jobId))
-        invalidateByPrefix(queryClient, queryKeys.importJobs(projectSlug))
-      }
-    },
-    [jobId, projectSlug, queryClient]
-  )
-
-  const socketConnected = useWebSocketWithFallback<ImportSocketMessage>(socketUrl, {
+  const socketConnected = useJobProgressTransport<ImportJob, ImportSocketMessage>({
     enabled: !!projectSlug && !!jobId,
+    isTerminalMessage: isImportTerminalMessage,
+    jobId,
+    listQueryKey: queryKeys.importJobs(projectSlug),
     parseMessage: parseImportSocketMessage,
-    onMessage: handleSocketMessage,
+    queryKey: queryKeys.importJob(projectSlug, jobId),
+    socketResource: 'imports',
+    token,
+    updateJobFromMessage: updateImportJobFromMessage,
   })
 
   return useQuery({

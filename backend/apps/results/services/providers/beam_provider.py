@@ -6,8 +6,13 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from django.db.models import Q
 
+from apps.results.data import ElementResultsCacheRepository
 from apps.results.models import BeamRotation
 
+from ..fallback_policy import (
+    FALLBACK_CACHE_ONLY,
+    resolve_fallback,
+)
 from .common import sort_load_case_columns
 
 PLOT_BINS = 50
@@ -120,68 +125,93 @@ def _normalize_step_type(step_type: Optional[str]) -> str:
     return raw
 
 
-def get_beam_rotations_plot_data(service, result_set_id: int) -> Optional[Dict[str, Any]]:
-    records = list(_get_beam_records(service, result_set_id))
-    if not records:
-        return None
-
-    story_orders: Dict[str, int] = {}
-    max_points: List[Dict[str, Any]] = []
-    min_points: List[Dict[str, Any]] = []
-
-    for record in records:
-        story_name = record.story.name
-        story_order = (
-            record.story_sort_order
-            if record.story_sort_order is not None
-            else (record.story.sort_order if record.story.sort_order is not None else 0)
-        )
-        if story_name not in story_orders or story_order < story_orders[story_name]:
-            story_orders[story_name] = int(story_order)
-
-        for step_type, raw_value in _resolve_rotation_candidates(record):
-            display_rotation = service._apply_multiplier(raw_value, "BeamRotations")
-
-            point = {
-                "element": record.element.name,
-                "story": story_name,
-                "load_case": record.load_case.name,
-                "rotation": display_rotation,
-            }
-            if step_type == "min":
-                min_points.append(point)
-            else:
-                max_points.append(point)
-
-    if not max_points and not min_points:
-        return None
-
-    story_names_excel_order = sorted(story_orders.keys(), key=lambda s: (story_orders[s], s))
-    stories = list(reversed(story_names_excel_order))
-    story_index = {name: idx for idx, name in enumerate(stories)}
-
-    for point in max_points:
-        point["story_index"] = story_index.get(point["story"], 0)
-    for point in min_points:
-        point["story_index"] = story_index.get(point["story"], 0)
-
-    histogram_values = [p["rotation"] for p in max_points] + [p["rotation"] for p in min_points]
-
+def _serialize_beam_table_payload(
+    *,
+    service,
+    result_set_id: int,
+    rows: list[dict[str, Any]],
+    load_case_columns: list[str],
+) -> Dict[str, Any]:
+    summary_columns = SUMMARY_COLUMNS if any("Avg" in row for row in rows) else []
     return {
         "meta": {
-            "result_type": "AllBeamRotations",
+            "result_type": "BeamRotationsTable",
             "result_set_id": result_set_id,
             "unit": service._build_meta("BeamRotations", None, result_set_id).unit,
-            "x_label": "R3 Plastic Rotation (%)",
         },
-        "stories": stories,
-        "max_points": max_points,
-        "min_points": min_points,
-        "histogram_bins": _build_histogram_bins(histogram_values),
+        "columns": FIXED_COLUMNS + load_case_columns + summary_columns,
+        "rows": rows,
+        "fixed_columns": FIXED_COLUMNS,
+        "load_case_columns": load_case_columns,
+        "summary_columns": summary_columns,
     }
 
 
-def get_beam_rotations_table_data(service, result_set_id: int) -> Optional[Dict[str, Any]]:
+def _build_beam_rotations_table_data_from_cache(service, result_set_id: int) -> Optional[Dict[str, Any]]:
+    cache_entries = ElementResultsCacheRepository.list_entries_for_types(
+        service.project,
+        result_set_id=result_set_id,
+        result_types=["BeamRotations_R3Plastic"],
+    )
+    if not cache_entries:
+        return None
+
+    rows: list[tuple[int, dict[str, Any]]] = []
+    load_case_set = set()
+
+    for entry in cache_entries:
+        row = {
+            "Story": entry.story.name,
+            "Step Type": "",
+            "Frame/Wall": entry.element.name,
+            "Unique Name": entry.element.unique_name or entry.element.name,
+            "Hinge": "",
+            "Generated Hinge": "",
+            "Rel Dist": 0.0,
+        }
+
+        for load_case_name, raw_value in (entry.results_matrix or {}).items():
+            try:
+                numeric_value = float(raw_value)
+            except (TypeError, ValueError):
+                continue
+            row[load_case_name] = service._apply_multiplier(numeric_value, "BeamRotations")
+            load_case_set.add(load_case_name)
+
+        if entry.avg_value is not None:
+            row["Avg"] = service._apply_multiplier(entry.avg_value, "BeamRotations")
+        if entry.max_value is not None:
+            row["Max"] = service._apply_multiplier(entry.max_value, "BeamRotations")
+        if entry.min_value is not None:
+            row["Min"] = service._apply_multiplier(entry.min_value, "BeamRotations")
+
+        sort_order = (
+            entry.story_sort_order
+            if entry.story_sort_order is not None
+            else (entry.story.sort_order if entry.story.sort_order is not None else 0)
+        )
+        rows.append((int(sort_order), row))
+
+    load_case_columns = sort_load_case_columns(list(load_case_set))
+    rows.sort(
+        key=lambda item: (
+            item[0],
+            item[1]["Frame/Wall"],
+            item[1]["Generated Hinge"],
+            item[1]["Rel Dist"],
+        )
+    )
+    ordered_rows = [row for _, row in rows]
+
+    return _serialize_beam_table_payload(
+        service=service,
+        result_set_id=result_set_id,
+        rows=ordered_rows,
+        load_case_columns=load_case_columns,
+    )
+
+
+def _build_beam_rotations_table_data_from_raw(service, result_set_id: int) -> Optional[Dict[str, Any]]:
     records = list(_get_beam_records(service, result_set_id))
     if not records:
         return None
@@ -245,7 +275,6 @@ def get_beam_rotations_table_data(service, result_set_id: int) -> Optional[Dict[
             continue
 
         display_rotation = service._apply_multiplier(raw_rotation, "BeamRotations")
-
         row[load_case_name] = display_rotation
 
     load_case_columns = sort_load_case_columns(list(load_cases))
@@ -253,7 +282,9 @@ def get_beam_rotations_table_data(service, result_set_id: int) -> Optional[Dict[
 
     for key, row in rows_map.items():
         numeric_values = [
-            float(row[load_case]) for load_case in load_case_columns if isinstance(row.get(load_case), (int, float))
+            float(row[load_case])
+            for load_case in load_case_columns
+            if isinstance(row.get(load_case), (int, float))
         ]
         if numeric_values:
             row["Avg"] = sum(numeric_values) / len(numeric_values)
@@ -272,17 +303,86 @@ def get_beam_rotations_table_data(service, result_set_id: int) -> Optional[Dict[
         )
     )
     ordered_rows = [row for _, row in rows]
-    summary_columns = SUMMARY_COLUMNS if any("Avg" in row for row in ordered_rows) else []
+
+    return _serialize_beam_table_payload(
+        service=service,
+        result_set_id=result_set_id,
+        rows=ordered_rows,
+        load_case_columns=load_case_columns,
+    )
+
+
+def get_beam_rotations_plot_data(service, result_set_id: int) -> Optional[Dict[str, Any]]:
+    records = list(_get_beam_records(service, result_set_id))
+    if not records:
+        return None
+
+    story_orders: Dict[str, int] = {}
+    max_points: List[Dict[str, Any]] = []
+    min_points: List[Dict[str, Any]] = []
+
+    for record in records:
+        story_name = record.story.name
+        story_order = (
+            record.story_sort_order
+            if record.story_sort_order is not None
+            else (record.story.sort_order if record.story.sort_order is not None else 0)
+        )
+        if story_name not in story_orders or story_order < story_orders[story_name]:
+            story_orders[story_name] = int(story_order)
+
+        for step_type, raw_value in _resolve_rotation_candidates(record):
+            display_rotation = service._apply_multiplier(raw_value, "BeamRotations")
+
+            point = {
+                "element": record.element.name,
+                "story": story_name,
+                "load_case": record.load_case.name,
+                "rotation": display_rotation,
+            }
+            if step_type == "min":
+                min_points.append(point)
+            else:
+                max_points.append(point)
+
+    if not max_points and not min_points:
+        return None
+
+    story_names_excel_order = sorted(story_orders.keys(), key=lambda s: (story_orders[s], s))
+    stories = list(reversed(story_names_excel_order))
+    story_index = {name: idx for idx, name in enumerate(stories)}
+
+    for point in max_points:
+        point["story_index"] = story_index.get(point["story"], 0)
+    for point in min_points:
+        point["story_index"] = story_index.get(point["story"], 0)
+
+    histogram_values = [p["rotation"] for p in max_points] + [p["rotation"] for p in min_points]
 
     return {
         "meta": {
-            "result_type": "BeamRotationsTable",
+            "result_type": "AllBeamRotations",
             "result_set_id": result_set_id,
             "unit": service._build_meta("BeamRotations", None, result_set_id).unit,
+            "x_label": "R3 Plastic Rotation (%)",
         },
-        "columns": FIXED_COLUMNS + load_case_columns + summary_columns,
-        "rows": ordered_rows,
-        "fixed_columns": FIXED_COLUMNS,
-        "load_case_columns": load_case_columns,
-        "summary_columns": summary_columns,
+        "stories": stories,
+        "max_points": max_points,
+        "min_points": min_points,
+        "histogram_bins": _build_histogram_bins(histogram_values),
     }
+
+
+def get_beam_rotations_table_data(
+    service,
+    result_set_id: int,
+    *,
+    fallback_policy: str = FALLBACK_CACHE_ONLY,
+) -> Optional[Dict[str, Any]]:
+    selected = resolve_fallback(
+        fallback_policy=fallback_policy,
+        cache_loader=lambda: _build_beam_rotations_table_data_from_cache(service, result_set_id),
+        raw_loader=lambda: _build_beam_rotations_table_data_from_raw(service, result_set_id),
+        has_data=lambda payload: bool(payload and payload.get("rows")),
+    )
+    return selected.data

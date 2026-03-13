@@ -6,14 +6,14 @@
 import clsx from 'clsx'
 import { memo, useCallback, useMemo, useState } from 'react'
 import type { MaxMinDataset } from '../../types'
+import { useThemeStore } from '../../stores/themeStore'
 import { LazyPlot } from '../charts/LazyPlot'
 import { PROFILE_SERIES_COLORS } from '../../utils/chartColors'
 import { getGradientColor, getMinMax } from '../../utils/gradients'
-import { getResultTypeDecimals, getResultTypeUnit } from '../../utils/resultConfig'
 import {
   ACCENT_ZERO_LINE_COLOR,
   AVERAGE_LINE_COLOR,
-  TEXT_COLOR,
+  getChartColors,
 } from '../../utils/colors'
 import {
   PLOTLY_CONFIG_NO_MODE_BAR,
@@ -40,23 +40,29 @@ export function MaxMinResultsDisplay({
   // Extract unique load cases from OrigMax_ column keys
   const loadCases = useMemo(() => {
     const lcSet = new Set<string>()
-    if (data.rows.length > 0) {
+    if (data.rows.length > 0 && directions.length > 0) {
       const row = data.rows[0]
+      const dirPattern = directions.map((d) => d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
+      const regex = new RegExp(`^OrigMax_(.+)_(${dirPattern})$`)
       for (const key of Object.keys(row)) {
-        const match = key.match(/^OrigMax_(.+)_[XY]$/)
+        const match = key.match(regex)
         if (match) {
           lcSet.add(match[1])
         }
       }
     }
     return Array.from(lcSet).sort()
-  }, [data.rows])
+  }, [data.rows, directions])
 
-  const unit = useMemo(() => getResultTypeUnit(resultType), [resultType])
-  const decimals = useMemo(() => getResultTypeDecimals(resultType), [resultType])
+  const unit = useMemo(() => data.meta?.unit || '', [data.meta?.unit])
+  const decimals = useMemo(
+    () => (typeof data.meta?.decimals === 'number' ? data.meta.decimals : null),
+    [data.meta?.decimals]
+  )
 
   const fmt = (v: number | null | undefined) => {
     if (v === null || v === undefined) return '-'
+    if (decimals === null) return String(v)
     return v.toFixed(decimals)
   }
 
@@ -111,7 +117,7 @@ interface PlotsTabProps {
   loadCases: string[]
   resultType: string
   unit: string
-  decimals: number
+  decimals: number | null
 }
 
 function PlotsTab({
@@ -144,7 +150,7 @@ interface DirectionPlotProps {
   loadCases: string[]
   resultType: string
   unit: string
-  decimals: number
+  decimals: number | null
 }
 
 interface DirectionTraceEntry {
@@ -160,8 +166,11 @@ const DirectionPlot = memo(function DirectionPlot({
   unit,
   decimals,
 }: DirectionPlotProps) {
+  const theme = useThemeStore((s) => s.theme)
   const [selectedLoadCases, setSelectedLoadCases] = useState<Set<string>>(new Set())
   const [hoveredLoadCase, setHoveredLoadCase] = useState<string | null>(null)
+  const hoverNumberFormat = decimals === null ? '%{x}' : `%{x:.${decimals}f}`
+  const hoverCustomNumberFormat = decimals === null ? '%{customdata}' : `%{customdata:.${decimals}f}`
 
   const stories = useMemo(
     () => data.rows.map((row) => String(row['Story'])),
@@ -199,7 +208,7 @@ const DirectionPlot = memo(function DirectionPlot({
           line: { color, width: 2, dash: 'solid' },
           legendgroup: lc,
           showlegend: false,
-          hovertemplate: `${lc} Max<br>%{y}: %{x:.${decimals}f}<extra></extra>`,
+          hovertemplate: `${lc} Max<br>%{y}: ${hoverNumberFormat}<extra></extra>`,
         },
       })
 
@@ -217,7 +226,7 @@ const DirectionPlot = memo(function DirectionPlot({
           line: { color, width: 2, dash: 'dash' },
           legendgroup: lc,
           showlegend: false,
-          hovertemplate: `${lc} Min<br>%{y}: %{customdata:.${decimals}f}<extra></extra>`,
+          hovertemplate: `${lc} Min<br>%{y}: ${hoverCustomNumberFormat}<extra></extra>`,
           customdata: minValues,
         },
       })
@@ -247,7 +256,7 @@ const DirectionPlot = memo(function DirectionPlot({
           line: { color: AVERAGE_LINE_COLOR, width: 5, dash: 'solid' },
           legendgroup: 'avg',
           showlegend: false,
-          hovertemplate: `Avg Max<br>%{y}: %{x:.${decimals}f}<extra></extra>`,
+          hovertemplate: `Avg Max<br>%{y}: ${hoverNumberFormat}<extra></extra>`,
         },
       })
       traces.push({
@@ -261,14 +270,14 @@ const DirectionPlot = memo(function DirectionPlot({
           line: { color: AVERAGE_LINE_COLOR, width: 5, dash: 'dash' },
           legendgroup: 'avg',
           showlegend: false,
-          hovertemplate: `Avg Min<br>%{y}: %{customdata:.${decimals}f}<extra></extra>`,
+          hovertemplate: `Avg Min<br>%{y}: ${hoverCustomNumberFormat}<extra></extra>`,
           customdata: avgMinRaw.map((value) => -value),
         },
       })
     }
 
     return traces
-  }, [data.rows, loadCases, direction, decimals, stories])
+  }, [data.rows, loadCases, direction, hoverCustomNumberFormat, hoverNumberFormat, stories])
 
   const traces = useMemo<Array<Record<string, unknown>>>(() => {
     const hasSelection = selectedLoadCases.size > 0
@@ -309,15 +318,15 @@ const DirectionPlot = memo(function DirectionPlot({
 
   const layout = useMemo(() => withPlotlyDefaults({
     xaxis: createAxisLayout({
-      title: { text: `${resultType} (${unit})`, font: { size: 14, color: TEXT_COLOR }, standoff: 8 },
+      title: { text: `${resultType} (${unit})`, font: { size: 14, color: getChartColors().textColor }, standoff: 8 },
       zerolinecolor: ACCENT_ZERO_LINE_COLOR,
       zerolinewidth: 2,
       zeroline: true,
-      tickfont: { size: 10, color: TEXT_COLOR },
+      tickfont: { size: 10, color: getChartColors().textColor },
     }),
     yaxis: createAxisLayout({
-      title: { text: 'Story', font: { size: 14, color: TEXT_COLOR }, standoff: 8 },
-      tickfont: { size: 10, color: TEXT_COLOR },
+      title: { text: 'Story', font: { size: 14, color: getChartColors().textColor }, standoff: 8 },
+      tickfont: { size: 10, color: getChartColors().textColor },
       range: [
         0,
         (stories.length > 0 ? stories.length - 1 : 0) + STORY_AXIS_TOP_PADDING,
@@ -327,11 +336,12 @@ const DirectionPlot = memo(function DirectionPlot({
     hovermode: 'closest' as const,
     title: {
       text: `${direction} Direction`,
-      font: { size: 14, color: TEXT_COLOR },
+      font: { size: 14, color: getChartColors().textColor },
       x: 0.5,
       y: 0.98,
     },
-  }), [resultType, unit, stories.length, direction])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [resultType, unit, stories.length, direction, theme])
 
   const hasSelection = selectedLoadCases.size > 0
 

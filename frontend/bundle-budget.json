@@ -1,0 +1,13 @@
+{
+  "budgets": {
+    "max_total_asset_bytes": 1950000,
+    "max_total_js_bytes": 1600000,
+    "max_total_css_bytes": 110000,
+    "max_largest_asset_bytes": 1100000
+  },
+  "max_chunk_js_bytes": {
+    "index": 170000,
+    "plotly-vendor": 1100000,
+    "tanstack-vendor": 100000
+  }
+}

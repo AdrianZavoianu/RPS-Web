@@ -11,7 +11,7 @@ import { getGradientColor, getMinMax } from '../../utils/gradients'
 import { collectNumericValues, formatResultValue } from './tableUtils'
 
 interface ComparisonTableProps {
-  dataset: Pick<ComparisonDataset, 'rows' | 'series' | 'ratio_column' | 'metric' | 'result_type'>
+  dataset: Pick<ComparisonDataset, 'rows' | 'series' | 'ratio_column' | 'metric' | 'result_type' | 'decimals'>
   className?: string
 }
 
@@ -51,7 +51,7 @@ function ComparisonTableComponent({ dataset, className }: ComparisonTableProps) 
                 className="results-table-value"
                 style={{ color: textColor }}
               >
-                {formatResultValue(value, dataset.result_type)}
+                {formatResultValue(value, dataset.decimals)}
               </span>
             )
           },

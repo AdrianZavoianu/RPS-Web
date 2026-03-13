@@ -52,6 +52,7 @@ class CatalogProjectViewSet(viewsets.ModelViewSet):
                 element_count=Count("project_data__elements", distinct=True),
                 result_set_count=Count("project_data__result_sets", distinct=True),
             )
+            .order_by("-last_opened", "-updated_at", "-id")
         )
 
     def get_serializer_class(self):

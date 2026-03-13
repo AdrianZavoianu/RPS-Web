@@ -17,6 +17,7 @@
   /* Card styles */
   .card {
     @apply bg-bg-secondary border border-border-default rounded-lg p-5;
+    box-shadow: var(--shadow-card);
   }
 
   /* Input styles */
@@ -37,9 +38,27 @@
     display: inline-block;
     width: 32px;
     height: 32px;
-    background-color: #5a9daa;
+    background-color: var(--accent-primary);
     -webkit-mask: url('/assets/rps-icon.png') no-repeat center / contain;
     mask: url('/assets/rps-icon.png') no-repeat center / contain;
+  }
+
+  .theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
+    color: var(--text-muted);
+    background-color: transparent;
+    border: none;
+    transition: color 150ms ease, background-color 150ms ease;
+  }
+
+  .theme-toggle:hover {
+    color: var(--text-primary);
+    background-color: var(--bg-hover);
   }
 
   .nav-button {
@@ -231,6 +250,7 @@
 
   .project-card {
     @apply bg-bg-secondary border border-border-default rounded-lg p-5;
+    box-shadow: var(--shadow-card);
   }
 
   .project-card-title {
@@ -265,7 +285,7 @@
     background-color: var(--bg-secondary);
     border: 1px solid var(--border-default);
     border-radius: 10px;
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+    box-shadow: var(--shadow-dialog);
     display: flex;
     flex-direction: column;
     max-height: 85vh;
@@ -565,6 +585,10 @@
 
   .project-card-delete {
     @apply inline-flex items-center justify-center rounded text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary;
+  }
+
+  .dialog-content {
+    box-shadow: var(--shadow-dialog);
   }
 
   /* Table styles */

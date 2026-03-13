@@ -1,5 +1,3 @@
-import { getResultTypeDecimals } from '../../utils/resultConfig'
-
 export function collectNumericValues(
   rows: Record<string, unknown>[],
   columnKeys: string[]
@@ -18,7 +16,9 @@ export function collectNumericValues(
   return values
 }
 
-export function formatResultValue(value: number, resultType?: string): string {
-  const decimals = getResultTypeDecimals(resultType)
+export function formatResultValue(value: number, decimals?: number | null): string {
+  if (typeof decimals !== 'number' || !Number.isFinite(decimals) || decimals < 0) {
+    return String(value)
+  }
   return value.toFixed(decimals)
 }

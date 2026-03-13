@@ -1,6 +1,5 @@
 import type { ComparisonDataset, ProfileChartData } from '../../types'
 import { COMPARISON_SERIES_COLORS } from '../../utils/chartColors'
-import { getResultTypeUnit } from '../../utils/resultConfig'
 
 export type ComparisonMetric = 'Avg' | 'Max' | 'Min'
 
@@ -28,7 +27,8 @@ export function buildComparisonProfileChartData(
     stories,
     series,
     result_type: comparisonData.result_type,
-    unit: getResultTypeUnit(comparisonData.result_type),
+    unit: comparisonData.unit || '',
+    decimals: comparisonData.decimals,
     title: `${comparisonData.result_type}${direction ? ` ${direction}` : ''} - ${comparisonData.metric} Comparison`,
   }
 }

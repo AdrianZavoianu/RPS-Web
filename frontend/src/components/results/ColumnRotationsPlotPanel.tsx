@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 
 import type { ColumnRotationsPlotData, HistogramBin } from '../../types'
 import { LazyPlot } from '../charts/LazyPlot'
+import { withPlotlyDefaults } from '../../utils/plotlyDefaults'
 
 interface ColumnRotationsPlotPanelProps {
   data: ColumnRotationsPlotData
@@ -97,18 +98,27 @@ export function ColumnRotationsPlotPanel({ data }: ColumnRotationsPlotPanelProps
     return data.min_points.filter((point) => point.direction === effectiveDirection)
   }, [data.min_points, effectiveDirection])
 
-  const allPoints = useMemo(
-    () => [
-      ...filteredMaxPoints.map((point, index) => ({
+  const maxPointsWithJitter = useMemo(
+    () =>
+      filteredMaxPoints.map((point, index) => ({
         ...point,
         jitter: seededJitter(index, 64),
       })),
-      ...filteredMinPoints.map((point, index) => ({
+    [filteredMaxPoints]
+  )
+
+  const minPointsWithJitter = useMemo(
+    () =>
+      filteredMinPoints.map((point, index) => ({
         ...point,
         jitter: seededJitter(index, 65),
       })),
-    ],
-    [filteredMaxPoints, filteredMinPoints]
+    [filteredMinPoints]
+  )
+
+  const allPoints = useMemo(
+    () => [...maxPointsWithJitter, ...minPointsWithJitter],
+    [maxPointsWithJitter, minPointsWithJitter]
   )
 
   const xRange = useMemo(() => {
@@ -128,13 +138,14 @@ export function ColumnRotationsPlotPanel({ data }: ColumnRotationsPlotPanelProps
     return buildHistogramBins(allPoints.map((point) => point.rotation))
   }, [allPoints, data.histogram_bins, effectiveDirection])
 
-  const scatterTrace = useMemo(
+  const scatterMaxTrace = useMemo(
     () => ({
       type: 'scatter' as const,
       mode: 'markers' as const,
-      x: allPoints.map((point) => point.rotation),
-      y: allPoints.map((point) => point.story_index + point.jitter),
-      customdata: allPoints.map((point) => [
+      name: 'Max',
+      x: maxPointsWithJitter.map((point) => point.rotation),
+      y: maxPointsWithJitter.map((point) => point.story_index + point.jitter),
+      customdata: maxPointsWithJitter.map((point) => [
         point.element,
         point.load_case,
         point.story,
@@ -147,9 +158,32 @@ export function ColumnRotationsPlotPanel({ data }: ColumnRotationsPlotPanelProps
       },
       hovertemplate:
         '%{customdata[0]}<br>%{customdata[1]}<br>%{customdata[2]} (%{customdata[3]}): %{x:.3f}<extra></extra>',
-      showlegend: false,
     }),
-    [allPoints]
+    [maxPointsWithJitter]
+  )
+
+  const scatterMinTrace = useMemo(
+    () => ({
+      type: 'scatter' as const,
+      mode: 'markers' as const,
+      name: 'Min',
+      x: minPointsWithJitter.map((point) => point.rotation),
+      y: minPointsWithJitter.map((point) => point.story_index + point.jitter),
+      customdata: minPointsWithJitter.map((point) => [
+        point.element,
+        point.load_case,
+        point.story,
+        point.direction,
+      ]),
+      marker: {
+        color: '#f97316',
+        size: 4,
+        opacity: 0.7,
+      },
+      hovertemplate:
+        '%{customdata[0]}<br>%{customdata[1]}<br>%{customdata[2]} (%{customdata[3]}): %{x:.3f}<extra></extra>',
+    }),
+    [minPointsWithJitter]
   )
 
   const histogramTrace = useMemo(
@@ -226,30 +260,21 @@ export function ColumnRotationsPlotPanel({ data }: ColumnRotationsPlotPanelProps
           </div>
         ) : activeTab === 'scatter' ? (
           <LazyPlot
-            data={[scatterTrace]}
-            layout={{
+            data={[scatterMaxTrace, scatterMinTrace]}
+            layout={withPlotlyDefaults({
               xaxis: {
-                title: { text: data.meta.x_label, font: { size: 13, color: '#d1d5db' } },
-                gridcolor: 'rgba(60, 65, 75, 0.3)',
+                title: { text: data.meta.x_label, font: { size: 13 } },
                 zeroline: false,
-                tickfont: { size: 10 },
                 range: xRange,
                 dtick: 0.5,
-                linecolor: '#3a3f4a',
-                linewidth: 1,
-                mirror: true,
               },
               yaxis: {
-                title: { text: 'Story', font: { size: 13, color: '#d1d5db' } },
+                title: { text: 'Story', font: { size: 13 } },
                 tickmode: 'array',
                 tickvals: data.stories.map((_, index) => index),
                 ticktext: data.stories,
                 range: [-0.5, Math.max(data.stories.length - 0.5, 0.5)],
-                gridcolor: 'rgba(60, 65, 75, 0.25)',
-                tickfont: { size: 10 },
-                linecolor: '#3a3f4a',
-                linewidth: 1,
-                mirror: true,
+                zeroline: false,
               },
               shapes: [
                 {
@@ -261,13 +286,10 @@ export function ColumnRotationsPlotPanel({ data }: ColumnRotationsPlotPanelProps
                   line: { color: '#4a7d89', width: 1, dash: 'dash' },
                 },
               ],
-              paper_bgcolor: '#0a0c10',
-              plot_bgcolor: 'rgba(22, 27, 34, 0.5)',
-              font: { color: '#d1d5db', size: 11 },
               margin: { l: 72, r: 16, t: 6, b: 44 },
-              showlegend: false,
+              legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: 1.02 },
               autosize: true,
-            }}
+            })}
             config={{ displayModeBar: false, responsive: true }}
             style={{ width: '100%', height: '100%' }}
             useResizeHandler
@@ -275,24 +297,14 @@ export function ColumnRotationsPlotPanel({ data }: ColumnRotationsPlotPanelProps
         ) : (
           <LazyPlot
             data={[histogramTrace]}
-            layout={{
+            layout={withPlotlyDefaults({
               xaxis: {
-                title: { text: data.meta.x_label, font: { size: 13, color: '#d1d5db' } },
-                gridcolor: 'rgba(60, 65, 75, 0.3)',
-                tickfont: { size: 10 },
+                title: { text: data.meta.x_label, font: { size: 13 } },
                 dtick: 0.5,
-                linecolor: '#3a3f4a',
-                linewidth: 1,
-                mirror: true,
               },
               yaxis: {
-                title: { text: 'Count', font: { size: 13, color: '#d1d5db' } },
+                title: { text: 'Count', font: { size: 13 } },
                 rangemode: 'tozero',
-                gridcolor: 'rgba(60, 65, 75, 0.25)',
-                tickfont: { size: 10 },
-                linecolor: '#3a3f4a',
-                linewidth: 1,
-                mirror: true,
               },
               shapes: [
                 {
@@ -304,13 +316,10 @@ export function ColumnRotationsPlotPanel({ data }: ColumnRotationsPlotPanelProps
                   line: { color: '#4a7d89', width: 1, dash: 'dash' },
                 },
               ],
-              paper_bgcolor: '#0a0c10',
-              plot_bgcolor: 'rgba(22, 27, 34, 0.5)',
-              font: { color: '#d1d5db', size: 11 },
               margin: { l: 72, r: 16, t: 6, b: 44 },
               showlegend: false,
               autosize: true,
-            }}
+            })}
             config={{ displayModeBar: false, responsive: true }}
             style={{ width: '100%', height: '100%' }}
             useResizeHandler

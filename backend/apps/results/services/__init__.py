@@ -9,6 +9,10 @@ from .result_service import (
     ComparisonSeries,
     RESULT_TYPE_CONFIG,
 )
+from .fallback_policy import (
+    FALLBACK_CACHE_ONLY,
+    FALLBACK_CACHE_THEN_RAW,
+)
 
 __all__ = [
     "ResultDataService",
@@ -18,4 +22,6 @@ __all__ = [
     "ComparisonDataset",
     "ComparisonSeries",
     "RESULT_TYPE_CONFIG",
+    "FALLBACK_CACHE_ONLY",
+    "FALLBACK_CACHE_THEN_RAW",
 ]

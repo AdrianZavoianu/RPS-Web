@@ -1,12 +1,12 @@
 """
 Project data views for stories, load cases, and elements.
 """
+
 from django.db.models import QuerySet
-from django.shortcuts import get_object_or_404
 from rest_framework import permissions, viewsets
 from rest_framework.exceptions import NotFound
 
-from apps.catalog.models import CatalogProject
+from core.mixins import ProjectLookupMixin
 
 from .models import Element, LoadCase, Project, Story
 from .serializers import (
@@ -17,15 +17,19 @@ from .serializers import (
 )
 
 
-class ProjectDataMixin:
+class ProjectDataMixin(ProjectLookupMixin):
     """Mixin to get project from slug in URL."""
 
     def get_project(self) -> Project:
-        slug = self.kwargs.get("project_slug")
-        catalog = get_object_or_404(CatalogProject, slug=slug, owner=self.request.user)
-        if not hasattr(catalog, "project_data"):
+        project_slug = self.kwargs.get("project_slug")
+        catalog_project = self.get_catalog_project(
+            project_slug,
+            user=self.request.user,
+            enforce_owner=True,
+        )
+        if not hasattr(catalog_project, "project_data"):
             raise NotFound("Project data not found")
-        return catalog.project_data
+        return catalog_project.project_data
 
 
 class StoryViewSet(ProjectDataMixin, viewsets.ModelViewSet):

@@ -81,10 +81,15 @@ class ExportJobListViewTests(_ExportViewTestMixin, APITestCase):
     def test_auth_required(self):
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertIn("X-Correlation-ID", response)
+        self.assertIn("error", response.data)
+        self.assertEqual(response.data["error"]["status"], status.HTTP_401_UNAUTHORIZED)
 
     def test_project_scoped_list(self):
         ExportJob.objects.create(
-            project=self.project, user=self.user, export_format="excel",
+            project=self.project,
+            user=self.user,
+            export_format="excel",
             export_config={"result_set_id": self.result_set.id},
         )
         self._authenticate()
@@ -137,6 +142,8 @@ class ExportJobListViewTests(_ExportViewTestMixin, APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("error", response.data)
+        self.assertEqual(response.data["error"]["status"], status.HTTP_400_BAD_REQUEST)
 
 
 # ------------------------------------------------------------------
@@ -149,7 +156,9 @@ class ExportJobDetailViewTests(_ExportViewTestMixin, APITestCase):
     def setUpTestData(cls):
         super().setUpTestData()
         cls.job = ExportJob.objects.create(
-            project=cls.project, user=cls.user, export_format="excel",
+            project=cls.project,
+            user=cls.user,
+            export_format="excel",
             export_config={"result_set_id": cls.result_set.id},
             status="pending",
         )
@@ -173,7 +182,9 @@ class ExportJobDetailViewTests(_ExportViewTestMixin, APITestCase):
 
     def test_cancel_processing(self):
         processing_job = ExportJob.objects.create(
-            project=self.project, user=self.user, export_format="csv",
+            project=self.project,
+            user=self.user,
+            export_format="csv",
             export_config={"result_set_id": self.result_set.id},
             status="processing",
         )
@@ -188,7 +199,9 @@ class ExportJobDetailViewTests(_ExportViewTestMixin, APITestCase):
             project=self.other_project, name="RS-OTHER-EXP", analysis_type="NLTHA"
         )
         other_job = ExportJob.objects.create(
-            project=self.other_project, user=self.other_user, export_format="excel",
+            project=self.other_project,
+            user=self.other_user,
+            export_format="excel",
             export_config={"result_set_id": other_rs.id},
         )
         self._authenticate()
@@ -207,8 +220,11 @@ class ExportDownloadViewTests(_ExportViewTestMixin, APITestCase):
 
     def test_file_for_completed(self):
         job = ExportJob.objects.create(
-            project=self.project, user=self.user, export_format="csv",
-            export_config={}, status="completed",
+            project=self.project,
+            user=self.user,
+            export_format="csv",
+            export_config={},
+            status="completed",
             file_name="test.csv",
         )
         job.output_file.save("test.csv", ContentFile(b"a,b,c\n1,2,3"))
@@ -218,8 +234,11 @@ class ExportDownloadViewTests(_ExportViewTestMixin, APITestCase):
 
     def test_404_incomplete(self):
         job = ExportJob.objects.create(
-            project=self.project, user=self.user, export_format="csv",
-            export_config={}, status="pending",
+            project=self.project,
+            user=self.user,
+            export_format="csv",
+            export_config={},
+            status="pending",
         )
         self._authenticate()
         response = self.client.get(self._url(job.id))
@@ -227,8 +246,11 @@ class ExportDownloadViewTests(_ExportViewTestMixin, APITestCase):
 
     def test_404_wrong_project(self):
         other_job = ExportJob.objects.create(
-            project=self.other_project, user=self.other_user, export_format="csv",
-            export_config={}, status="completed",
+            project=self.other_project,
+            user=self.other_user,
+            export_format="csv",
+            export_config={},
+            status="completed",
             file_name="other.csv",
         )
         other_job.output_file.save("other.csv", ContentFile(b"x"))

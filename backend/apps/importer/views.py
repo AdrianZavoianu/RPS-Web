@@ -12,6 +12,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ViewSet
 
+from core.errors import api_error_response
 from core.mixins import ProjectLookupMixin
 from apps.projects.models import Project
 from apps.importer.models import ImportJob
@@ -58,10 +59,10 @@ class ImportViewSet(ProjectLookupMixin, ViewSet):
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, JSONParser]
 
-    def get_project(self, slug: str) -> Project:
+    def get_project(self, project_slug: str) -> Project:
         """Get project by slug."""
         return self.get_project_for_slug(
-            slug,
+            project_slug,
             create_if_missing=True,
             user=self.request.user,
         )
@@ -95,7 +96,12 @@ class ImportViewSet(ProjectLookupMixin, ViewSet):
                 task_started_message=task_started_message,
             )
         except ImportStartError as exc:
-            return Response({"detail": exc.detail}, status=exc.status_code)
+            return api_error_response(
+                request=self.request,
+                status_code=exc.status_code,
+                code="import_start_error",
+                message=exc.detail,
+            )
         return Response(payload)
 
     def list(self, request, project_slug=None):
@@ -118,8 +124,11 @@ class ImportViewSet(ProjectLookupMixin, ViewSet):
         job = self._get_job(project, pk)
 
         if job.status in ("completed", "failed", "cancelled"):
-            return Response(
-                {"detail": f"Job already {job.status}"}, status=status.HTTP_400_BAD_REQUEST
+            return api_error_response(
+                request=request,
+                status_code=status.HTTP_400_BAD_REQUEST,
+                code="invalid_job_state",
+                message=f"Job already {job.status}",
             )
 
         # Cancel celery task if running
@@ -151,7 +160,12 @@ class ImportViewSet(ProjectLookupMixin, ViewSet):
 
         files = request.FILES.getlist("files")
         if not files:
-            return Response({"detail": "No files uploaded"}, status=status.HTTP_400_BAD_REQUEST)
+            return api_error_response(
+                request=request,
+                status_code=status.HTTP_400_BAD_REQUEST,
+                code="missing_files",
+                message="No files uploaded",
+            )
 
         upload_dir, upload_timestamp = create_upload_directory(
             settings.MEDIA_ROOT,
@@ -160,9 +174,11 @@ class ImportViewSet(ProjectLookupMixin, ViewSet):
         try:
             saved_paths = save_uploaded_files(files, upload_dir)
         except ValueError as exc:
-            return Response(
-                {"detail": str(exc)},
-                status=status.HTTP_400_BAD_REQUEST,
+            return api_error_response(
+                request=request,
+                status_code=status.HTTP_400_BAD_REQUEST,
+                code="invalid_upload_payload",
+                message=str(exc),
             )
 
         job = create_import_job(
@@ -200,15 +216,22 @@ class ImportViewSet(ProjectLookupMixin, ViewSet):
                     task_started_message="Prescan started",
                 )
             except ImportPrescanError as exc:
-                return Response({"detail": exc.detail}, status=exc.status_code)
+                return api_error_response(
+                    request=request,
+                    status_code=exc.status_code,
+                    code="import_prescan_error",
+                    message=exc.detail,
+                )
             return Response(payload)
 
         try:
             payload = get_prescan_payload_for_job(job)
         except ImportPrescanError as exc:
-            return Response(
-                {"detail": exc.detail},
-                status=exc.status_code,
+            return api_error_response(
+                request=request,
+                status_code=exc.status_code,
+                code="import_prescan_error",
+                message=exc.detail,
             )
         return Response(payload)
 

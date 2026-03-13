@@ -39,7 +39,7 @@ export function ResultsView({ projectSlug }: ResultsViewProps) {
               onSelectedElementDirectionChange={controller.setSelectedElementDirection}
             />
 
-            <div className="flex-1 flex items-start overflow-hidden">
+            <div className="flex-1 flex min-h-0 overflow-hidden">
               {renderResultsSelectionPanel(controller)}
             </div>
           </>

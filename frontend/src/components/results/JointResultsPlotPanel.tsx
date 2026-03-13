@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 
 import type { ResultDataset } from '../../types'
 import { LazyPlot } from '../charts/LazyPlot'
+import { withPlotlyDefaults } from '../../utils/plotlyDefaults'
 
 interface JointResultsPlotPanelProps {
   dataset: ResultDataset
@@ -147,7 +148,7 @@ export function JointResultsPlotPanel({ dataset }: JointResultsPlotPanelProps) {
         ))}
       </div>
 
-      <div className="h-[calc(90vh-3rem)] min-h-0 mt-2">
+      <div className="flex-1 min-h-0 mt-2">
         {activeTab === 'scatter' ? (
           <LazyPlot
             data={[
@@ -162,45 +163,32 @@ export function JointResultsPlotPanel({ dataset }: JointResultsPlotPanelProps) {
                   point.uniqueName,
                 ]),
                 marker: {
-                  color: '#fb923c',
-                  size: 4,
-                  opacity: 0.7,
+                  color: '#f59a3e',
+                  size: 5,
+                  opacity: 0.75,
                 },
                 hovertemplate:
                   '%{customdata[0]}<br>%{customdata[1]}<br>%{customdata[2]}: %{y:.3f}<extra></extra>',
               },
             ]}
-            layout={{
+            layout={withPlotlyDefaults({
               xaxis: {
-                title: { text: 'Load Case', font: { size: 13, color: '#d1d5db' } },
+                title: { text: 'Load Case', font: { size: 13 } },
                 tickmode: 'array',
                 tickvals: loadCases.map((_, index) => index),
                 ticktext: loadCases,
                 range: [-0.5, xRange],
-                gridcolor: 'rgba(60, 65, 75, 0.25)',
-                tickfont: { size: 10 },
-                linecolor: '#3a3f4a',
-                linewidth: 1,
-                mirror: true,
               },
               yaxis: {
-                title: { text: yLabel, font: { size: 13, color: '#d1d5db' } },
-                gridcolor: 'rgba(60, 65, 75, 0.3)',
+                title: { text: yLabel, font: { size: 13 } },
                 zeroline: true,
                 zerolinecolor: '#4a7d89',
                 zerolinewidth: 1,
-                tickfont: { size: 10 },
-                linecolor: '#3a3f4a',
-                linewidth: 1,
-                mirror: true,
               },
-              paper_bgcolor: '#0a0c10',
-              plot_bgcolor: 'rgba(22, 27, 34, 0.5)',
-              font: { color: '#d1d5db', size: 11 },
               margin: { l: 72, r: 16, t: 6, b: 44 },
               showlegend: false,
               autosize: true,
-            }}
+            })}
             config={{
               displayModeBar: false,
               responsive: true,
@@ -217,43 +205,30 @@ export function JointResultsPlotPanel({ dataset }: JointResultsPlotPanelProps) {
                 y: histogramBins.map((bin) => bin.count),
                 width: histogramBins.map((bin) => bin.width),
                 marker: {
-                  color: 'rgba(251, 146, 60, 0.75)',
+                  color: 'rgba(245, 154, 62, 0.78)',
                   line: {
-                    color: '#fb923c',
+                    color: '#f59a3e',
                     width: 1,
                   },
                 },
                 hovertemplate: '%{x:.3f}<br>Count: %{y}<extra></extra>',
               },
             ]}
-            layout={{
+            layout={withPlotlyDefaults({
               xaxis: {
-                title: { text: yLabel, font: { size: 13, color: '#d1d5db' } },
-                gridcolor: 'rgba(60, 65, 75, 0.3)',
+                title: { text: yLabel, font: { size: 13 } },
                 zeroline: true,
                 zerolinecolor: '#4a7d89',
                 zerolinewidth: 1,
-                tickfont: { size: 10 },
-                linecolor: '#3a3f4a',
-                linewidth: 1,
-                mirror: true,
               },
               yaxis: {
-                title: { text: 'Count', font: { size: 13, color: '#d1d5db' } },
+                title: { text: 'Count', font: { size: 13 } },
                 rangemode: 'tozero',
-                gridcolor: 'rgba(60, 65, 75, 0.25)',
-                tickfont: { size: 10 },
-                linecolor: '#3a3f4a',
-                linewidth: 1,
-                mirror: true,
               },
-              paper_bgcolor: '#0a0c10',
-              plot_bgcolor: 'rgba(22, 27, 34, 0.5)',
-              font: { color: '#d1d5db', size: 11 },
               margin: { l: 72, r: 16, t: 6, b: 44 },
               showlegend: false,
               autosize: true,
-            }}
+            })}
             config={{
               displayModeBar: false,
               responsive: true,

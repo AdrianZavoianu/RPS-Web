@@ -368,7 +368,7 @@ export function PushoverView({ projectSlug }: PushoverViewProps) {
                         {curveData.points.map((point) => (
                           <tr key={point.step} className="results-table-row">
                             <td className="results-table-cell text-center">{point.step}</td>
-                            <td className="results-table-cell">{point.displacement.toFixed(2)}</td>
+                            <td className="results-table-cell">{point.displacement.toFixed(0)}</td>
                             <td className="results-table-cell">{point.base_shear.toFixed(0)}</td>
                           </tr>
                         ))}

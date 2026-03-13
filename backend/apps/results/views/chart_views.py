@@ -1,5 +1,6 @@
 """Chart and time-series data views."""
 
+from config.result_types import RESULT_TYPE_CONFIG
 from rest_framework import permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -144,6 +145,12 @@ class TimeSeriesAllTypesView(ProjectResultsMixin, APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     GLOBAL_TYPES = ["Displacements", "Drifts", "Accelerations", "Forces"]
+    GLOBAL_TYPE_UNITS = {
+        "Displacements": RESULT_TYPE_CONFIG.get("Displacements", {}).get("unit", ""),
+        "Drifts": RESULT_TYPE_CONFIG.get("Drifts", {}).get("unit", ""),
+        "Accelerations": RESULT_TYPE_CONFIG.get("Accelerations", {}).get("unit", ""),
+        "Forces": RESULT_TYPE_CONFIG.get("Forces", {}).get("unit", ""),
+    }
 
     def get(self, request, project_slug):
         params = self.validate_query_params(TimeSeriesAllTypesQuerySerializer)
@@ -161,6 +168,7 @@ class TimeSeriesAllTypesView(ProjectResultsMixin, APIView):
                     "time_steps": [],
                     "types": {},
                     "envelopes": {},
+                    "units": self.GLOBAL_TYPE_UNITS,
                     "load_case": params["load_case"],
                     "direction": params["direction"],
                 }
@@ -194,6 +202,7 @@ class TimeSeriesAllTypesView(ProjectResultsMixin, APIView):
                 "time_steps": time_steps or [],
                 "types": types_data,
                 "envelopes": envelopes,
+                "units": self.GLOBAL_TYPE_UNITS,
                 "load_case": params["load_case"],
                 "direction": params["direction"],
             }

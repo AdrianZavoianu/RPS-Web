@@ -62,6 +62,12 @@ export default defineConfig(async ({ mode }) => {
         '/api': {
           target: 'http://localhost:8000',
           changeOrigin: true,
+          timeout: 600_000,
+          configure: (proxy) => {
+            proxy.on('error', (err, req) => {
+              console.error(`[proxy error] ${req.method} ${req.url}:`, err.message)
+            })
+          },
         },
         '/ws': {
           target: 'ws://localhost:8000',

@@ -63,6 +63,13 @@ export interface ColumnRotationsPlotSelection extends TreeSelectionBase {
   resultType: string
 }
 
+export interface QuadRotationsPlotSelection extends TreeSelectionBase {
+  type: 'quad_rotations_plot'
+  category: 'Envelopes'
+  categoryType: 'Elements'
+  resultType: string
+}
+
 export interface BeamRotationsPlotSelection extends TreeSelectionBase {
   type: 'beam_rotations_plot'
   category: 'Envelopes'
@@ -133,6 +140,7 @@ export type TreeSelection =
   | JointPlotSelection
   | JointTableSelection
   | ColumnRotationsPlotSelection
+  | QuadRotationsPlotSelection
   | BeamRotationsPlotSelection
   | BeamRotationsTableSelection
   | PushoverCurveSelection

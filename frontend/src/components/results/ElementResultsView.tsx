@@ -16,7 +16,6 @@ import {
 import { ResultsTable } from './ResultsTable'
 import { MultiSeriesProfileChart } from '../charts/ProfileChart'
 import { ProjectBrowserNav } from '../projects/ProjectBrowserNav'
-import { getResultTypeUnit } from '../../utils/resultConfig'
 import type { ElementResultType } from '../../types'
 
 interface ElementResultsViewProps {
@@ -195,12 +194,12 @@ export function ElementResultsView({ projectSlug }: ElementResultsViewProps) {
   const displayTitle = useMemo(() => {
     if (!selectedElementId || !selectedResultType) return ''
     const el = elements.find((e) => e.id === selectedElementId)
-    const unit = getResultTypeUnit(selectedResultType)
+    const unit = resultsData?.meta?.unit || ''
     const name = el?.name || ''
     const dirStr = selectedDirection ? ` (${selectedDirection})` : ''
     const unitStr = unit ? ` (${unit})` : ''
     return `${name} - ${selectedResultType}${dirStr}${unitStr}`
-  }, [selectedElementId, elements, selectedResultType, selectedDirection])
+  }, [selectedElementId, elements, selectedResultType, selectedDirection, resultsData?.meta?.unit])
 
   return (
     <div className="element-results-view h-full flex">

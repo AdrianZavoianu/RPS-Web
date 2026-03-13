@@ -41,6 +41,28 @@ from .utils import append_import_error_with_log
 logger = logging.getLogger(__name__)
 
 
+def _project_story_index(
+    import_context: ImportContext,
+    sheet_stories: list,
+) -> Dict[str, int]:
+    """Build story index from the project's existing Story sort_order.
+
+    Falls back to the sheet's own order for stories not yet in the DB.
+    """
+    from apps.projects.models import Story
+
+    db_index = {
+        s.name: s.sort_order
+        for s in Story.objects.filter(project=import_context.project)
+    }
+    # For any story in the sheet that isn't in the DB yet, use sheet order
+    fallback = build_story_index(sheet_stories)
+    for name in fallback:
+        if name not in db_index:
+            db_index[name] = fallback[name]
+    return db_index
+
+
 def _build_nltha_sheet_importers(
     import_context: ImportContext,
 ) -> dict[str, Callable[[tuple, set[str]], None]]:
@@ -86,7 +108,7 @@ def _build_nltha_sheet_importers(
             import_context,
             parsed[0],
             parsed[1],
-            build_story_index(parsed[2]),
+            _project_story_index(import_context, parsed[2]),
             parsed[3],
             allowed_cases,
         ),

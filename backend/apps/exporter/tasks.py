@@ -12,13 +12,12 @@ from django.utils import timezone
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 
-from apps.results.models import ResultSet, ElementResultsCache
+from apps.results.models import ResultSet
 from apps.results.services import ResultDataService
 from apps.results.services.data_assembler import (
     assemble_table_rows,
     dataset_to_table_projection,
 )
-from apps.results.services.providers.common import sort_load_case_columns
 from config.result_types import RESULT_TYPE_BASE_MAP
 from core.logging import build_correlation_context
 from .models import ExportJob
@@ -114,52 +113,21 @@ def _get_element_export_table_rows(
             summary_columns=summary_cols,
         )
 
-    cache_entries = (
-        ElementResultsCache.objects.filter(
-            project=service.project,
-            result_set=result_set,
-            result_type=cache_type,
-        )
-        .select_related("element", "story")
-        .order_by("-story_sort_order", "element__name")
+    dataset = service.get_element_type_results(
+        result_set_id=result_set.id,
+        cache_type=cache_type,
+        base_result_type=base_type,
     )
-    cache_entries = list(cache_entries)
-    if not cache_entries:
+    if dataset is None:
         return None
 
-    load_case_set = set()
-    raw_rows = []
-
-    for entry in cache_entries:
-        row = {
-            "Element": entry.element.name,
-            "Story": entry.story.name,
-        }
-        for lc_name, value in entry.results_matrix.items():
-            row[lc_name] = service._apply_multiplier(value, base_type)
-            load_case_set.add(lc_name)
-
-        if entry.avg_value is not None:
-            row["Avg"] = service._apply_multiplier(entry.avg_value, base_type)
-        if entry.max_value is not None:
-            row["Max"] = service._apply_multiplier(entry.max_value, base_type)
-        if entry.min_value is not None:
-            row["Min"] = service._apply_multiplier(entry.min_value, base_type)
-
-        raw_rows.append(row)
-
-    lc_cols = sort_load_case_columns(list(load_case_set))
-    summary_cols = (
-        ["Avg", "Max", "Min"]
-        if include_summary and any("Avg" in r for r in raw_rows)
-        else []
-    )
-    return assemble_table_rows(
-        rows=raw_rows,
+    projection = dataset_to_table_projection(
+        dataset=dataset,
+        include_summary=include_summary,
         fixed_columns=["Element", "Story"],
-        load_case_columns=lc_cols,
-        summary_columns=summary_cols,
+        required_columns=["Element", "Story"],
     )
+    return projection["headers"], projection["rows"]
 
 
 def _get_joint_export_table_rows(
@@ -330,9 +298,10 @@ def process_export_job(self, job_id: int):
                 progress_callback=update_progress,
             )
             filename = f"{job.project.slug}_{result_set.name}_{timezone.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-            job.output_file.save(filename, ContentFile(output.getvalue()))
+            output_bytes = output.getvalue()
+            job.output_file.save(filename, ContentFile(output_bytes))
             job.file_name = filename
-            job.file_size = len(output.getvalue())
+            job.file_size = len(output_bytes)
 
         elif job.export_format == "csv":
             output = generate_csv_export(
@@ -346,9 +315,10 @@ def process_export_job(self, job_id: int):
                 progress_callback=update_progress,
             )
             filename = f"{job.project.slug}_{result_set.name}_{timezone.now().strftime('%Y%m%d_%H%M%S')}.csv"
-            job.output_file.save(filename, ContentFile(output.encode("utf-8")))
+            output_bytes = output.encode("utf-8")
+            job.output_file.save(filename, ContentFile(output_bytes))
             job.file_name = filename
-            job.file_size = len(output.encode("utf-8"))
+            job.file_size = len(output_bytes)
 
         job.status = "completed"
         job.completed_at = timezone.now()

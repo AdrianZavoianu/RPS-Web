@@ -137,6 +137,45 @@ class Phase2BackendRefactorTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("direction", response.data)
 
+    def test_global_results_validation_requires_direction(self):
+        self._authenticate()
+
+        response = self.client.get(
+            (
+                f"/api/projects/{self.primary_catalog_project.slug}/results/global/"
+                f"?result_set_id={self.primary_result_set_a.id}&result_type=Drifts"
+            )
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("direction", response.data)
+
+    def test_beam_endpoint_rejects_foreign_result_set_id(self):
+        self._authenticate()
+
+        response = self.client.get(
+            (
+                f"/api/projects/{self.primary_catalog_project.slug}/results/beam-rotations/plot/"
+                f"?result_set_id={self.secondary_result_set.id}"
+            )
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("result_set_id", response.data)
+
+    def test_pushover_batch_rejects_invalid_direction(self):
+        self._authenticate()
+
+        response = self.client.get(
+            (
+                f"/api/projects/{self.primary_catalog_project.slug}/pushover-curves/batch/"
+                f"?result_set_id={self.primary_result_set_a.id}&direction=invalid"
+            )
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("direction", response.data)
+
     def test_time_series_load_cases_enforces_project_scope(self):
         self._authenticate()
 

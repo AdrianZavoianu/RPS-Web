@@ -142,6 +142,7 @@ def get_chart_data(
             "direction": direction,
             "column": column,
             "unit": config.get("unit", ""),
+            "decimals": config.get("decimals"),
         }
 
     dataset = service.get_global_results(
@@ -168,4 +169,5 @@ def get_chart_data(
         "direction": direction,
         "column": column,
         "unit": config.get("unit", ""),
+        "decimals": config.get("decimals"),
     }

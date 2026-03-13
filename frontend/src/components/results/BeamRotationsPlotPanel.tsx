@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 
 import type { BeamRotationsPlotData } from '../../types'
 import { LazyPlot } from '../charts/LazyPlot'
+import { withPlotlyDefaults } from '../../utils/plotlyDefaults'
 
 interface BeamRotationsPlotPanelProps {
   data: BeamRotationsPlotData
@@ -105,25 +106,19 @@ export function BeamRotationsPlotPanel({ data }: BeamRotationsPlotPanelProps) {
         {activeTab === 'scatter' ? (
           <LazyPlot
             data={[scatterTrace]}
-            layout={{
+            layout={withPlotlyDefaults({
               xaxis: {
-                title: { text: data.meta.x_label, font: { size: 13, color: '#d1d5db' } },
-                gridcolor: 'rgba(60, 65, 75, 0.3)',
+                title: { text: data.meta.x_label, font: { size: 13 } },
                 zeroline: false,
-                tickfont: { size: 10 },
                 range: xRange,
                 dtick: 0.5,
-                linecolor: '#3a3f4a', linewidth: 1, mirror: true,
               },
               yaxis: {
-                title: { text: 'Story', font: { size: 13, color: '#d1d5db' } },
+                title: { text: 'Story', font: { size: 13 } },
                 tickmode: 'array',
                 tickvals: data.stories.map((_, index) => index),
                 ticktext: data.stories,
                 range: [-0.5, Math.max(data.stories.length - 0.5, 0.5)],
-                gridcolor: 'rgba(60, 65, 75, 0.25)',
-                tickfont: { size: 10 },
-                linecolor: '#3a3f4a', linewidth: 1, mirror: true,
               },
               shapes: [
                 {
@@ -135,13 +130,10 @@ export function BeamRotationsPlotPanel({ data }: BeamRotationsPlotPanelProps) {
                   line: { color: '#4a7d89', width: 1, dash: 'dash' },
                 },
               ],
-              paper_bgcolor: '#0a0c10',
-              plot_bgcolor: 'rgba(22, 27, 34, 0.5)',
-              font: { color: '#d1d5db', size: 11 },
               margin: { l: 72, r: 16, t: 6, b: 44 },
               showlegend: false,
               autosize: true,
-            }}
+            })}
             config={{ displayModeBar: false, responsive: true }}
             style={{ width: '100%', height: '100%' }}
             useResizeHandler
@@ -149,20 +141,14 @@ export function BeamRotationsPlotPanel({ data }: BeamRotationsPlotPanelProps) {
         ) : (
           <LazyPlot
             data={[histogramTrace]}
-            layout={{
+            layout={withPlotlyDefaults({
               xaxis: {
-                title: { text: data.meta.x_label, font: { size: 13, color: '#d1d5db' } },
-                gridcolor: 'rgba(60, 65, 75, 0.3)',
-                tickfont: { size: 10 },
+                title: { text: data.meta.x_label, font: { size: 13 } },
                 dtick: 0.5,
-                linecolor: '#3a3f4a', linewidth: 1, mirror: true,
               },
               yaxis: {
-                title: { text: 'Count', font: { size: 13, color: '#d1d5db' } },
+                title: { text: 'Count', font: { size: 13 } },
                 rangemode: 'tozero',
-                gridcolor: 'rgba(60, 65, 75, 0.25)',
-                tickfont: { size: 10 },
-                linecolor: '#3a3f4a', linewidth: 1, mirror: true,
               },
               shapes: [
                 {
@@ -174,13 +160,10 @@ export function BeamRotationsPlotPanel({ data }: BeamRotationsPlotPanelProps) {
                   line: { color: '#4a7d89', width: 1, dash: 'dash' },
                 },
               ],
-              paper_bgcolor: '#0a0c10',
-              plot_bgcolor: 'rgba(22, 27, 34, 0.5)',
-              font: { color: '#d1d5db', size: 11 },
               margin: { l: 72, r: 16, t: 6, b: 44 },
               showlegend: false,
               autosize: true,
-            }}
+            })}
             config={{ displayModeBar: false, responsive: true }}
             style={{ width: '100%', height: '100%' }}
             useResizeHandler

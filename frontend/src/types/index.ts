@@ -111,6 +111,7 @@ export interface ResultDatasetMeta {
   result_set_id: number
   display_name: string
   unit?: string
+  decimals?: number | null
 }
 
 export interface ResultDataset {
@@ -142,6 +143,8 @@ export interface ComparisonDataset {
   series: ComparisonSeries[]
   rows: Record<string, unknown>[]
   ratio_column: string | null
+  unit?: string
+  decimals?: number | null
   warnings: string[]
 }
 
@@ -152,6 +155,7 @@ export interface ChartData {
   direction: string
   column: string
   unit: string
+  decimals?: number | null
 }
 
 export interface BeamRotationPoint {
@@ -224,7 +228,34 @@ export interface AvailableResultTypes {
   element_results: ResultTypeInfo[]
   joint_results: ResultTypeInfo[]
   has_pushover: boolean
-  config: Record<string, { unit: string; multiplier: number; directions: string[] | null }>
+  config: Record<string, {
+    unit: string
+    multiplier: number
+    directions: string[] | null
+    internal_directions: Record<string, string>
+    decimals: number
+  }>
+  metadata: {
+    version: number
+    result_type_config: Record<string, {
+      unit: string
+      multiplier: number
+      directions: string[] | null
+      internal_directions: Record<string, string>
+      decimals: number
+    }>
+    result_type_base_map: Record<string, {
+      variants: string[]
+      directions: string[] | null
+      internal_directions: Record<string, string>
+      decimals: number
+    }>
+    categories: {
+      global: string[]
+      element: string[]
+      joint: string[]
+    }
+  }
 }
 
 export interface ResultTreeMetadata {
@@ -337,6 +368,7 @@ export interface ProfileChartData {
   }[]
   result_type?: string
   unit: string
+  decimals?: number | null
   title: string
 }
 
@@ -356,6 +388,7 @@ export interface TimeSeriesAllTypesData {
   time_steps: number[]
   types: Record<string, Record<string, number[]>>  // result_type -> story -> values
   envelopes: Record<string, { max_values: number[]; min_values: number[] }>
+  units: Record<string, string>
   load_case: string
   direction: string
 }

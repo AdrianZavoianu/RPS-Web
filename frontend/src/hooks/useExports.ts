@@ -2,14 +2,13 @@
  * React Query hooks for export operations
  */
 
-import { useCallback, useMemo } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import * as exportsApi from '../api/exports'
 import { useAuthStore } from '../stores/authStore'
 import type { ExportJob, ExportRequest } from '../api/exports'
-import { queryKeys } from './queryKeys'
-import { useWebSocketWithFallback } from './useWebSocket'
 import { invalidateByPrefix } from './invalidation'
+import { useJobProgressTransport } from './useJobProgressTransport'
+import { queryKeys } from './queryKeys'
 
 type ExportProgressMessage = {
   type: 'progress'
@@ -51,66 +50,48 @@ function parseExportSocketMessage(raw: string): ExportSocketMessage | null {
   return null
 }
 
+function updateExportJobFromMessage(currentJob: ExportJob, message: ExportSocketMessage): ExportJob {
+  if (message.type === 'progress') {
+    return {
+      ...currentJob,
+      status: 'processing',
+      progress: typeof message.percent === 'number' ? message.percent : currentJob.progress,
+    }
+  }
+
+  if (message.type === 'complete') {
+    return {
+      ...currentJob,
+      status: message.status === 'success' ? 'completed' : 'failed',
+      progress: message.status === 'success' ? 100 : currentJob.progress,
+    }
+  }
+
+  return {
+    ...currentJob,
+    status: 'failed',
+    error_message: message.message || currentJob.error_message,
+  }
+}
+
+function isExportTerminalMessage(message: ExportSocketMessage): boolean {
+  return message.type === 'complete' || message.type === 'error'
+}
+
 // Get export job status with polling
 export function useExportJob(projectSlug: string, jobId: number | null) {
-  const queryClient = useQueryClient()
   const token = useAuthStore((state) => state.token)
 
-  const socketUrl = useMemo(() => {
-    if (!jobId || typeof window === 'undefined') {
-      return null
-    }
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const baseUrl = `${protocol}//${window.location.host}/ws/exports/${jobId}/`
-    return token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl
-  }, [jobId, token])
-
-  const handleSocketMessage = useCallback(
-    (message: ExportSocketMessage) => {
-      queryClient.setQueryData<ExportJob | undefined>(
-        queryKeys.exportJob(projectSlug, jobId),
-        (currentJob) => {
-          if (!currentJob) {
-            return currentJob
-          }
-
-          if (message.type === 'progress') {
-            return {
-              ...currentJob,
-              status: 'processing',
-              progress:
-                typeof message.percent === 'number' ? message.percent : currentJob.progress,
-            }
-          }
-
-          if (message.type === 'complete') {
-            return {
-              ...currentJob,
-              status: message.status === 'success' ? 'completed' : 'failed',
-              progress: message.status === 'success' ? 100 : currentJob.progress,
-            }
-          }
-
-          return {
-            ...currentJob,
-            status: 'failed',
-            error_message: message.message || currentJob.error_message,
-          }
-        }
-      )
-
-      if (message.type === 'complete' || message.type === 'error') {
-        invalidateByPrefix(queryClient, queryKeys.exportJob(projectSlug, jobId))
-        invalidateByPrefix(queryClient, queryKeys.exportJobs(projectSlug))
-      }
-    },
-    [jobId, projectSlug, queryClient]
-  )
-
-  const socketConnected = useWebSocketWithFallback<ExportSocketMessage>(socketUrl, {
+  const socketConnected = useJobProgressTransport<ExportJob, ExportSocketMessage>({
     enabled: !!projectSlug && !!jobId,
+    isTerminalMessage: isExportTerminalMessage,
+    jobId,
+    listQueryKey: queryKeys.exportJobs(projectSlug),
     parseMessage: parseExportSocketMessage,
-    onMessage: handleSocketMessage,
+    queryKey: queryKeys.exportJob(projectSlug, jobId),
+    socketResource: 'exports',
+    token,
+    updateJobFromMessage: updateExportJobFromMessage,
   })
 
   return useQuery({
