@@ -1,6 +1,11 @@
 """Provider functions for element-level result data."""
 
-from typing import Any, Dict, List, Optional
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+if TYPE_CHECKING:
+    from ..result_service import ResultDataService
 
 from apps.results.data import ElementResultsCacheRepository
 
@@ -36,7 +41,7 @@ def _resolve_cache_types_for_result_type(
 
 
 def get_element_results(
-    service,
+    service: ResultDataService,
     result_set_id: int,
     element_id: int,
     result_type: str,
@@ -117,7 +122,7 @@ def get_element_results(
 
 
 def get_element_type_results(
-    service,
+    service: ResultDataService,
     result_set_id: int,
     cache_type: str,
     base_result_type: str,
@@ -175,7 +180,7 @@ def get_element_type_results(
 
 
 def get_all_elements_for_type(
-    service,
+    service: ResultDataService,
     result_set_id: int,
     result_type: str,
 ) -> List[Dict[str, Any]]:

@@ -1,5 +1,13 @@
 import type { ResultSet, ResultTreeMetadata } from '../../../types'
 import { ICONS, naturalCompare } from './constants'
+import {
+  buildBeamRotationsSubtree,
+  buildColumnRotationsChildren,
+  buildJointResultBranch,
+  buildPerElementBranches,
+  sortedElements,
+  type TreeBuilderContext,
+} from './treeBuilders'
 import type { TreeSelection } from './types'
 import { branchNode, leafNode, type TreeSchemaNode } from './treeSchema'
 
@@ -44,6 +52,8 @@ export function buildNlthaResultSetSchema({
   const soilPressuresKey = `${resultSet.id}-Envelopes-Joints-SoilPressures`
   const verticalDisplacementsKey = `${resultSet.id}-Envelopes-Joints-VerticalDisplacements`
 
+  const ctx: TreeBuilderContext = { resultSetId: resultSet.id, currentSelection, onSelect }
+
   const treeElementsByType = treeMetadata?.elements_by_type
   const timeSeriesLoadCases = [...(treeMetadata?.time_series_load_cases ?? [])].sort(naturalCompare)
   const hasTimeSeries = timeSeriesLoadCases.length > 0
@@ -51,15 +61,9 @@ export function buildNlthaResultSetSchema({
   const quadRotationElementsCount = treeElementsByType?.QuadRotations?.length ?? 0
   const beamRotationElementsCount = treeElementsByType?.BeamRotations?.length ?? 0
 
-  const columnShearElements = [...(treeElementsByType?.ColumnShears ?? [])].sort((a, b) =>
-    naturalCompare(a.name, b.name)
-  )
-  const columnAxialElements = [...(treeElementsByType?.ColumnAxials ?? [])].sort((a, b) =>
-    naturalCompare(a.name, b.name)
-  )
-  const columnRotationElements = [...(treeElementsByType?.ColumnRotations ?? [])].sort((a, b) =>
-    naturalCompare(a.name, b.name)
-  )
+  const columnShearElements = sortedElements(treeElementsByType, 'ColumnShears')
+  const columnAxialElements = sortedElements(treeElementsByType, 'ColumnAxials')
+  const columnRotationElements = sortedElements(treeElementsByType, 'ColumnRotations')
 
   const hasWallShears =
     wallShearElementsCount > 0 || elementResults.some((resultType) => resultType.type === 'WallShears')
@@ -256,82 +260,15 @@ export function buildNlthaResultSetSchema({
           icon: ICONS.resultType,
           expansionGroup: 'categoryTypes',
           variant: 'categoryType',
-          children: columnShearElements.map((element, elementIndex) => {
-            const elementKey = `${columnShearsKey}-${element.id}`
-            const elementChildren: TreeSchemaNode[] = [
-              leafNode({
-                key: `${elementKey}-V2`,
-                label: `${ICONS.branch} V2`,
-                onSelect: () =>
-                  onSelect({
-                    type: 'element',
-                    resultSetId: resultSet.id,
-                    category: 'Envelopes',
-                    categoryType: 'Elements',
-                    resultType: 'ColumnShears',
-                    direction: 'V2',
-                    elementType: 'Column',
-                    elementId: element.id,
-                  }),
-                selected:
-                  currentSelection?.type === 'element' &&
-                  currentSelection.resultSetId === resultSet.id &&
-                  currentSelection.resultType === 'ColumnShears' &&
-                  currentSelection.direction === 'V2' &&
-                  currentSelection.elementId === element.id,
-              }),
-              leafNode({
-                key: `${elementKey}-V3`,
-                label: `${ICONS.branch} V3`,
-                onSelect: () =>
-                  onSelect({
-                    type: 'element',
-                    resultSetId: resultSet.id,
-                    category: 'Envelopes',
-                    categoryType: 'Elements',
-                    resultType: 'ColumnShears',
-                    direction: 'V3',
-                    elementType: 'Column',
-                    elementId: element.id,
-                  }),
-                selected:
-                  currentSelection?.type === 'element' &&
-                  currentSelection.resultSetId === resultSet.id &&
-                  currentSelection.resultType === 'ColumnShears' &&
-                  currentSelection.direction === 'V3' &&
-                  currentSelection.elementId === element.id,
-              }),
-              leafNode({
-                key: `${elementKey}-MaxMin`,
-                label: `${ICONS.branchLast} Max/Min`,
-                onSelect: () =>
-                  onSelect({
-                    type: 'maxmin',
-                    resultSetId: resultSet.id,
-                    category: 'Envelopes',
-                    categoryType: 'Elements',
-                    resultType: 'ColumnShears',
-                    direction: 'MaxMin',
-                    elementType: 'Column',
-                    elementId: element.id,
-                  }),
-                selected:
-                  currentSelection?.type === 'maxmin' &&
-                  currentSelection.resultSetId === resultSet.id &&
-                  currentSelection.resultType === 'ColumnShears' &&
-                  currentSelection.elementId === element.id,
-              }),
-            ]
-
-            return branchNode({
-              key: elementKey,
-              label: `${branchPrefix(elementIndex, columnShearElements.length)} ${element.name}`,
-              icon: ICONS.resultType,
-              expansionGroup: 'categoryTypes',
-              variant: 'categoryType',
-              children: elementChildren,
-            })
-          }),
+          children: buildPerElementBranches(
+            ctx,
+            columnShearsKey,
+            columnShearElements,
+            'ColumnShears',
+            'Column',
+            ['V2', 'V3'],
+            true,
+          ),
         })
       )
     }
@@ -344,186 +281,20 @@ export function buildNlthaResultSetSchema({
           icon: ICONS.resultType,
           expansionGroup: 'categoryTypes',
           variant: 'categoryType',
-          children: columnAxialElements.map((element, elementIndex) => {
-            const elementKey = `${columnAxialsKey}-${element.id}`
-            const elementChildren: TreeSchemaNode[] = [
-              leafNode({
-                key: `${elementKey}-Min`,
-                label: `${ICONS.branch} Min`,
-                onSelect: () =>
-                  onSelect({
-                    type: 'element',
-                    resultSetId: resultSet.id,
-                    category: 'Envelopes',
-                    categoryType: 'Elements',
-                    resultType: 'ColumnAxials',
-                    direction: 'Min',
-                    elementType: 'Column',
-                    elementId: element.id,
-                  }),
-                selected:
-                  currentSelection?.type === 'element' &&
-                  currentSelection.resultSetId === resultSet.id &&
-                  currentSelection.resultType === 'ColumnAxials' &&
-                  currentSelection.direction === 'Min' &&
-                  currentSelection.elementId === element.id,
-              }),
-              leafNode({
-                key: `${elementKey}-Max`,
-                label: `${ICONS.branch} Max`,
-                onSelect: () =>
-                  onSelect({
-                    type: 'element',
-                    resultSetId: resultSet.id,
-                    category: 'Envelopes',
-                    categoryType: 'Elements',
-                    resultType: 'ColumnAxials',
-                    direction: 'Max',
-                    elementType: 'Column',
-                    elementId: element.id,
-                  }),
-                selected:
-                  currentSelection?.type === 'element' &&
-                  currentSelection.resultSetId === resultSet.id &&
-                  currentSelection.resultType === 'ColumnAxials' &&
-                  currentSelection.direction === 'Max' &&
-                  currentSelection.elementId === element.id,
-              }),
-              leafNode({
-                key: `${elementKey}-MaxMin`,
-                label: `${ICONS.branchLast} Max/Min`,
-                onSelect: () =>
-                  onSelect({
-                    type: 'maxmin',
-                    resultSetId: resultSet.id,
-                    category: 'Envelopes',
-                    categoryType: 'Elements',
-                    resultType: 'ColumnAxials',
-                    direction: 'MaxMin',
-                    elementType: 'Column',
-                    elementId: element.id,
-                  }),
-                selected:
-                  currentSelection?.type === 'maxmin' &&
-                  currentSelection.resultSetId === resultSet.id &&
-                  currentSelection.resultType === 'ColumnAxials' &&
-                  currentSelection.elementId === element.id,
-              }),
-            ]
-
-            return branchNode({
-              key: elementKey,
-              label: `${branchPrefix(elementIndex, columnAxialElements.length)} ${element.name}`,
-              icon: ICONS.resultType,
-              expansionGroup: 'categoryTypes',
-              variant: 'categoryType',
-              children: elementChildren,
-            })
-          }),
+          children: buildPerElementBranches(
+            ctx,
+            columnAxialsKey,
+            columnAxialElements,
+            'ColumnAxials',
+            'Column',
+            ['Min', 'Max'],
+            true,
+          ),
         })
       )
     }
 
     if (hasColumnRotations) {
-      const rotationChildren: TreeSchemaNode[] = [
-        leafNode({
-          key: `${columnRotationsKey}-all`,
-          label: `${columnRotationElements.length ? ICONS.branch : ICONS.branchLast} All Rotations`,
-          onSelect: () =>
-            onSelect({
-              type: 'column_rotations_plot',
-              resultSetId: resultSet.id,
-              category: 'Envelopes',
-              categoryType: 'Elements',
-              resultType: 'AllColumnRotations',
-              direction: '',
-              elementType: 'Column',
-            }),
-          selected:
-            currentSelection?.type === 'column_rotations_plot' &&
-            currentSelection.resultSetId === resultSet.id,
-        }),
-      ]
-
-      rotationChildren.push(
-        ...columnRotationElements.map((element, elementIndex) => {
-          const elementKey = `${columnRotationsKey}-${element.id}`
-          const elementChildren: TreeSchemaNode[] = [
-            leafNode({
-              key: `${elementKey}-R2`,
-              label: `${ICONS.branch} R2`,
-              onSelect: () =>
-                onSelect({
-                  type: 'element',
-                  resultSetId: resultSet.id,
-                  category: 'Envelopes',
-                  categoryType: 'Elements',
-                  resultType: 'ColumnRotations',
-                  direction: 'R2',
-                  elementType: 'Column',
-                  elementId: element.id,
-                }),
-              selected:
-                currentSelection?.type === 'element' &&
-                currentSelection.resultSetId === resultSet.id &&
-                currentSelection.resultType === 'ColumnRotations' &&
-                currentSelection.direction === 'R2' &&
-                currentSelection.elementId === element.id,
-            }),
-            leafNode({
-              key: `${elementKey}-R3`,
-              label: `${ICONS.branch} R3`,
-              onSelect: () =>
-                onSelect({
-                  type: 'element',
-                  resultSetId: resultSet.id,
-                  category: 'Envelopes',
-                  categoryType: 'Elements',
-                  resultType: 'ColumnRotations',
-                  direction: 'R3',
-                  elementType: 'Column',
-                  elementId: element.id,
-                }),
-              selected:
-                currentSelection?.type === 'element' &&
-                currentSelection.resultSetId === resultSet.id &&
-                currentSelection.resultType === 'ColumnRotations' &&
-                currentSelection.direction === 'R3' &&
-                currentSelection.elementId === element.id,
-            }),
-            leafNode({
-              key: `${elementKey}-MaxMin`,
-              label: `${ICONS.branchLast} Max/Min`,
-              onSelect: () =>
-                onSelect({
-                  type: 'maxmin',
-                  resultSetId: resultSet.id,
-                  category: 'Envelopes',
-                  categoryType: 'Elements',
-                  resultType: 'ColumnRotations',
-                  direction: 'MaxMin',
-                  elementType: 'Column',
-                  elementId: element.id,
-                }),
-              selected:
-                currentSelection?.type === 'maxmin' &&
-                currentSelection.resultSetId === resultSet.id &&
-                currentSelection.resultType === 'ColumnRotations' &&
-                currentSelection.elementId === element.id,
-            }),
-          ]
-
-          return branchNode({
-            key: elementKey,
-            label: `${branchPrefix(elementIndex, columnRotationElements.length)} ${element.name}`,
-            icon: ICONS.resultType,
-            expansionGroup: 'categoryTypes',
-            variant: 'categoryType',
-            children: elementChildren,
-          })
-        })
-      )
-
       columnChildren.push(
         branchNode({
           key: columnRotationsKey,
@@ -531,7 +302,7 @@ export function buildNlthaResultSetSchema({
           icon: ICONS.resultType,
           expansionGroup: 'categoryTypes',
           variant: 'categoryType',
-          children: rotationChildren,
+          children: buildColumnRotationsChildren(ctx, columnRotationsKey, columnRotationElements, true),
         })
       )
     }
@@ -549,60 +320,7 @@ export function buildNlthaResultSetSchema({
   }
 
   if (hasBeamRotations) {
-    elementsChildren.push(
-      branchNode({
-        key: beamsKey,
-        label: 'Beams',
-        icon: ICONS.resultType,
-        expansionGroup: 'categoryTypes',
-        variant: 'categoryType',
-        children: [
-          branchNode({
-            key: beamRotationsKey,
-            label: 'R3 Plastic Rotations',
-            icon: ICONS.resultType,
-            expansionGroup: 'categoryTypes',
-            variant: 'categoryType',
-            children: [
-              leafNode({
-                key: `${beamRotationsKey}-plot`,
-                label: `${ICONS.branch} Plot`,
-                onSelect: () =>
-                  onSelect({
-                    type: 'beam_rotations_plot',
-                    resultSetId: resultSet.id,
-                    category: 'Envelopes',
-                    categoryType: 'Elements',
-                    resultType: 'AllBeamRotations',
-                    direction: '',
-                    elementType: 'Beam',
-                  }),
-                selected:
-                  currentSelection?.type === 'beam_rotations_plot' &&
-                  currentSelection.resultSetId === resultSet.id,
-              }),
-              leafNode({
-                key: `${beamRotationsKey}-table`,
-                label: `${ICONS.branchLast} Table`,
-                onSelect: () =>
-                  onSelect({
-                    type: 'beam_rotations_table',
-                    resultSetId: resultSet.id,
-                    category: 'Envelopes',
-                    categoryType: 'Elements',
-                    resultType: 'BeamRotationsTable',
-                    direction: '',
-                    elementType: 'Beam',
-                  }),
-                selected:
-                  currentSelection?.type === 'beam_rotations_table' &&
-                  currentSelection.resultSetId === resultSet.id,
-              }),
-            ],
-          }),
-        ],
-      })
-    )
+    elementsChildren.push(buildBeamRotationsSubtree(ctx, beamsKey, beamRotationsKey))
   }
 
   if (elementsChildren.length > 0) {
@@ -622,98 +340,12 @@ export function buildNlthaResultSetSchema({
     const jointChildren: TreeSchemaNode[] = []
 
     if (hasSoilPressures) {
-      jointChildren.push(
-        branchNode({
-          key: soilPressuresKey,
-          label: 'Soil Pressures (Min)',
-          icon: ICONS.resultType,
-          expansionGroup: 'categoryTypes',
-          variant: 'categoryType',
-          children: [
-            leafNode({
-              key: `${soilPressuresKey}-plot`,
-              label: `${ICONS.branch} Plot`,
-              onSelect: () =>
-                onSelect({
-                  type: 'joint_plot',
-                  resultSetId: resultSet.id,
-                  category: 'Envelopes',
-                  categoryType: 'Joints',
-                  resultType: 'SoilPressures',
-                  direction: 'Min',
-                }),
-              selected:
-                currentSelection?.type === 'joint_plot' &&
-                currentSelection.resultSetId === resultSet.id &&
-                currentSelection.resultType === 'SoilPressures',
-            }),
-            leafNode({
-              key: `${soilPressuresKey}-table`,
-              label: `${ICONS.branchLast} Table`,
-              onSelect: () =>
-                onSelect({
-                  type: 'joint_table',
-                  resultSetId: resultSet.id,
-                  category: 'Envelopes',
-                  categoryType: 'Joints',
-                  resultType: 'SoilPressures',
-                  direction: 'Min',
-                }),
-              selected:
-                currentSelection?.type === 'joint_table' &&
-                currentSelection.resultSetId === resultSet.id &&
-                currentSelection.resultType === 'SoilPressures',
-            }),
-          ],
-        })
-      )
+      jointChildren.push(buildJointResultBranch(ctx, soilPressuresKey, 'Soil Pressures (Min)', 'SoilPressures'))
     }
 
     if (hasVerticalDisplacements) {
       jointChildren.push(
-        branchNode({
-          key: verticalDisplacementsKey,
-          label: 'Vertical Displacements (Min)',
-          icon: ICONS.resultType,
-          expansionGroup: 'categoryTypes',
-          variant: 'categoryType',
-          children: [
-            leafNode({
-              key: `${verticalDisplacementsKey}-plot`,
-              label: `${ICONS.branch} Plot`,
-              onSelect: () =>
-                onSelect({
-                  type: 'joint_plot',
-                  resultSetId: resultSet.id,
-                  category: 'Envelopes',
-                  categoryType: 'Joints',
-                  resultType: 'VerticalDisplacements',
-                  direction: 'Min',
-                }),
-              selected:
-                currentSelection?.type === 'joint_plot' &&
-                currentSelection.resultSetId === resultSet.id &&
-                currentSelection.resultType === 'VerticalDisplacements',
-            }),
-            leafNode({
-              key: `${verticalDisplacementsKey}-table`,
-              label: `${ICONS.branchLast} Table`,
-              onSelect: () =>
-                onSelect({
-                  type: 'joint_table',
-                  resultSetId: resultSet.id,
-                  category: 'Envelopes',
-                  categoryType: 'Joints',
-                  resultType: 'VerticalDisplacements',
-                  direction: 'Min',
-                }),
-              selected:
-                currentSelection?.type === 'joint_table' &&
-                currentSelection.resultSetId === resultSet.id &&
-                currentSelection.resultType === 'VerticalDisplacements',
-            }),
-          ],
-        })
+        buildJointResultBranch(ctx, verticalDisplacementsKey, 'Vertical Displacements (Min)', 'VerticalDisplacements')
       )
     }
 

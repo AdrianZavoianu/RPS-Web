@@ -8,7 +8,7 @@ from django.db.models import CharField, Q, Value
 
 from config.result_types import RESULT_TYPE_CONFIG, get_availability_map
 
-from apps.results.application import get_result_type_metadata_contract
+from apps.results.services.metadata import get_result_type_metadata_contract
 from apps.results.data import GlobalResultsCacheRepository
 from apps.results.models import (
     BeamRotation,

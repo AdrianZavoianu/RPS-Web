@@ -24,6 +24,8 @@ export function invalidateProjectResults(queryClient: QueryClient, projectSlug: 
     queryKeys.beamRotationsPlot(projectSlug),
     queryKeys.beamRotationsTable(projectSlug),
     queryKeys.columnRotationsPlot(projectSlug),
+    queryKeys.quadRotationsPlot(projectSlug),
+    queryKeys.resultTreeMetadata(projectSlug),
     queryKeys.timeSeriesAllTypes(projectSlug),
     queryKeys.timeSeriesLoadCases(projectSlug),
     queryKeys.timeSeriesData(projectSlug),

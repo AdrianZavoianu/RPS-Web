@@ -186,10 +186,17 @@
 .maxmin-direction-tables {}
 .maxmin-compact-table {}
 
+/* Rotation Plot (shared) */
+.rotation-plot-toolbar {}
+.rotation-plot-tabs {}
+.rotation-plot-tab {}
+.rotation-plot-directions {}
+
 /* Beam Rotations Plot */
 .beam-rotations-plot {}
-.beam-rotations-tabs {}
-.beam-rotations-tab {}
+
+/* Column Rotations Plot */
+.column-rotations-plot {}
 
 /* Comparison View */
 .comparison-view {}

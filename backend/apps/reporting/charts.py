@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 
 from config.result_types import get_plot_color
 
-PLOT_AREA_FILL = "#eef2f6"
+from .chart_primitives import PLOT_AREA_FILL, SvgCanvas  # noqa: F401
 
 
 def generate_profile_svg(
@@ -22,12 +22,6 @@ def generate_profile_svg(
 
     if not rows or not load_case_columns:
         return ""
-
-    width = 500
-    height = 300
-    margin = {"top": 20, "right": 20, "bottom": 40, "left": 60}
-    plot_width = width - margin["left"] - margin["right"]
-    plot_height = height - margin["top"] - margin["bottom"]
 
     stories = [row.get(story_column, "") for row in rows]
     n_stories = len(stories)
@@ -48,20 +42,8 @@ def generate_profile_svg(
         min_val -= 1
         max_val += 1
 
-    svg_parts = [
-        f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg">',
-        f'<rect width="{width}" height="{height}" fill="#ffffff"/>',
-        f'<rect x="{margin["left"]}" y="{margin["top"]}" '
-        f'width="{plot_width}" height="{plot_height}" fill="{PLOT_AREA_FILL}" stroke="#d1d5db"/>',
-    ]
-
-    for i in range(n_stories):
-        y = margin["top"] + plot_height - (i + 0.5) / n_stories * plot_height
-        svg_parts.append(
-            f'<line x1="{margin["left"]}" y1="{y}" '
-            f'x2="{margin["left"] + plot_width}" y2="{y}" '
-            f'stroke="#e5e7eb" stroke-dasharray="2,2"/>'
-        )
+    c = SvgCanvas()
+    c.draw_horizontal_grid(n_stories)
 
     for col_idx, col in enumerate(load_case_columns[:12]):
         color = get_plot_color(col_idx)
@@ -70,12 +52,12 @@ def generate_profile_svg(
             val = row.get(col)
             if val is None or not isinstance(val, (int, float)):
                 continue
-            x = margin["left"] + (float(val) - min_val) / (max_val - min_val) * plot_width
-            y = margin["top"] + plot_height - (i + 0.5) / n_stories * plot_height
+            x = c.value_x(float(val), min_val, max_val)
+            y = c.story_y(i, n_stories)
             points.append(f"{x},{y}")
 
         if points:
-            svg_parts.append(
+            c.add(
                 f'<polyline points="{" ".join(points)}" '
                 f'fill="none" stroke="{color}" stroke-width="1.5"/>'
             )
@@ -85,46 +67,22 @@ def generate_profile_svg(
         for i, row in enumerate(rows):
             avg_val = row.get("Avg")
             if avg_val is not None and isinstance(avg_val, (int, float)):
-                x = margin["left"] + (float(avg_val) - min_val) / (max_val - min_val) * plot_width
-                y = margin["top"] + plot_height - (i + 0.5) / n_stories * plot_height
+                x = c.value_x(float(avg_val), min_val, max_val)
+                y = c.story_y(i, n_stories)
                 avg_points.append(f"{x},{y}")
 
         if avg_points:
-            svg_parts.append(
+            c.add(
                 f'<polyline points="{" ".join(avg_points)}" '
                 f'fill="none" stroke="#c2410c" stroke-width="2" stroke-dasharray="4,2"/>'
             )
 
-    for i, story in enumerate(stories):
-        y = margin["top"] + plot_height - (i + 0.5) / n_stories * plot_height + 4
-        svg_parts.append(
-            f'<text x="{margin["left"] - 5}" y="{y}" '
-            f'fill="#374151" font-size="10" text-anchor="end">{story}</text>'
-        )
+    c.draw_story_labels(stories)
+    c.draw_x_ticks(min_val, max_val)
+    c.draw_x_axis_label(f"{result_type} ({unit})")
+    c.draw_y_axis_label("Story")
 
-    n_ticks = 5
-    for i in range(n_ticks + 1):
-        val = min_val + (max_val - min_val) * i / n_ticks
-        x = margin["left"] + i / n_ticks * plot_width
-        svg_parts.append(
-            f'<text x="{x}" y="{height - margin["bottom"] + 15}" '
-            f'fill="#374151" font-size="10" text-anchor="middle">{val:.2f}</text>'
-        )
-
-    svg_parts.append(
-        f'<text x="{margin["left"] + plot_width / 2}" y="{height - 5}" '
-        f'fill="#1f2937" font-size="11" text-anchor="middle">'
-        f"{result_type} ({unit})</text>"
-    )
-
-    svg_parts.append(
-        f'<text x="15" y="{margin["top"] + plot_height / 2}" '
-        f'fill="#1f2937" font-size="11" text-anchor="middle" '
-        f'transform="rotate(-90, 15, {margin["top"] + plot_height / 2})">Story</text>'
-    )
-
-    svg_parts.append("</svg>")
-    return "\n".join(svg_parts)
+    return c.render()
 
 
 def generate_scatter_svg(report: Dict[str, Any], result_type: str) -> str:
@@ -137,11 +95,8 @@ def generate_scatter_svg(report: Dict[str, Any], result_type: str) -> str:
     if not all_points or not stories:
         return ""
 
-    width = 500
-    height = 300
-    margin = {"top": 20, "right": 20, "bottom": 40, "left": 80}
-    plot_width = width - margin["left"] - margin["right"]
-    plot_height = height - margin["top"] - margin["bottom"]
+    n_stories = len(stories)
+    story_index = {name: idx for idx, name in enumerate(stories)}
 
     all_values = [p["rotation"] for p in all_points]
     min_val = min(all_values)
@@ -157,31 +112,9 @@ def generate_scatter_svg(report: Dict[str, Any], result_type: str) -> str:
     max_val += padding
     val_range = max_val - min_val
 
-    n_stories = len(stories)
-    story_index = {name: idx for idx, name in enumerate(stories)}
-
-    svg_parts = [
-        f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg">',
-        f'<rect width="{width}" height="{height}" fill="#ffffff"/>',
-        f'<rect x="{margin["left"]}" y="{margin["top"]}" '
-        f'width="{plot_width}" height="{plot_height}" fill="{PLOT_AREA_FILL}" stroke="#d1d5db"/>',
-    ]
-
-    for i in range(n_stories):
-        y = margin["top"] + plot_height - (i + 0.5) / n_stories * plot_height
-        svg_parts.append(
-            f'<line x1="{margin["left"]}" y1="{y}" '
-            f'x2="{margin["left"] + plot_width}" y2="{y}" '
-            f'stroke="#e5e7eb" stroke-dasharray="2,2"/>'
-        )
-
-    if min_val < 0 < max_val:
-        zero_x = margin["left"] + (0 - min_val) / val_range * plot_width
-        svg_parts.append(
-            f'<line x1="{zero_x}" y1="{margin["top"]}" '
-            f'x2="{zero_x}" y2="{margin["top"] + plot_height}" '
-            f'stroke="#9ca3af" stroke-dasharray="4,2" stroke-width="1"/>'
-        )
+    c = SvgCanvas(margin={"top": 20, "right": 20, "bottom": 40, "left": 80})
+    c.draw_horizontal_grid(n_stories)
+    c.draw_zero_line(min_val, max_val)
 
     import random
 
@@ -190,45 +123,22 @@ def generate_scatter_svg(report: Dict[str, Any], result_type: str) -> str:
         random.seed(jitter_seed)
         for p in pt_list:
             si = story_index.get(p.get("story"), p.get("story_index", 0))
-            base_y = margin["top"] + plot_height - (si + 0.5) / n_stories * plot_height
-            jitter = (random.random() - 0.5) * (plot_height / n_stories * 0.6)
+            base_y = c.story_y(si, n_stories)
+            jitter = (random.random() - 0.5) * (c.plot_height / n_stories * 0.6)
             y = base_y + jitter
-            x = margin["left"] + (p["rotation"] - min_val) / val_range * plot_width
-            svg_parts.append(
+            x = c.value_x(p["rotation"], min_val, max_val)
+            c.add(
                 f'<circle cx="{x:.1f}" cy="{y:.1f}" r="2" fill="{color}" opacity="0.6"/>'
             )
 
-    for i, story in enumerate(stories):
-        y = margin["top"] + plot_height - (i + 0.5) / n_stories * plot_height + 4
-        display = story[:12] if len(story) > 12 else story
-        svg_parts.append(
-            f'<text x="{margin["left"] - 5}" y="{y}" '
-            f'fill="#374151" font-size="9" text-anchor="end">{display}</text>'
-        )
-
-    n_ticks = 5
-    for i in range(n_ticks + 1):
-        val = min_val + val_range * i / n_ticks
-        x = margin["left"] + i / n_ticks * plot_width
-        svg_parts.append(
-            f'<text x="{x}" y="{height - margin["bottom"] + 15}" '
-            f'fill="#374151" font-size="10" text-anchor="middle">{val:.3f}</text>'
-        )
+    c.draw_story_labels(stories, font_size=9, max_chars=12)
+    c.draw_x_ticks(min_val, max_val, fmt=".3f")
 
     label = result_type.replace("Rotations", " Rotation")
-    svg_parts.append(
-        f'<text x="{margin["left"] + plot_width / 2}" y="{height - 5}" '
-        f'fill="#1f2937" font-size="11" text-anchor="middle">{label} ({unit})</text>'
-    )
+    c.draw_x_axis_label(f"{label} ({unit})")
+    c.draw_y_axis_label("Story", x_offset=12)
 
-    svg_parts.append(
-        f'<text x="12" y="{margin["top"] + plot_height / 2}" '
-        f'fill="#1f2937" font-size="11" text-anchor="middle" '
-        f'transform="rotate(-90, 12, {margin["top"] + plot_height / 2})">Story</text>'
-    )
-
-    svg_parts.append("</svg>")
-    return "\n".join(svg_parts)
+    return c.render()
 
 
 def generate_joint_scatter_svg(report: Dict[str, Any], result_type: str) -> str:
@@ -273,14 +183,10 @@ def generate_joint_scatter_svg(report: Dict[str, Any], result_type: str) -> str:
     if not plot_data:
         return ""
 
-    width = 500
-    height = 300
-    margin = {"top": 20, "right": 20, "bottom": 56, "left": 56}
-    plot_width = width - margin["left"] - margin["right"]
-    plot_height = height - margin["top"] - margin["bottom"]
+    c = SvgCanvas(margin={"top": 20, "right": 20, "bottom": 56, "left": 56})
 
     num_load_cases = len(load_cases)
-    slot_width = plot_width / num_load_cases
+    slot_width = c.plot_width / num_load_cases
 
     all_values = [value for _, value in plot_data]
     y_min = 0.0
@@ -290,10 +196,10 @@ def generate_joint_scatter_svg(report: Dict[str, Any], result_type: str) -> str:
     y_range = y_max - y_min
 
     def to_px_x(lc_idx: int) -> float:
-        return margin["left"] + (lc_idx + 0.5) * slot_width
+        return c.margin["left"] + (lc_idx + 0.5) * slot_width
 
     def to_px_y(value: float) -> float:
-        return margin["top"] + plot_height - (value - y_min) / y_range * plot_height
+        return c.margin["top"] + c.plot_height - (value - y_min) / y_range * c.plot_height
 
     def nice_ticks(data_min: float, data_max: float, num_ticks: int = 5) -> List[float]:
         import math
@@ -325,29 +231,13 @@ def generate_joint_scatter_svg(report: Dict[str, Any], result_type: str) -> str:
 
     y_ticks = nice_ticks(y_min, y_max, 5)
 
-    svg_parts = [
-        f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg">',
-        f'<rect width="{width}" height="{height}" fill="#ffffff"/>',
-        f'<rect x="{margin["left"]}" y="{margin["top"]}" '
-        f'width="{plot_width}" height="{plot_height}" fill="{PLOT_AREA_FILL}" stroke="#d1d5db"/>',
-    ]
+    # Grid lines at tick positions and slot boundaries
+    c.draw_horizontal_grid_at([to_px_y(tick) for tick in y_ticks])
+    c.draw_vertical_grid_at(
+        [c.margin["left"] + i * slot_width for i in range(num_load_cases + 1)]
+    )
 
-    for tick in y_ticks:
-        y = to_px_y(tick)
-        svg_parts.append(
-            f'<line x1="{margin["left"]}" y1="{y}" '
-            f'x2="{margin["left"] + plot_width}" y2="{y}" '
-            f'stroke="#e5e7eb" stroke-dasharray="2,2"/>'
-        )
-
-    for i in range(num_load_cases + 1):
-        x = margin["left"] + i * slot_width
-        svg_parts.append(
-            f'<line x1="{x}" y1="{margin["top"]}" '
-            f'x2="{x}" y2="{margin["top"] + plot_height}" '
-            f'stroke="#e5e7eb" stroke-dasharray="2,2"/>'
-        )
-
+    # Scatter points
     import random
 
     rng = random.Random(46)
@@ -355,36 +245,29 @@ def generate_joint_scatter_svg(report: Dict[str, Any], result_type: str) -> str:
         jitter = (rng.random() - 0.5) * slot_width * 0.7
         x = to_px_x(lc_idx) + jitter
         y = to_px_y(value)
-        svg_parts.append(
+        c.add(
             f'<circle cx="{x:.1f}" cy="{y:.1f}" r="2.5" fill="#2563eb" opacity="0.6"/>'
         )
 
+    # Y-axis tick labels
     for tick in y_ticks:
         y = to_px_y(tick) + 3
         label = f"{tick:.1f}" if abs(tick) < 10 else f"{tick:.0f}"
-        svg_parts.append(
-            f'<text x="{margin["left"] - 5}" y="{y}" '
+        c.add(
+            f'<text x="{c.margin["left"] - 5}" y="{y}" '
             f'fill="#374151" font-size="8" text-anchor="end">{label}</text>'
         )
 
+    # X-axis load case labels
     for i, load_case in enumerate(load_cases):
         x = to_px_x(i)
         label = str(load_case)[:5]
-        svg_parts.append(
-            f'<text x="{x}" y="{height - margin["bottom"] + 13}" '
+        c.add(
+            f'<text x="{x}" y="{c.height - c.margin["bottom"] + 13}" '
             f'fill="#374151" font-size="8" text-anchor="middle">{label}</text>'
         )
 
-    svg_parts.append(
-        f'<text x="{margin["left"] + plot_width / 2}" y="{height - 5}" '
-        f'fill="#1f2937" font-size="11" text-anchor="middle">Load Case</text>'
-    )
+    c.draw_x_axis_label("Load Case")
+    c.draw_y_axis_label(f"{value_axis_label} ({unit})", x_offset=14)
 
-    svg_parts.append(
-        f'<text x="14" y="{margin["top"] + plot_height / 2}" '
-        f'fill="#1f2937" font-size="11" text-anchor="middle" '
-        f'transform="rotate(-90, 14, {margin["top"] + plot_height / 2})">{value_axis_label} ({unit})</text>'
-    )
-
-    svg_parts.append("</svg>")
-    return "\n".join(svg_parts)
+    return c.render()

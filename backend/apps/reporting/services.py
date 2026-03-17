@@ -11,14 +11,13 @@ from typing import Any, Dict, List, Optional
 from django.template.loader import render_to_string
 
 from apps.results.services import ResultDataService
-from apps.results.services.data_assembler import dataset_to_table_projection
 from apps.results.models import ResultSet
 from core.logging import build_correlation_context
 
-from .charts import generate_joint_scatter_svg, generate_profile_svg, generate_scatter_svg
 from .logo import load_logo_b64
-from .report_data import ReportDataService
 from .renderers import render_pdf_document
+from .report_data import ReportDataService
+from .section_builders import build_element_section, build_global_section, build_joint_section
 from .styles import REPORT_CSS
 
 logger = logging.getLogger(__name__)
@@ -115,283 +114,20 @@ class PDFReportService:
         self, result_set: ResultSet, config: Dict[str, Any], is_pushover: bool
     ) -> Optional[Dict[str, Any]]:
         category = config.get("category", "Global")
+        log_ctx = self._report_log_context(result_set.id)
         if category == "Element":
-            return self._build_element_section(result_set, config, is_pushover)
+            return build_element_section(
+                self.report_data_service, log_ctx, result_set, config, is_pushover
+            )
         elif category == "Joint":
-            return self._build_joint_section(result_set, config, is_pushover)
+            return build_joint_section(
+                self.report_data_service, log_ctx, result_set, config, is_pushover
+            )
         else:
-            return self._build_global_section(result_set, config, is_pushover)
-
-    # ------------------------------------------------------------------
-    # Global section (existing behaviour, now light-themed)
-    # ------------------------------------------------------------------
-
-    def _build_global_section(
-        self, result_set: ResultSet, config: Dict[str, Any], is_pushover: bool
-    ) -> Optional[Dict[str, Any]]:
-        result_type = config.get("result_type")
-        direction = config.get("direction", "X")
-        include_table = config.get("include_table", True)
-        include_chart = config.get("include_chart", True)
-
-        try:
-            dataset = self.result_service.get_global_results(
-                result_set_id=result_set.id,
-                result_type=result_type,
-                direction=direction,
-                is_pushover=is_pushover,
-            )
-        except Exception:
-            logger.exception(
-                "Error fetching report section data (%s, result_type=%s, direction=%s)",
-                self._report_log_context(result_set.id),
-                result_type,
-                direction,
-            )
-            raise
-
-        if not dataset:
-            return None
-
-        if not dataset.rows:
-            return None
-
-        dataset_dict = dataset.to_dict()
-
-        table_data = None
-        if include_table:
-            table_data = self._format_global_table(dataset, include_summary=not is_pushover)
-
-        chart_svg = None
-        if include_chart:
-            chart_svg = generate_profile_svg(
-                dataset_dict, result_type, direction, is_pushover
+            return build_global_section(
+                self.result_service, log_ctx, result_set, config, is_pushover
             )
 
-        unit = dataset.meta.unit
-
-        return {
-            "title": f"{result_type} {direction}",
-            "result_type": result_type,
-            "direction": direction,
-            "category": "Global",
-            "unit": unit,
-            "table": table_data,
-            "chart_svg": chart_svg,
-        }
-
-    # ------------------------------------------------------------------
-    # Element sections (Beam/Column Rotations)
-    # ------------------------------------------------------------------
-
-    def _build_element_section(
-        self, result_set: ResultSet, config: Dict[str, Any], is_pushover: bool
-    ) -> Optional[Dict[str, Any]]:
-        result_type = config.get("result_type")
-        include_table = config.get("include_table", True)
-        include_chart = config.get("include_chart", True)
-
-        try:
-            if result_type == "BeamRotations":
-                report = self.report_data_service.get_beam_rotation_report(
-                    result_set.id, is_pushover
-                )
-            elif result_type == "ColumnRotations":
-                report = self.report_data_service.get_column_rotation_report(
-                    result_set.id, is_pushover
-                )
-            else:
-                return None
-        except Exception:
-            logger.exception(
-                "Error building element section (%s, result_type=%s)",
-                self._report_log_context(result_set.id),
-                result_type,
-            )
-            return None
-
-        if not report or not report.get("top_10"):
-            logger.warning(
-                "Empty element section data (%s, result_type=%s)",
-                self._report_log_context(result_set.id),
-                result_type,
-            )
-            return None
-
-        table_data = None
-        if include_table:
-            table_data = self._format_element_table(report)
-
-        chart_svg = None
-        if include_chart:
-            chart_svg = generate_scatter_svg(report, result_type)
-
-        return {
-            "title": result_type.replace("Rotations", " Rotations"),
-            "result_type": result_type,
-            "direction": "",
-            "category": "Element",
-            "unit": report.get("unit", "%"),
-            "table": table_data,
-            "chart_svg": chart_svg,
-        }
-
-    # ------------------------------------------------------------------
-    # Joint sections (Soil Pressures)
-    # ------------------------------------------------------------------
-
-    def _build_joint_section(
-        self, result_set: ResultSet, config: Dict[str, Any], is_pushover: bool
-    ) -> Optional[Dict[str, Any]]:
-        result_type = config.get("result_type")
-        include_table = config.get("include_table", True)
-        include_chart = config.get("include_chart", True)
-
-        try:
-            if result_type == "SoilPressures":
-                report = self.report_data_service.get_soil_pressure_report(
-                    result_set.id, is_pushover
-                )
-                title = "Soil Pressures"
-            elif result_type == "VerticalDisplacements":
-                report = self.report_data_service.get_vertical_displacement_report(
-                    result_set.id, is_pushover
-                )
-                title = "Vertical Displacements"
-            else:
-                return None
-        except Exception:
-            logger.exception(
-                "Error building joint section (%s, result_type=%s)",
-                self._report_log_context(result_set.id),
-                result_type,
-            )
-            return None
-
-        if not report or not report.get("top_10"):
-            logger.warning(
-                "Empty joint section data (%s, result_type=%s)",
-                self._report_log_context(result_set.id),
-                result_type,
-            )
-            return None
-
-        table_data = None
-        if include_table:
-            table_data = self._format_joint_table(report)
-
-        chart_svg = None
-        if include_chart:
-            chart_svg = generate_joint_scatter_svg(report, result_type)
-
-        return {
-            "title": title,
-            "result_type": result_type,
-            "direction": "",
-            "category": "Joint",
-            "unit": report.get("unit", "kPa" if result_type == "SoilPressures" else "mm"),
-            "table": table_data,
-            "chart_svg": chart_svg,
-        }
-
-    # ------------------------------------------------------------------
-    # Table formatting
-    # ------------------------------------------------------------------
-
-    def _format_global_table(self, dataset: Any, include_summary: bool) -> Dict[str, Any]:
-        projection = dataset_to_table_projection(
-            dataset=dataset,
-            include_summary=include_summary,
-            fixed_columns=[dataset.story_column],
-            required_columns=[dataset.story_column],
-        )
-
-        rows = projection["rows"]
-        headers = projection["headers"]
-        load_case_columns = projection["load_case_columns"]
-        summary_columns = projection["summary_columns"]
-
-        display_columns = load_case_columns[:8] + summary_columns[:3]
-        header_index = {header: idx for idx, header in enumerate(headers)}
-
-        formatted_rows = []
-        for row_values in rows[:20]:
-            formatted_row = {
-                "label_columns": [row_values[0] if row_values else ""],
-                "values": [],
-            }
-            for col in display_columns:
-                column_index = header_index.get(col)
-                value = row_values[column_index] if column_index is not None else None
-                if value is not None and isinstance(value, (int, float)):
-                    formatted_row["values"].append(f"{value:.3f}")
-                else:
-                    formatted_row["values"].append(str(value) if value else "-")
-            formatted_rows.append(formatted_row)
-
-        return {
-            "label_headers": ["Story"],
-            "columns": display_columns,
-            "rows": formatted_rows,
-        }
-
-    def _format_element_table(self, report: Dict[str, Any]) -> Dict[str, Any]:
-        top_10 = report["top_10"]
-        load_cases = report["load_cases"][:8]
-        summary_cols = report.get("summary_columns", [])
-        fixed_cols = report.get("fixed_columns", [])
-
-        display_columns = load_cases + summary_cols
-
-        formatted_rows = []
-        for row in top_10:
-            label_values = [str(row.get(fc, "")) for fc in fixed_cols]
-            values = []
-            for col in display_columns:
-                value = row.get(col)
-                if value is not None and isinstance(value, (int, float)):
-                    values.append(f"{value:.3f}")
-                else:
-                    values.append(str(value) if value else "-")
-            formatted_rows.append({
-                "label_columns": label_values,
-                "values": values,
-            })
-
-        return {
-            "label_headers": fixed_cols,
-            "columns": display_columns,
-            "rows": formatted_rows,
-        }
-
-    def _format_joint_table(self, report: Dict[str, Any]) -> Dict[str, Any]:
-        top_10 = report["top_10"]
-        load_cases = report["load_cases"][:8]
-        summary_cols = report.get("summary_columns", [])
-        fixed_cols = report.get("fixed_columns", ["Shell Object", "Unique Name"])
-
-        display_columns = load_cases + summary_cols
-
-        formatted_rows = []
-        for row in top_10:
-            label_values = [str(row.get(fc, "")) for fc in fixed_cols]
-            values = []
-            for col in display_columns:
-                value = row.get(col)
-                if value is not None and isinstance(value, (int, float)):
-                    values.append(f"{value:.3f}")
-                else:
-                    values.append(str(value) if value else "-")
-            formatted_rows.append({
-                "label_columns": label_values,
-                "values": values,
-            })
-
-        return {
-            "label_headers": fixed_cols,
-            "columns": display_columns,
-            "rows": formatted_rows,
-        }
 
 def generate_pdf_report(
     project,

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+
+if TYPE_CHECKING:
+    from ..result_service import ResultDataService
 
 from django.db.models import Q
 
@@ -14,8 +17,15 @@ from ..fallback_policy import (
     resolve_fallback,
 )
 from .common import sort_load_case_columns
+from .rotation_base import (
+    apply_cache_summary,
+    build_cache_row_values,
+    build_rotation_plot_payload,
+    compute_summary_stats,
+    resolve_story_sort_order,
+    serialize_rotation_table_payload,
+)
 
-PLOT_BINS = 50
 FIXED_COLUMNS = [
     "Story",
     "Step Type",
@@ -28,7 +38,7 @@ FIXED_COLUMNS = [
 SUMMARY_COLUMNS = ["Avg", "Max", "Min"]
 
 
-def _get_beam_records(service, result_set_id: int):
+def _get_beam_records(service: ResultDataService, result_set_id: int):
     return (
         BeamRotation.objects.filter(story__project=service.project)
         .filter(
@@ -73,48 +83,6 @@ def _resolve_rotation_candidates(record: BeamRotation) -> List[Tuple[str, float]
     return candidates
 
 
-def _build_histogram_bins(values: List[float]) -> List[Dict[str, float]]:
-    if not values:
-        return []
-
-    min_value = min(values)
-    max_value = max(values)
-
-    if max_value == min_value:
-        return [
-            {
-                "start": min_value - 0.5,
-                "end": max_value + 0.5,
-                "center": min_value,
-                "count": float(len(values)),
-            }
-        ]
-
-    bin_width = (max_value - min_value) / PLOT_BINS
-    counts = [0] * PLOT_BINS
-
-    for value in values:
-        index = int((value - min_value) / bin_width)
-        if index >= PLOT_BINS:
-            index = PLOT_BINS - 1
-        counts[index] += 1
-
-    bins: List[Dict[str, float]] = []
-    for idx, count in enumerate(counts):
-        start = min_value + idx * bin_width
-        end = start + bin_width
-        bins.append(
-            {
-                "start": start,
-                "end": end,
-                "center": (start + end) / 2,
-                "count": float(count),
-            }
-        )
-
-    return bins
-
-
 def _normalize_step_type(step_type: Optional[str]) -> str:
     raw = (step_type or "").strip()
     normalized = raw.lower()
@@ -125,29 +93,7 @@ def _normalize_step_type(step_type: Optional[str]) -> str:
     return raw
 
 
-def _serialize_beam_table_payload(
-    *,
-    service,
-    result_set_id: int,
-    rows: list[dict[str, Any]],
-    load_case_columns: list[str],
-) -> Dict[str, Any]:
-    summary_columns = SUMMARY_COLUMNS if any("Avg" in row for row in rows) else []
-    return {
-        "meta": {
-            "result_type": "BeamRotationsTable",
-            "result_set_id": result_set_id,
-            "unit": service._build_meta("BeamRotations", None, result_set_id).unit,
-        },
-        "columns": FIXED_COLUMNS + load_case_columns + summary_columns,
-        "rows": rows,
-        "fixed_columns": FIXED_COLUMNS,
-        "load_case_columns": load_case_columns,
-        "summary_columns": summary_columns,
-    }
-
-
-def _build_beam_rotations_table_data_from_cache(service, result_set_id: int) -> Optional[Dict[str, Any]]:
+def _build_beam_rotations_table_data_from_cache(service: ResultDataService, result_set_id: int) -> Optional[Dict[str, Any]]:
     cache_entries = ElementResultsCacheRepository.list_entries_for_types(
         service.project,
         result_set_id=result_set_id,
@@ -170,27 +116,13 @@ def _build_beam_rotations_table_data_from_cache(service, result_set_id: int) -> 
             "Rel Dist": 0.0,
         }
 
-        for load_case_name, raw_value in (entry.results_matrix or {}).items():
-            try:
-                numeric_value = float(raw_value)
-            except (TypeError, ValueError):
-                continue
-            row[load_case_name] = service._apply_multiplier(numeric_value, "BeamRotations")
-            load_case_set.add(load_case_name)
+        values, lc_names = build_cache_row_values(entry, service, "BeamRotations")
+        row.update(values)
+        load_case_set.update(lc_names)
 
-        if entry.avg_value is not None:
-            row["Avg"] = service._apply_multiplier(entry.avg_value, "BeamRotations")
-        if entry.max_value is not None:
-            row["Max"] = service._apply_multiplier(entry.max_value, "BeamRotations")
-        if entry.min_value is not None:
-            row["Min"] = service._apply_multiplier(entry.min_value, "BeamRotations")
+        apply_cache_summary(row, entry, service, "BeamRotations")
 
-        sort_order = (
-            entry.story_sort_order
-            if entry.story_sort_order is not None
-            else (entry.story.sort_order if entry.story.sort_order is not None else 0)
-        )
-        rows.append((int(sort_order), row))
+        rows.append((resolve_story_sort_order(entry), row))
 
     load_case_columns = sort_load_case_columns(list(load_case_set))
     rows.sort(
@@ -203,15 +135,19 @@ def _build_beam_rotations_table_data_from_cache(service, result_set_id: int) -> 
     )
     ordered_rows = [row for _, row in rows]
 
-    return _serialize_beam_table_payload(
+    return serialize_rotation_table_payload(
         service=service,
         result_set_id=result_set_id,
         rows=ordered_rows,
         load_case_columns=load_case_columns,
+        fixed_columns=FIXED_COLUMNS,
+        summary_columns=SUMMARY_COLUMNS,
+        result_type_key="BeamRotations",
+        table_result_type="BeamRotationsTable",
     )
 
 
-def _build_beam_rotations_table_data_from_raw(service, result_set_id: int) -> Optional[Dict[str, Any]]:
+def _build_beam_rotations_table_data_from_raw(service: ResultDataService, result_set_id: int) -> Optional[Dict[str, Any]]:
     records = list(_get_beam_records(service, result_set_id))
     if not records:
         return None
@@ -258,15 +194,11 @@ def _build_beam_rotations_table_data_from_raw(service, result_set_id: int) -> Op
             },
         )
 
-        incoming_sort = (
-            record.story_sort_order
-            if record.story_sort_order is not None
-            else (record.story.sort_order if record.story.sort_order is not None else 0)
-        )
+        incoming_sort = resolve_story_sort_order(record)
         if key not in row_sort_order:
-            row_sort_order[key] = int(incoming_sort)
+            row_sort_order[key] = incoming_sort
         else:
-            row_sort_order[key] = min(row_sort_order[key], int(incoming_sort))
+            row_sort_order[key] = min(row_sort_order[key], incoming_sort)
 
         load_case_name = record.load_case.name
         load_cases.add(load_case_name)
@@ -281,15 +213,7 @@ def _build_beam_rotations_table_data_from_raw(service, result_set_id: int) -> Op
     rows = []
 
     for key, row in rows_map.items():
-        numeric_values = [
-            float(row[load_case])
-            for load_case in load_case_columns
-            if isinstance(row.get(load_case), (int, float))
-        ]
-        if numeric_values:
-            row["Avg"] = sum(numeric_values) / len(numeric_values)
-            row["Max"] = max(numeric_values)
-            row["Min"] = min(numeric_values)
+        compute_summary_stats(row, load_case_columns)
         rows.append((row_sort_order.get(key, 0), row))
 
     step_order = {"Max": 0, "Min": 1, "": 2}
@@ -304,15 +228,19 @@ def _build_beam_rotations_table_data_from_raw(service, result_set_id: int) -> Op
     )
     ordered_rows = [row for _, row in rows]
 
-    return _serialize_beam_table_payload(
+    return serialize_rotation_table_payload(
         service=service,
         result_set_id=result_set_id,
         rows=ordered_rows,
         load_case_columns=load_case_columns,
+        fixed_columns=FIXED_COLUMNS,
+        summary_columns=SUMMARY_COLUMNS,
+        result_type_key="BeamRotations",
+        table_result_type="BeamRotationsTable",
     )
 
 
-def get_beam_rotations_plot_data(service, result_set_id: int) -> Optional[Dict[str, Any]]:
+def get_beam_rotations_plot_data(service: ResultDataService, result_set_id: int) -> Optional[Dict[str, Any]]:
     records = list(_get_beam_records(service, result_set_id))
     if not records:
         return None
@@ -323,13 +251,9 @@ def get_beam_rotations_plot_data(service, result_set_id: int) -> Optional[Dict[s
 
     for record in records:
         story_name = record.story.name
-        story_order = (
-            record.story_sort_order
-            if record.story_sort_order is not None
-            else (record.story.sort_order if record.story.sort_order is not None else 0)
-        )
+        story_order = resolve_story_sort_order(record)
         if story_name not in story_orders or story_order < story_orders[story_name]:
-            story_orders[story_name] = int(story_order)
+            story_orders[story_name] = story_order
 
         for step_type, raw_value in _resolve_rotation_candidates(record):
             display_rotation = service._apply_multiplier(raw_value, "BeamRotations")
@@ -345,36 +269,20 @@ def get_beam_rotations_plot_data(service, result_set_id: int) -> Optional[Dict[s
             else:
                 max_points.append(point)
 
-    if not max_points and not min_points:
-        return None
-
-    story_names_excel_order = sorted(story_orders.keys(), key=lambda s: (story_orders[s], s))
-    stories = list(reversed(story_names_excel_order))
-    story_index = {name: idx for idx, name in enumerate(stories)}
-
-    for point in max_points:
-        point["story_index"] = story_index.get(point["story"], 0)
-    for point in min_points:
-        point["story_index"] = story_index.get(point["story"], 0)
-
-    histogram_values = [p["rotation"] for p in max_points] + [p["rotation"] for p in min_points]
-
-    return {
-        "meta": {
-            "result_type": "AllBeamRotations",
-            "result_set_id": result_set_id,
-            "unit": service._build_meta("BeamRotations", None, result_set_id).unit,
-            "x_label": "R3 Plastic Rotation (%)",
-        },
-        "stories": stories,
-        "max_points": max_points,
-        "min_points": min_points,
-        "histogram_bins": _build_histogram_bins(histogram_values),
-    }
+    return build_rotation_plot_payload(
+        service=service,
+        result_set_id=result_set_id,
+        story_orders=story_orders,
+        max_points=max_points,
+        min_points=min_points,
+        result_type_key="BeamRotations",
+        meta_result_type="AllBeamRotations",
+        x_label="R3 Plastic Rotation (%)",
+    )
 
 
 def get_beam_rotations_table_data(
-    service,
+    service: ResultDataService,
     result_set_id: int,
     *,
     fallback_policy: str = FALLBACK_CACHE_ONLY,

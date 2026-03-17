@@ -14,7 +14,7 @@ from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 
 from apps.results.models import ResultSet
 from apps.results.services import ResultDataService
-from apps.results.services.data_assembler import (
+from core.data_assembler import (
     assemble_table_rows,
     dataset_to_table_projection,
 )
@@ -359,33 +359,31 @@ def process_export_job(self, job_id: int):
         raise
 
 
-def generate_excel_export(
-    project,
+def _iter_export_sheets(
+    result_service,
     result_set,
     result_types,
     directions,
     include_summary,
-    element_types=None,
-    joint_types=None,
-    progress_callback=None,
+    element_types,
+    joint_types,
+    progress_callback,
 ):
-    """Generate Excel export file."""
-    wb = Workbook()
+    """
+    Yield (sheet_name, headers, rows) tuples across the 3-phase export pipeline.
+    Handles progress tracking internally via try/finally on each step.
+    """
     global_steps = len(result_types) * len(directions)
-    el_steps = _count_element_steps(element_types or [])
-    jt_steps = len(joint_types or [])
+    el_steps = _count_element_steps(element_types)
+    jt_steps = len(joint_types)
     total_steps = max(global_steps + el_steps + jt_steps, 1)
     current_step = 0
-    result_service = ResultDataService(project=project)
 
-    # Style definitions
-    header_fill = PatternFill(start_color="1c2128", end_color="1c2128", fill_type="solid")
-    header_font = Font(bold=True, color="d1d5db")
-    border = Border(bottom=Side(style="thin", color="2c313a"))
-
-    # Remove default sheet
-    if "Sheet" in wb.sheetnames:
-        del wb["Sheet"]
+    def _tick():
+        nonlocal current_step
+        current_step += 1
+        if progress_callback:
+            progress_callback(current_step, total_steps)
 
     # Phase 1: Global results
     for result_type in result_types:
@@ -398,19 +396,14 @@ def generate_excel_export(
                     direction=direction,
                     include_summary=include_summary,
                 )
-                if table_data is None:
-                    continue
-
-                sheet_name = f"{result_type}_{direction}"
-                headers, rows = table_data
-                _write_excel_sheet(wb, sheet_name, headers, rows, header_fill, header_font, border)
+                if table_data is not None:
+                    headers, rows = table_data
+                    yield f"{result_type}_{direction}", headers, rows
             finally:
-                current_step += 1
-                if progress_callback:
-                    progress_callback(current_step, total_steps)
+                _tick()
 
     # Phase 2: Element results
-    for etype in (element_types or []):
+    for etype in element_types:
         base_map = RESULT_TYPE_BASE_MAP.get(etype, {})
         variants = base_map.get("variants", (etype,))
 
@@ -423,18 +416,14 @@ def generate_excel_export(
                     base_type=etype,
                     include_summary=include_summary,
                 )
-                if table_data is None:
-                    continue
-
-                headers, rows = table_data
-                _write_excel_sheet(wb, variant, headers, rows, header_fill, header_font, border)
+                if table_data is not None:
+                    headers, rows = table_data
+                    yield variant, headers, rows
             finally:
-                current_step += 1
-                if progress_callback:
-                    progress_callback(current_step, total_steps)
+                _tick()
 
     # Phase 3: Joint results
-    for jtype in (joint_types or []):
+    for jtype in joint_types:
         try:
             table_data = _get_joint_export_table_rows(
                 service=result_service,
@@ -442,15 +431,42 @@ def generate_excel_export(
                 result_type=jtype,
                 include_summary=include_summary,
             )
-            if table_data is None:
-                continue
-
-            headers, rows = table_data
-            _write_excel_sheet(wb, jtype, headers, rows, header_fill, header_font, border)
+            if table_data is not None:
+                headers, rows = table_data
+                yield jtype, headers, rows
         finally:
-            current_step += 1
-            if progress_callback:
-                progress_callback(current_step, total_steps)
+            _tick()
+
+
+def generate_excel_export(
+    project,
+    result_set,
+    result_types,
+    directions,
+    include_summary,
+    element_types=None,
+    joint_types=None,
+    progress_callback=None,
+):
+    """Generate Excel export file."""
+    wb = Workbook()
+    result_service = ResultDataService(project=project)
+
+    # Style definitions
+    header_fill = PatternFill(start_color="1c2128", end_color="1c2128", fill_type="solid")
+    header_font = Font(bold=True, color="d1d5db")
+    border = Border(bottom=Side(style="thin", color="2c313a"))
+
+    # Remove default sheet
+    if "Sheet" in wb.sheetnames:
+        del wb["Sheet"]
+
+    for sheet_name, headers, rows in _iter_export_sheets(
+        result_service, result_set, result_types, directions,
+        include_summary, element_types or [], joint_types or [],
+        progress_callback,
+    ):
+        _write_excel_sheet(wb, sheet_name, headers, rows, header_fill, header_font, border)
 
     # If no sheets were created, add a placeholder
     if not wb.sheetnames:
@@ -480,87 +496,17 @@ def generate_csv_export(
 
     output = StringIO()
     writer = csv.writer(output)
-    global_steps = len(result_types) * len(directions)
-    el_steps = _count_element_steps(element_types or [])
-    jt_steps = len(joint_types or [])
-    total_steps = max(global_steps + el_steps + jt_steps, 1)
-    current_step = 0
     result_service = ResultDataService(project=project)
 
-    # Phase 1: Global results
-    for result_type in result_types:
-        for direction in directions:
-            try:
-                table_data = _get_export_table_rows(
-                    service=result_service,
-                    result_set=result_set,
-                    result_type=result_type,
-                    direction=direction,
-                    include_summary=include_summary,
-                )
-                if table_data is None:
-                    continue
-
-                writer.writerow([])
-                writer.writerow([f"--- {result_type} {direction} ---"])
-                headers, rows = table_data
-                writer.writerow(headers)
-                for row in rows:
-                    writer.writerow(["" if value is None else value for value in row])
-            finally:
-                current_step += 1
-                if progress_callback:
-                    progress_callback(current_step, total_steps)
-
-    # Phase 2: Element results
-    for etype in (element_types or []):
-        base_map = RESULT_TYPE_BASE_MAP.get(etype, {})
-        variants = base_map.get("variants", (etype,))
-
-        for variant in variants:
-            try:
-                table_data = _get_element_export_table_rows(
-                    service=result_service,
-                    result_set=result_set,
-                    cache_type=variant,
-                    base_type=etype,
-                    include_summary=include_summary,
-                )
-                if table_data is None:
-                    continue
-
-                writer.writerow([])
-                writer.writerow([f"--- {variant} ---"])
-                headers, rows = table_data
-                writer.writerow(headers)
-                for row in rows:
-                    writer.writerow(["" if value is None else value for value in row])
-            finally:
-                current_step += 1
-                if progress_callback:
-                    progress_callback(current_step, total_steps)
-
-    # Phase 3: Joint results
-    for jtype in (joint_types or []):
-        try:
-            table_data = _get_joint_export_table_rows(
-                service=result_service,
-                result_set=result_set,
-                result_type=jtype,
-                include_summary=include_summary,
-            )
-            if table_data is None:
-                continue
-
-            writer.writerow([])
-            writer.writerow([f"--- {jtype} ---"])
-            headers, rows = table_data
-            writer.writerow(headers)
-            for row in rows:
-                writer.writerow(["" if value is None else value for value in row])
-        finally:
-            current_step += 1
-            if progress_callback:
-                progress_callback(current_step, total_steps)
+    for sheet_name, headers, rows in _iter_export_sheets(
+        result_service, result_set, result_types, directions,
+        include_summary, element_types or [], joint_types or [],
+        progress_callback,
+    ):
+        writer.writerow([])
+        writer.writerow([f"--- {sheet_name} ---"])
+        writer.writerow(headers)
+        for row in rows:
+            writer.writerow(["" if value is None else value for value in row])
 
     return output.getvalue()

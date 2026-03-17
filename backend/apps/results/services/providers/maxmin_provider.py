@@ -1,6 +1,11 @@
 """Provider functions for max/min envelope datasets."""
 
-from typing import Dict, Optional
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Dict, Optional
+
+if TYPE_CHECKING:
+    from ..result_service import ResultDataService
 
 from config.result_types import RESULT_TYPE_CONFIG, get_maxmin_raw_source
 
@@ -58,7 +63,7 @@ ELEMENT_MAXMIN_CONFIG = {
 
 
 def get_maxmin_dataset(
-    service,
+    service: ResultDataService,
     result_set_id: int,
     base_result_type: str = "Drifts",
     element_id: Optional[int] = None,
@@ -74,7 +79,7 @@ def get_maxmin_dataset(
     return _get_generic_maxmin(service, result_set_id, base_result_type)
 
 
-def _get_drift_maxmin(service, result_set_id: int) -> Optional[MaxMinDataset]:
+def _get_drift_maxmin(service: ResultDataService, result_set_id: int) -> Optional[MaxMinDataset]:
     """Get max/min drifts from precomputed table."""
     entries = AbsoluteMaxMinDriftRepository.list_entries(
         service.project,
@@ -120,7 +125,7 @@ def _get_drift_maxmin(service, result_set_id: int) -> Optional[MaxMinDataset]:
 
 
 def _get_generic_maxmin(
-    service,
+    service: ResultDataService,
     result_set_id: int,
     base_result_type: str,
 ) -> Optional[MaxMinDataset]:
@@ -220,7 +225,7 @@ def _get_generic_maxmin(
 
 
 def _get_element_maxmin(
-    service,
+    service: ResultDataService,
     result_set_id: int,
     base_result_type: str,
     element_id: int,

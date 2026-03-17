@@ -34,7 +34,7 @@ services:
       retries: 5
 
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2025-02-28T09-55-16Z
     container_name: rps_minio
     restart: unless-stopped
     environment:

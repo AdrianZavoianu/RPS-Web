@@ -16,6 +16,35 @@ from ..import_context import ImportContext
 from ..utils import to_float
 
 
+def _accumulate_stats(
+    stats: dict,
+    key: tuple,
+    value: float,
+    *,
+    track_abs_max: bool = True,
+    extra: dict | None = None,
+) -> None:
+    """Accumulate max/min/abs_max statistics for a key.
+
+    On first encounter, initializes the entry with the value and any extra fields.
+    On subsequent encounters, updates max/min and optionally abs_max.
+    """
+    current = stats.get(key)
+    if current is None:
+        entry = {"max": value, "min": value}
+        if track_abs_max:
+            entry["abs_max"] = abs(value)
+        if extra:
+            entry.update(extra)
+        stats[key] = entry
+        return
+
+    current["max"] = max(float(current["max"]), value)
+    current["min"] = min(float(current["min"]), value)
+    if track_abs_max:
+        current["abs_max"] = max(float(current["abs_max"]), abs(value))
+
+
 def _column_values(
     df: Any,
     primary: str,
@@ -77,18 +106,7 @@ def import_wall_shears(
                 continue
 
             key = (story_name, pier_name, case_name, direction)
-            current = shear_stats.get(key)
-            if current is None:
-                shear_stats[key] = {
-                    "max": value,
-                    "min": value,
-                    "abs_max": abs(value),
-                }
-                continue
-
-            current["max"] = max(current["max"], value)
-            current["min"] = min(current["min"], value)
-            current["abs_max"] = max(current["abs_max"], abs(value))
+            _accumulate_stats(shear_stats, key, value)
 
     objects_to_create = []
     for (story_name, pier_name, case_name, direction), stats in shear_stats.items():
@@ -347,36 +365,22 @@ def import_column_forces(
                 case_name,
                 direction,
             )
-            current_shear = shear_stats.get(shear_key)
-            if current_shear is None:
-                shear_stats[shear_key] = {
-                    "max": value,
-                    "min": value,
-                    "abs_max": abs(value),
-                    "location": location,
-                }
-                continue
-
-            current_shear["max"] = max(float(current_shear["max"]), value)
-            current_shear["min"] = min(float(current_shear["min"]), value)
-            current_shear["abs_max"] = max(float(current_shear["abs_max"]), abs(value))
+            _accumulate_stats(
+                shear_stats, shear_key, value, extra={"location": location}
+            )
 
         axial_value = to_float(axial_raw)
         if axial_value is None:
             continue
 
         axial_key = (story_name, column_name, normalized_unique_name, case_name)
-        current_axial = axial_stats.get(axial_key)
-        if current_axial is None:
-            axial_stats[axial_key] = {
-                "min": axial_value,
-                "max": axial_value,
-                "location": location,
-            }
-            continue
-
-        current_axial["min"] = min(float(current_axial["min"]), axial_value)
-        current_axial["max"] = max(float(current_axial["max"]), axial_value)
+        _accumulate_stats(
+            axial_stats,
+            axial_key,
+            axial_value,
+            track_abs_max=False,
+            extra={"location": location},
+        )
 
     shear_objects = []
     for (story_name, column_name, _unique_name, case_name, direction), stats in shear_stats.items():
@@ -489,18 +493,7 @@ def import_column_rotations(
                 continue
 
             key = (story_name, column_name, normalized_unique_name, case_name, direction)
-            current = rotation_stats.get(key)
-            if current is None:
-                rotation_stats[key] = {
-                    "max": value,
-                    "min": value,
-                    "abs_max": abs(value),
-                }
-                continue
-
-            current["max"] = max(current["max"], value)
-            current["min"] = min(current["min"], value)
-            current["abs_max"] = max(current["abs_max"], abs(value))
+            _accumulate_stats(rotation_stats, key, value)
 
     objects_to_create = []
     for (

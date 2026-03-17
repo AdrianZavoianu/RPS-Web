@@ -213,30 +213,6 @@ const panelRenderers: Record<TreeSelectionType, PanelRenderer> = {
     )
   },
 
-  joint_table: (controller) => {
-    if (controller.jointResultsLoading) return <LoadingState message="Loading joint results..." />
-
-    if (!controller.jointResultsData || !controller.jointResultsData.rows?.length) {
-      return <EmptyState title="No joint data available" />
-    }
-
-    return (
-      <div className="overflow-auto">
-        <ResultsTable
-          dataset={controller.jointResultsData}
-          selectedLoadCases={controller.tableState.selectedLoadCases}
-          hoveredLoadCase={controller.tableState.hoveredLoadCase}
-          hoveredRow={controller.tableState.hoveredRow}
-          selectedRows={controller.tableState.selectedRows}
-          onSelectionChange={controller.tableState.setSelectedLoadCases}
-          onHoverChange={controller.tableState.setHoveredLoadCase}
-          onRowHoverChange={controller.tableState.setHoveredRow}
-          onRowSelectionChange={controller.tableState.setSelectedRows}
-        />
-      </div>
-    )
-  },
-
   beam_rotations_plot: (controller) => {
     if (controller.beamRotationsPlotLoading) {
       return <LoadingState message="Loading beam rotation plot data..." />
@@ -329,7 +305,12 @@ const panelRenderers: Record<TreeSelectionType, PanelRenderer> = {
       subtitle="Use the matching section from the project navigation"
     />
   ),
+
+  // Alias: joint_table renders identically to joint
+  joint_table: null as unknown as PanelRenderer,
 }
+
+panelRenderers.joint_table = panelRenderers.joint
 
 export function renderResultsSelectionPanel(controller: ResultsViewController) {
   const selection = controller.selection

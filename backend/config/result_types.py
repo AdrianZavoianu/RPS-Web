@@ -10,7 +10,21 @@ from typing import Any, Dict, List, Optional, Tuple, Type
 
 @dataclass
 class ResultTypeConfig:
-    """Configuration for a result type."""
+    """Configuration for a result type.
+
+    Each entry represents one variant (e.g. Drifts_X).  Base-type metadata
+    (directions, decimals exposed to the API) is derived automatically by
+    grouping variants that share a base-type prefix.
+
+    ``display_direction`` — user-facing direction label for this variant
+        (e.g. "X" when ``direction_suffix`` is "_UX").
+    ``base_decimals`` — decimal places for the *base* type API response;
+        set on the first variant of each group.  Defaults to
+        ``decimal_places - 1`` when omitted.
+    ``directions`` / ``internal_directions`` — explicit override for types
+        whose API directions are not derivable from variants (e.g.
+        ColumnAxials exposes Min/Max but has a single variant with no suffix).
+    """
 
     name: str
     display_name: str
@@ -19,6 +33,8 @@ class ResultTypeConfig:
     multiplier: float = 1.0  # For display (e.g., 100 for %)
     decimal_places: int = 2
     color_scheme: str = "blue_orange"  # blue_orange or orange_blue
+    display_direction: str = ""
+    base_decimals: Optional[int] = None
     directions: Optional[List[str]] = None
     internal_directions: Optional[Dict[str, str]] = None
 
@@ -33,6 +49,8 @@ GLOBAL_RESULT_CONFIGS = {
         multiplier=100.0,
         decimal_places=3,
         color_scheme="blue_orange",
+        display_direction="X",
+        base_decimals=2,
     ),
     "Drifts_Y": ResultTypeConfig(
         name="Drifts_Y",
@@ -42,6 +60,7 @@ GLOBAL_RESULT_CONFIGS = {
         multiplier=100.0,
         decimal_places=3,
         color_scheme="blue_orange",
+        display_direction="Y",
     ),
     "Accelerations_UX": ResultTypeConfig(
         name="Accelerations_UX",
@@ -51,6 +70,8 @@ GLOBAL_RESULT_CONFIGS = {
         multiplier=1 / 9810,
         decimal_places=3,
         color_scheme="blue_orange",
+        display_direction="X",
+        base_decimals=2,
     ),
     "Accelerations_UY": ResultTypeConfig(
         name="Accelerations_UY",
@@ -60,6 +81,7 @@ GLOBAL_RESULT_CONFIGS = {
         multiplier=1 / 9810,
         decimal_places=3,
         color_scheme="blue_orange",
+        display_direction="Y",
     ),
     "Forces_VX": ResultTypeConfig(
         name="Forces_VX",
@@ -69,6 +91,8 @@ GLOBAL_RESULT_CONFIGS = {
         multiplier=1.0,
         decimal_places=1,
         color_scheme="blue_orange",
+        display_direction="X",
+        base_decimals=0,
     ),
     "Forces_VY": ResultTypeConfig(
         name="Forces_VY",
@@ -78,6 +102,7 @@ GLOBAL_RESULT_CONFIGS = {
         multiplier=1.0,
         decimal_places=1,
         color_scheme="blue_orange",
+        display_direction="Y",
     ),
     "Displacements_UX": ResultTypeConfig(
         name="Displacements_UX",
@@ -87,6 +112,8 @@ GLOBAL_RESULT_CONFIGS = {
         multiplier=1.0,
         decimal_places=2,
         color_scheme="blue_orange",
+        display_direction="X",
+        base_decimals=0,
     ),
     "Displacements_UY": ResultTypeConfig(
         name="Displacements_UY",
@@ -96,6 +123,7 @@ GLOBAL_RESULT_CONFIGS = {
         multiplier=1.0,
         decimal_places=2,
         color_scheme="blue_orange",
+        display_direction="Y",
     ),
 }
 
@@ -109,6 +137,8 @@ ELEMENT_RESULT_CONFIGS = {
         multiplier=1.0,
         decimal_places=1,
         color_scheme="blue_orange",
+        display_direction="V2",
+        base_decimals=0,
     ),
     "WallShears_V3": ResultTypeConfig(
         name="WallShears_V3",
@@ -118,15 +148,16 @@ ELEMENT_RESULT_CONFIGS = {
         multiplier=1.0,
         decimal_places=1,
         color_scheme="blue_orange",
+        display_direction="V3",
     ),
     "QuadRotations": ResultTypeConfig(
         name="QuadRotations",
         display_name="Quad Rotations",
         unit="%",
-        direction_suffix="",
         multiplier=100.0,
         decimal_places=3,
         color_scheme="blue_orange",
+        base_decimals=2,
     ),
     "ColumnShears_V2": ResultTypeConfig(
         name="ColumnShears_V2",
@@ -136,6 +167,8 @@ ELEMENT_RESULT_CONFIGS = {
         multiplier=1.0,
         decimal_places=1,
         color_scheme="blue_orange",
+        display_direction="V2",
+        base_decimals=0,
     ),
     "ColumnShears_V3": ResultTypeConfig(
         name="ColumnShears_V3",
@@ -145,15 +178,18 @@ ELEMENT_RESULT_CONFIGS = {
         multiplier=1.0,
         decimal_places=1,
         color_scheme="blue_orange",
+        display_direction="V3",
     ),
     "ColumnAxials": ResultTypeConfig(
         name="ColumnAxials",
         display_name="Column Axial Forces",
         unit="kN",
-        direction_suffix="",
         multiplier=1.0,
         decimal_places=1,
         color_scheme="blue_orange",
+        base_decimals=0,
+        directions=["Min", "Max"],
+        internal_directions={"Min": "Min", "Max": "Max"},
     ),
     "ColumnRotations_R2": ResultTypeConfig(
         name="ColumnRotations_R2",
@@ -163,6 +199,8 @@ ELEMENT_RESULT_CONFIGS = {
         multiplier=100.0,
         decimal_places=3,
         color_scheme="blue_orange",
+        display_direction="R2",
+        base_decimals=2,
     ),
     "ColumnRotations_R3": ResultTypeConfig(
         name="ColumnRotations_R3",
@@ -172,15 +210,16 @@ ELEMENT_RESULT_CONFIGS = {
         multiplier=100.0,
         decimal_places=3,
         color_scheme="blue_orange",
+        display_direction="R3",
     ),
     "BeamRotations": ResultTypeConfig(
         name="BeamRotations",
         display_name="Beam Rotations R3",
         unit="%",
-        direction_suffix="",
         multiplier=100.0,
         decimal_places=3,
         color_scheme="blue_orange",
+        base_decimals=2,
     ),
 }
 
@@ -194,6 +233,7 @@ JOINT_RESULT_CONFIGS = {
         multiplier=1.0,
         decimal_places=1,
         color_scheme="orange_blue",  # Inverted: low (orange) is critical
+        base_decimals=0,
     ),
     "VerticalDisplacements_Min": ResultTypeConfig(
         name="VerticalDisplacements_Min",
@@ -203,6 +243,7 @@ JOINT_RESULT_CONFIGS = {
         multiplier=1.0,
         decimal_places=2,
         color_scheme="orange_blue",
+        base_decimals=0,
     ),
 }
 
@@ -213,81 +254,56 @@ RESULT_CONFIGS = {
     **JOINT_RESULT_CONFIGS,
 }
 
-# Mapping for API-facing/base result types used by ResultDataService.
-RESULT_TYPE_BASE_MAP = {
-    "Drifts": {
-        "variants": ("Drifts_X", "Drifts_Y"),
-        "directions": ["X", "Y"],
-        "internal_directions": {"X": "X", "Y": "Y"},
-        "decimals": 2,
-    },
-    "Accelerations": {
-        "variants": ("Accelerations_UX", "Accelerations_UY"),
-        "directions": ["X", "Y"],
-        "internal_directions": {"X": "UX", "Y": "UY"},
-        "decimals": 2,
-    },
-    "Forces": {
-        "variants": ("Forces_VX", "Forces_VY"),
-        "directions": ["X", "Y"],
-        "internal_directions": {"X": "VX", "Y": "VY"},
-        "decimals": 0,
-    },
-    "Displacements": {
-        "variants": ("Displacements_UX", "Displacements_UY"),
-        "directions": ["X", "Y"],
-        "internal_directions": {"X": "UX", "Y": "UY"},
-        "decimals": 0,
-    },
-    "WallShears": {
-        "variants": ("WallShears_V2", "WallShears_V3"),
-        "directions": ["V2", "V3"],
-        "internal_directions": {"V2": "V2", "V3": "V3"},
-        "decimals": 0,
-    },
-    "QuadRotations": {
-        "variants": ("QuadRotations",),
-        "directions": None,
-        "internal_directions": {},
-        "decimals": 2,
-    },
-    "ColumnShears": {
-        "variants": ("ColumnShears_V2", "ColumnShears_V3"),
-        "directions": ["V2", "V3"],
-        "internal_directions": {"V2": "V2", "V3": "V3"},
-        "decimals": 0,
-    },
-    "ColumnAxials": {
-        "variants": ("ColumnAxials",),
-        "directions": ["Min", "Max"],
-        "internal_directions": {"Min": "Min", "Max": "Max"},
-        "decimals": 0,
-    },
-    "ColumnRotations": {
-        "variants": ("ColumnRotations_R2", "ColumnRotations_R3"),
-        "directions": ["R2", "R3"],
-        "internal_directions": {"R2": "R2", "R3": "R3"},
-        "decimals": 2,
-    },
-    "BeamRotations": {
-        "variants": ("BeamRotations",),
-        "directions": None,
-        "internal_directions": {},
-        "decimals": 2,
-    },
-    "SoilPressures": {
-        "variants": ("SoilPressures_Min",),
-        "directions": None,
-        "internal_directions": {},
-        "decimals": 0,
-    },
-    "VerticalDisplacements": {
-        "variants": ("VerticalDisplacements_Min",),
-        "directions": None,
-        "internal_directions": {},
-        "decimals": 0,
-    },
-}
+def _derive_base_map(configs: Dict[str, ResultTypeConfig]) -> Dict[str, Dict]:
+    """Derive API-facing base-type map from variant-level RESULT_CONFIGS.
+
+    Groups variants by base-type prefix, then builds directions and decimals
+    from the annotated ``display_direction`` / ``base_decimals`` fields.
+    """
+    from collections import OrderedDict
+
+    groups: Dict[str, List[ResultTypeConfig]] = OrderedDict()
+    for key, cfg in configs.items():
+        base = key.rsplit("_", 1)[0] if cfg.direction_suffix else key
+        groups.setdefault(base, []).append(cfg)
+
+    result: Dict[str, Dict] = {}
+    for base_type, variants in groups.items():
+        first = variants[0]
+
+        # Determine directions
+        if first.directions is not None:
+            # Explicit override (e.g. ColumnAxials Min/Max)
+            directions = first.directions
+            internal_dirs = first.internal_directions or {}
+        elif len(variants) > 1:
+            # Derive from display_direction of each variant
+            directions = [v.display_direction for v in variants]
+            internal_dirs = {
+                v.display_direction: v.direction_suffix.lstrip("_")
+                for v in variants
+            }
+        else:
+            directions = None
+            internal_dirs = {}
+
+        # Decimals: use explicit base_decimals, fall back to decimal_places - 1
+        decimals = first.base_decimals
+        if decimals is None:
+            decimals = max(0, first.decimal_places - 1)
+
+        result[base_type] = {
+            "variants": tuple(v.name for v in variants),
+            "directions": directions,
+            "internal_directions": internal_dirs,
+            "decimals": decimals,
+        }
+
+    return result
+
+
+# Mapping for API-facing/base result types — derived from RESULT_CONFIGS.
+RESULT_TYPE_BASE_MAP = _derive_base_map(RESULT_CONFIGS)
 
 
 def _build_result_type_config() -> Dict[str, Dict]:

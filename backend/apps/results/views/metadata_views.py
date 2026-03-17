@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ..api import TreeMetadataQuerySerializer
-from ..application import get_result_type_metadata_contract
+from ..services.metadata import get_result_type_metadata_contract
 from ..services.tree_metadata_service import get_result_tree_metadata_payload
 from .mixins import ProjectResultsMixin
 

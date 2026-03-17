@@ -3,6 +3,51 @@
 import re
 from typing import Any, Dict, List
 
+PLOT_BINS = 50
+
+
+def build_histogram_bins(values: List[float]) -> List[Dict[str, float]]:
+    """Build histogram bins from a list of numeric values."""
+    if not values:
+        return []
+
+    min_value = min(values)
+    max_value = max(values)
+
+    if max_value == min_value:
+        return [
+            {
+                "start": min_value - 0.5,
+                "end": max_value + 0.5,
+                "center": min_value,
+                "count": float(len(values)),
+            }
+        ]
+
+    bin_width = (max_value - min_value) / PLOT_BINS
+    counts = [0] * PLOT_BINS
+
+    for value in values:
+        index = int((value - min_value) / bin_width)
+        if index >= PLOT_BINS:
+            index = PLOT_BINS - 1
+        counts[index] += 1
+
+    bins: List[Dict[str, float]] = []
+    for idx, count in enumerate(counts):
+        start = min_value + idx * bin_width
+        end = start + bin_width
+        bins.append(
+            {
+                "start": start,
+                "end": end,
+                "center": (start + end) / 2,
+                "count": float(count),
+            }
+        )
+
+    return bins
+
 
 def build_summary_columns(
     rows: List[Dict[str, Any]],

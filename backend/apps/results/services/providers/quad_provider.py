@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+
+if TYPE_CHECKING:
+    from ..result_service import ResultDataService
 
 from django.db.models import Q
 
 from apps.projects.models import Story
 from apps.results.models import QuadRotation
 
-PLOT_BINS = 50
+from .common import build_histogram_bins
 
 
 def _get_project_story_order(project) -> Dict[str, int]:
@@ -20,7 +23,7 @@ def _get_project_story_order(project) -> Dict[str, int]:
     }
 
 
-def _get_quad_records(service, result_set_id: int):
+def _get_quad_records(service: ResultDataService, result_set_id: int):
     return (
         QuadRotation.objects.filter(story__project=service.project)
         .filter(
@@ -48,50 +51,8 @@ def _resolve_rotation_candidates(record: QuadRotation) -> List[Tuple[str, float]
     return candidates
 
 
-def _build_histogram_bins(values: List[float]) -> List[Dict[str, float]]:
-    if not values:
-        return []
-
-    min_value = min(values)
-    max_value = max(values)
-
-    if max_value == min_value:
-        return [
-            {
-                "start": min_value - 0.5,
-                "end": max_value + 0.5,
-                "center": min_value,
-                "count": float(len(values)),
-            }
-        ]
-
-    bin_width = (max_value - min_value) / PLOT_BINS
-    counts = [0] * PLOT_BINS
-
-    for value in values:
-        index = int((value - min_value) / bin_width)
-        if index >= PLOT_BINS:
-            index = PLOT_BINS - 1
-        counts[index] += 1
-
-    bins: List[Dict[str, float]] = []
-    for idx, count in enumerate(counts):
-        start = min_value + idx * bin_width
-        end = start + bin_width
-        bins.append(
-            {
-                "start": start,
-                "end": end,
-                "center": (start + end) / 2,
-                "count": float(count),
-            }
-        )
-
-    return bins
-
-
 def get_quad_rotations_plot_data(
-    service,
+    service: ResultDataService,
     result_set_id: int,
 ) -> Optional[Dict[str, Any]]:
     """Get all-quad rotations scatter/histogram data."""
@@ -161,5 +122,5 @@ def get_quad_rotations_plot_data(
         "directions": sorted(directions),
         "max_points": max_points,
         "min_points": min_points,
-        "histogram_bins": _build_histogram_bins(histogram_values),
+        "histogram_bins": build_histogram_bins(histogram_values),
     }

@@ -1,6 +1,11 @@
 """Provider functions for joint/foundation result data."""
 
-from typing import Any, Dict, Optional
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Dict, Optional
+
+if TYPE_CHECKING:
+    from ..result_service import ResultDataService
 
 from apps.results.data import JointResultsCacheRepository
 from apps.results.models import SoilPressure, VerticalDisplacement
@@ -23,7 +28,7 @@ def _normalize_joint_display_value(base_type: str, value: Optional[float]) -> Op
     return value
 
 
-def _resolve_joint_cache_type(service, result_set_id: int, result_type: str) -> Optional[str]:
+def _resolve_joint_cache_type(service: ResultDataService, result_set_id: int, result_type: str) -> Optional[str]:
     candidates = [result_type]
     if "_" not in result_type:
         candidates.extend([f"{result_type}_Min", f"{result_type}_Max"])
@@ -48,7 +53,7 @@ def _base_type_from_result_type(result_type: str) -> str:
 
 def _build_joint_dataset(
     *,
-    service,
+    service: ResultDataService,
     result_set_id: int,
     base_type: str,
     rows: list[dict[str, Any]],
@@ -73,7 +78,7 @@ def _build_joint_dataset(
 
 
 def _build_joint_dataset_from_cache(
-    service,
+    service: ResultDataService,
     result_set_id: int,
     result_type: str,
     is_pushover: bool,
@@ -122,7 +127,7 @@ def _build_joint_dataset_from_cache(
 
 
 def _build_joint_dataset_from_raw(
-    service,
+    service: ResultDataService,
     result_set_id: int,
     result_type: str,
     is_pushover: bool,
@@ -178,7 +183,7 @@ def _build_joint_dataset_from_raw(
 
 
 def get_joint_results(
-    service,
+    service: ResultDataService,
     result_set_id: int,
     result_type: str,
     is_pushover: bool = False,

@@ -1,5 +1,5 @@
 import type { ComparisonDataset, ProfileChartData } from '../../types'
-import { COMPARISON_SERIES_COLORS } from '../../utils/chartColors'
+import { COMPARISON_SERIES_PALETTE as COMPARISON_SERIES_COLORS } from '../../utils/colors'
 
 export type ComparisonMetric = 'Avg' | 'Max' | 'Min'
 

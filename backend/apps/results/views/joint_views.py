@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ..api import JointResultsQuerySerializer
-from ..services.data_assembler import dataset_to_response
+from core.data_assembler import dataset_to_response
 
 from .mixins import ProjectResultsMixin
 

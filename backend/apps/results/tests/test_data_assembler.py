@@ -2,7 +2,7 @@
 
 from django.test import SimpleTestCase
 
-from apps.results.services.data_assembler import (
+from core.data_assembler import (
     add_summary_metrics,
     assemble_table_rows,
     build_abs_scatter_data,

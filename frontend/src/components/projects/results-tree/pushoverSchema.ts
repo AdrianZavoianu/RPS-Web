@@ -1,5 +1,13 @@
 import type { ResultSet, ResultTreeMetadata } from '../../../types'
-import { ICONS, naturalCompare } from './constants'
+import { ICONS } from './constants'
+import {
+  buildBeamRotationsSubtree,
+  buildColumnRotationsChildren,
+  buildJointResultBranch,
+  buildPerElementBranches,
+  sortedElements,
+  type TreeBuilderContext,
+} from './treeBuilders'
 import type { TreeSelection } from './types'
 import { branchNode, leafNode, textNode, type TreeSchemaNode } from './treeSchema'
 
@@ -50,25 +58,13 @@ export function buildPushoverResultSetSchema({
   const soilPressuresKey = `push-${resultSet.id}-joints-soil`
   const verticalDisplacementsKey = `push-${resultSet.id}-joints-vertical`
 
-  const wallShearElements = [...(treeElementsByType?.WallShears ?? [])].sort((a, b) =>
-    naturalCompare(a.name, b.name)
-  )
+  const ctx: TreeBuilderContext = { resultSetId: resultSet.id, currentSelection, onSelect }
 
-  const quadRotationElements = [...(treeElementsByType?.QuadRotations ?? [])].sort((a, b) =>
-    naturalCompare(a.name, b.name)
-  )
-
-  const columnShearElements = [...(treeElementsByType?.ColumnShears ?? [])].sort((a, b) =>
-    naturalCompare(a.name, b.name)
-  )
-
-  const columnAxialElements = [...(treeElementsByType?.ColumnAxials ?? [])].sort((a, b) =>
-    naturalCompare(a.name, b.name)
-  )
-
-  const columnRotationElements = [...(treeElementsByType?.ColumnRotations ?? [])].sort((a, b) =>
-    naturalCompare(a.name, b.name)
-  )
+  const wallShearElements = sortedElements(treeElementsByType, 'WallShears')
+  const quadRotationElements = sortedElements(treeElementsByType, 'QuadRotations')
+  const columnShearElements = sortedElements(treeElementsByType, 'ColumnShears')
+  const columnAxialElements = sortedElements(treeElementsByType, 'ColumnAxials')
+  const columnRotationElements = sortedElements(treeElementsByType, 'ColumnRotations')
 
   const hasWallShears = wallShearElements.length > 0
   const hasQuadRotations = quadRotationElements.length > 0
@@ -202,60 +198,15 @@ export function buildPushoverResultSetSchema({
             icon: ICONS.resultType,
             expansionGroup: 'categoryTypes',
             variant: 'categoryType',
-            children: wallShearElements.map((element, elementIndex) => {
-              const wallElementKey = `${wallShearsKey}-${element.id}`
-              return branchNode({
-                key: wallElementKey,
-                label: `${branchPrefix(elementIndex, wallShearElements.length)} ${element.name}`,
-                icon: ICONS.resultType,
-                expansionGroup: 'categoryTypes',
-                variant: 'categoryType',
-                children: [
-                  leafNode({
-                    key: `${wallElementKey}-V2`,
-                    label: `${ICONS.branch} V2`,
-                    onSelect: () =>
-                      onSelect({
-                        type: 'element',
-                        resultSetId: resultSet.id,
-                        category: 'Envelopes',
-                        categoryType: 'Elements',
-                        resultType: 'WallShears',
-                        direction: 'V2',
-                        elementType: 'Wall',
-                        elementId: element.id,
-                      }),
-                    selected:
-                      currentSelection?.type === 'element' &&
-                      currentSelection.resultSetId === resultSet.id &&
-                      currentSelection.resultType === 'WallShears' &&
-                      currentSelection.direction === 'V2' &&
-                      currentSelection.elementId === element.id,
-                  }),
-                  leafNode({
-                    key: `${wallElementKey}-V3`,
-                    label: `${ICONS.branchLast} V3`,
-                    onSelect: () =>
-                      onSelect({
-                        type: 'element',
-                        resultSetId: resultSet.id,
-                        category: 'Envelopes',
-                        categoryType: 'Elements',
-                        resultType: 'WallShears',
-                        direction: 'V3',
-                        elementType: 'Wall',
-                        elementId: element.id,
-                      }),
-                    selected:
-                      currentSelection?.type === 'element' &&
-                      currentSelection.resultSetId === resultSet.id &&
-                      currentSelection.resultType === 'WallShears' &&
-                      currentSelection.direction === 'V3' &&
-                      currentSelection.elementId === element.id,
-                  }),
-                ],
-              })
-            }),
+            children: buildPerElementBranches(
+              ctx,
+              wallShearsKey,
+              wallShearElements,
+              'WallShears',
+              'Wall',
+              ['V2', 'V3'],
+              false,
+            ),
           })
         )
       }
@@ -317,61 +268,15 @@ export function buildPushoverResultSetSchema({
             icon: ICONS.resultType,
             expansionGroup: 'categoryTypes',
             variant: 'categoryType',
-            children: columnShearElements.map((element, elementIndex) => {
-              const columnElementKey = `${columnShearsKey}-${element.id}`
-
-              return branchNode({
-                key: columnElementKey,
-                label: `${branchPrefix(elementIndex, columnShearElements.length)} ${element.name}`,
-                icon: ICONS.resultType,
-                expansionGroup: 'categoryTypes',
-                variant: 'categoryType',
-                children: [
-                  leafNode({
-                    key: `${columnElementKey}-V2`,
-                    label: `${ICONS.branch} V2`,
-                    onSelect: () =>
-                      onSelect({
-                        type: 'element',
-                        resultSetId: resultSet.id,
-                        category: 'Envelopes',
-                        categoryType: 'Elements',
-                        resultType: 'ColumnShears',
-                        direction: 'V2',
-                        elementType: 'Column',
-                        elementId: element.id,
-                      }),
-                    selected:
-                      currentSelection?.type === 'element' &&
-                      currentSelection.resultSetId === resultSet.id &&
-                      currentSelection.resultType === 'ColumnShears' &&
-                      currentSelection.direction === 'V2' &&
-                      currentSelection.elementId === element.id,
-                  }),
-                  leafNode({
-                    key: `${columnElementKey}-V3`,
-                    label: `${ICONS.branchLast} V3`,
-                    onSelect: () =>
-                      onSelect({
-                        type: 'element',
-                        resultSetId: resultSet.id,
-                        category: 'Envelopes',
-                        categoryType: 'Elements',
-                        resultType: 'ColumnShears',
-                        direction: 'V3',
-                        elementType: 'Column',
-                        elementId: element.id,
-                      }),
-                    selected:
-                      currentSelection?.type === 'element' &&
-                      currentSelection.resultSetId === resultSet.id &&
-                      currentSelection.resultType === 'ColumnShears' &&
-                      currentSelection.direction === 'V3' &&
-                      currentSelection.elementId === element.id,
-                  }),
-                ],
-              })
-            }),
+            children: buildPerElementBranches(
+              ctx,
+              columnShearsKey,
+              columnShearElements,
+              'ColumnShears',
+              'Column',
+              ['V2', 'V3'],
+              false,
+            ),
           })
         )
       }
@@ -384,144 +289,20 @@ export function buildPushoverResultSetSchema({
             icon: ICONS.resultType,
             expansionGroup: 'categoryTypes',
             variant: 'categoryType',
-            children: columnAxialElements.map((element, elementIndex) => {
-              const columnAxialElementKey = `${columnAxialsKey}-${element.id}`
-
-              return branchNode({
-                key: columnAxialElementKey,
-                label: `${branchPrefix(elementIndex, columnAxialElements.length)} ${element.name}`,
-                icon: ICONS.resultType,
-                expansionGroup: 'categoryTypes',
-                variant: 'categoryType',
-                children: [
-                  leafNode({
-                    key: `${columnAxialElementKey}-Min`,
-                    label: `${ICONS.branch} Min`,
-                    onSelect: () =>
-                      onSelect({
-                        type: 'element',
-                        resultSetId: resultSet.id,
-                        category: 'Envelopes',
-                        categoryType: 'Elements',
-                        resultType: 'ColumnAxials',
-                        direction: 'Min',
-                        elementType: 'Column',
-                        elementId: element.id,
-                      }),
-                    selected:
-                      currentSelection?.type === 'element' &&
-                      currentSelection.resultSetId === resultSet.id &&
-                      currentSelection.resultType === 'ColumnAxials' &&
-                      currentSelection.direction === 'Min' &&
-                      currentSelection.elementId === element.id,
-                  }),
-                  leafNode({
-                    key: `${columnAxialElementKey}-Max`,
-                    label: `${ICONS.branchLast} Max`,
-                    onSelect: () =>
-                      onSelect({
-                        type: 'element',
-                        resultSetId: resultSet.id,
-                        category: 'Envelopes',
-                        categoryType: 'Elements',
-                        resultType: 'ColumnAxials',
-                        direction: 'Max',
-                        elementType: 'Column',
-                        elementId: element.id,
-                      }),
-                    selected:
-                      currentSelection?.type === 'element' &&
-                      currentSelection.resultSetId === resultSet.id &&
-                      currentSelection.resultType === 'ColumnAxials' &&
-                      currentSelection.direction === 'Max' &&
-                      currentSelection.elementId === element.id,
-                  }),
-                ],
-              })
-            }),
+            children: buildPerElementBranches(
+              ctx,
+              columnAxialsKey,
+              columnAxialElements,
+              'ColumnAxials',
+              'Column',
+              ['Min', 'Max'],
+              false,
+            ),
           })
         )
       }
 
       if (hasColumnRotations) {
-        const columnRotationChildren: TreeSchemaNode[] = [
-          leafNode({
-            key: `${columnRotationsKey}-all`,
-            label: `${columnRotationElements.length ? ICONS.branch : ICONS.branchLast} All Rotations`,
-            onSelect: () =>
-              onSelect({
-                type: 'column_rotations_plot',
-                resultSetId: resultSet.id,
-                category: 'Envelopes',
-                categoryType: 'Elements',
-                resultType: 'AllColumnRotations',
-                direction: '',
-                elementType: 'Column',
-              }),
-            selected:
-              currentSelection?.type === 'column_rotations_plot' &&
-              currentSelection.resultSetId === resultSet.id,
-          }),
-        ]
-
-        columnRotationChildren.push(
-          ...columnRotationElements.map((element, elementIndex) => {
-            const columnRotationElementKey = `${columnRotationsKey}-${element.id}`
-
-            return branchNode({
-              key: columnRotationElementKey,
-              label: `${branchPrefix(elementIndex, columnRotationElements.length)} ${element.name}`,
-              icon: ICONS.resultType,
-              expansionGroup: 'categoryTypes',
-              variant: 'categoryType',
-              children: [
-                leafNode({
-                  key: `${columnRotationElementKey}-R2`,
-                  label: `${ICONS.branch} R2`,
-                  onSelect: () =>
-                    onSelect({
-                      type: 'element',
-                      resultSetId: resultSet.id,
-                      category: 'Envelopes',
-                      categoryType: 'Elements',
-                      resultType: 'ColumnRotations',
-                      direction: 'R2',
-                      elementType: 'Column',
-                      elementId: element.id,
-                    }),
-                  selected:
-                    currentSelection?.type === 'element' &&
-                    currentSelection.resultSetId === resultSet.id &&
-                    currentSelection.resultType === 'ColumnRotations' &&
-                    currentSelection.direction === 'R2' &&
-                    currentSelection.elementId === element.id,
-                }),
-                leafNode({
-                  key: `${columnRotationElementKey}-R3`,
-                  label: `${ICONS.branchLast} R3`,
-                  onSelect: () =>
-                    onSelect({
-                      type: 'element',
-                      resultSetId: resultSet.id,
-                      category: 'Envelopes',
-                      categoryType: 'Elements',
-                      resultType: 'ColumnRotations',
-                      direction: 'R3',
-                      elementType: 'Column',
-                      elementId: element.id,
-                    }),
-                  selected:
-                    currentSelection?.type === 'element' &&
-                    currentSelection.resultSetId === resultSet.id &&
-                    currentSelection.resultType === 'ColumnRotations' &&
-                    currentSelection.direction === 'R3' &&
-                    currentSelection.elementId === element.id,
-                }),
-              ],
-            })
-          })
-        )
-
         columnChildren.push(
           branchNode({
             key: columnRotationsKey,
@@ -529,7 +310,7 @@ export function buildPushoverResultSetSchema({
             icon: ICONS.resultType,
             expansionGroup: 'categoryTypes',
             variant: 'categoryType',
-            children: columnRotationChildren,
+            children: buildColumnRotationsChildren(ctx, columnRotationsKey, columnRotationElements, false),
           })
         )
       }
@@ -547,60 +328,7 @@ export function buildPushoverResultSetSchema({
     }
 
     if (hasBeamRotations) {
-      elementChildren.push(
-        branchNode({
-          key: beamsKey,
-          label: 'Beams',
-          icon: ICONS.categoryType,
-          expansionGroup: 'categoryTypes',
-          variant: 'categoryType',
-          children: [
-            branchNode({
-              key: beamRotationsKey,
-              label: 'R3 Plastic Rotations',
-              icon: ICONS.resultType,
-              expansionGroup: 'categoryTypes',
-              variant: 'categoryType',
-              children: [
-                leafNode({
-                  key: `${beamRotationsKey}-plot`,
-                  label: `${ICONS.branch} Plot`,
-                  onSelect: () =>
-                    onSelect({
-                      type: 'beam_rotations_plot',
-                      resultSetId: resultSet.id,
-                      category: 'Envelopes',
-                      categoryType: 'Elements',
-                      resultType: 'AllBeamRotations',
-                      direction: '',
-                      elementType: 'Beam',
-                    }),
-                  selected:
-                    currentSelection?.type === 'beam_rotations_plot' &&
-                    currentSelection.resultSetId === resultSet.id,
-                }),
-                leafNode({
-                  key: `${beamRotationsKey}-table`,
-                  label: `${ICONS.branchLast} Table`,
-                  onSelect: () =>
-                    onSelect({
-                      type: 'beam_rotations_table',
-                      resultSetId: resultSet.id,
-                      category: 'Envelopes',
-                      categoryType: 'Elements',
-                      resultType: 'BeamRotationsTable',
-                      direction: '',
-                      elementType: 'Beam',
-                    }),
-                  selected:
-                    currentSelection?.type === 'beam_rotations_table' &&
-                    currentSelection.resultSetId === resultSet.id,
-                }),
-              ],
-            }),
-          ],
-        })
-      )
+      elementChildren.push(buildBeamRotationsSubtree(ctx, beamsKey, beamRotationsKey))
     }
 
     nodes.push(
@@ -619,98 +347,12 @@ export function buildPushoverResultSetSchema({
     const jointChildren: TreeSchemaNode[] = []
 
     if (hasSoilPressures) {
-      jointChildren.push(
-        branchNode({
-          key: soilPressuresKey,
-          label: 'Soil Pressures (Min)',
-          icon: ICONS.resultType,
-          expansionGroup: 'categoryTypes',
-          variant: 'categoryType',
-          children: [
-            leafNode({
-              key: `${soilPressuresKey}-plot`,
-              label: `${ICONS.branch} Plot`,
-              onSelect: () =>
-                onSelect({
-                  type: 'joint_plot',
-                  resultSetId: resultSet.id,
-                  category: 'Envelopes',
-                  categoryType: 'Joints',
-                  resultType: 'SoilPressures',
-                  direction: 'Min',
-                }),
-              selected:
-                currentSelection?.type === 'joint_plot' &&
-                currentSelection.resultSetId === resultSet.id &&
-                currentSelection.resultType === 'SoilPressures',
-            }),
-            leafNode({
-              key: `${soilPressuresKey}-table`,
-              label: `${ICONS.branchLast} Table`,
-              onSelect: () =>
-                onSelect({
-                  type: 'joint_table',
-                  resultSetId: resultSet.id,
-                  category: 'Envelopes',
-                  categoryType: 'Joints',
-                  resultType: 'SoilPressures',
-                  direction: 'Min',
-                }),
-              selected:
-                currentSelection?.type === 'joint_table' &&
-                currentSelection.resultSetId === resultSet.id &&
-                currentSelection.resultType === 'SoilPressures',
-            }),
-          ],
-        })
-      )
+      jointChildren.push(buildJointResultBranch(ctx, soilPressuresKey, 'Soil Pressures (Min)', 'SoilPressures'))
     }
 
     if (hasVerticalDisplacements) {
       jointChildren.push(
-        branchNode({
-          key: verticalDisplacementsKey,
-          label: 'Vertical Displacements (Min)',
-          icon: ICONS.resultType,
-          expansionGroup: 'categoryTypes',
-          variant: 'categoryType',
-          children: [
-            leafNode({
-              key: `${verticalDisplacementsKey}-plot`,
-              label: `${ICONS.branch} Plot`,
-              onSelect: () =>
-                onSelect({
-                  type: 'joint_plot',
-                  resultSetId: resultSet.id,
-                  category: 'Envelopes',
-                  categoryType: 'Joints',
-                  resultType: 'VerticalDisplacements',
-                  direction: 'Min',
-                }),
-              selected:
-                currentSelection?.type === 'joint_plot' &&
-                currentSelection.resultSetId === resultSet.id &&
-                currentSelection.resultType === 'VerticalDisplacements',
-            }),
-            leafNode({
-              key: `${verticalDisplacementsKey}-table`,
-              label: `${ICONS.branchLast} Table`,
-              onSelect: () =>
-                onSelect({
-                  type: 'joint_table',
-                  resultSetId: resultSet.id,
-                  category: 'Envelopes',
-                  categoryType: 'Joints',
-                  resultType: 'VerticalDisplacements',
-                  direction: 'Min',
-                }),
-              selected:
-                currentSelection?.type === 'joint_table' &&
-                currentSelection.resultSetId === resultSet.id &&
-                currentSelection.resultType === 'VerticalDisplacements',
-            }),
-          ],
-        })
+        buildJointResultBranch(ctx, verticalDisplacementsKey, 'Vertical Displacements (Min)', 'VerticalDisplacements')
       )
     }
 

@@ -2,97 +2,36 @@
  * Time-Series View component
  * 4-panel animated building profile for NLTHA results,
  * replicating the desktop application's time-series visualization.
+ *
+ * Orchestrator: owns selection state, data fetching, tree navigation.
+ * Animation logic lives in useTimeSeriesAnimation hook.
+ * Plot components live in ./time-series/.
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import clsx from 'clsx'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   useResultSets,
   useTimeSeriesLoadCases,
   useTimeSeriesAllTypes,
 } from '../../hooks/useResults'
-import { LazyPlot } from '../charts/LazyPlot'
 import { ResultsTreeBrowser, type TreeSelection } from '../projects/ResultsTreeBrowser'
 import { isNlthaResultSet } from '../../utils/resultSets'
-import { useThemeStore } from '../../stores/themeStore'
 import {
-  ACCEL_LINE_COLOR,
-  getChartColors,
-  MARKER_COLOR,
-  MAX_ENVELOPE_COLOR,
-  MIN_ENVELOPE_COLOR,
-  PROFILE_COLOR,
-} from '../../utils/colors'
-import {
-  PLOTLY_CONFIG_NO_MODE_BAR,
-  createAxisLayout,
-  withPlotlyDefaults,
-} from '../../utils/plotlyDefaults'
-
-// --- Constants ---
-
-const RESULT_TYPES = ['Displacements', 'Drifts', 'Accelerations', 'Shears'] as const
-const RESULT_TYPE_KEYS: Record<string, string> = {
-  Displacements: 'Displacements',
-  Drifts: 'Drifts',
-  Accelerations: 'Accelerations',
-  Shears: 'Forces',
-}
-
-const SPEED_LEVELS = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
-const DEFAULT_SPEED_INDEX = 3 // 1.0x
-
-// Base interval in ms at 1x speed. Each sub-frame advances 1/4 step.
-// At 1x: 50ms per sub-frame = 200ms per full step
-const BASE_SUBFRAME_MS = 50
-const SUB_FRAMES = 4
-
-const STORY_AXIS_TOP_PADDING = 0.2
-
-// --- Imperative animation helpers (pure functions, no React) ---
-
-function computeProfileAt(
-  typesData: Record<string, Record<string, number[]>>,
-  resultType: string,
-  position: number,
-  totalSteps: number,
-  stories: string[]
-): number[] | null {
-  const typeData = typesData[resultType]
-  if (!typeData) return null
-  const stepIndex = Math.floor(position)
-  const frac = position - stepIndex
-  const nextIndex = Math.min(stepIndex + 1, totalSteps - 1)
-  return stories.map((story) => {
-    const vals = typeData[story]
-    if (!vals) return 0
-    const curr = vals[stepIndex] ?? 0
-    if (frac === 0 || stepIndex === nextIndex) return curr
-    const next = vals[nextIndex] ?? 0
-    return curr + frac * (next - curr)
-  })
-}
-
-function interpolateTimeAt(timeSteps: number[], position: number): number {
-  if (timeSteps.length === 0) return 0
-  const stepIndex = Math.floor(position)
-  const frac = position - stepIndex
-  const nextIndex = Math.min(stepIndex + 1, timeSteps.length - 1)
-  const curr = timeSteps[stepIndex] ?? 0
-  const next = timeSteps[nextIndex] ?? 0
-  return curr + frac * (next - curr)
-}
+  useTimeSeriesAnimation,
+  RESULT_TYPES,
+  RESULT_TYPE_KEYS,
+  SPEED_LEVELS,
+  type EnvelopeData,
+} from '../../hooks/useTimeSeriesAnimation'
+import { TimeSeriesProfilePlot } from './time-series/TimeSeriesProfilePlot'
+import { BaseAccelerationPlot } from './time-series/BaseAccelerationPlot'
+import { TimeSeriesControls } from './time-series/TimeSeriesControls'
 
 // --- Types ---
 
 interface TimeSeriesViewProps {
   projectSlug: string
-}
-
-interface EnvelopeData {
-  maxValues: number[]
-  minValues: number[]
 }
 
 // --- Component ---
@@ -101,22 +40,13 @@ export function TimeSeriesView({ projectSlug }: TimeSeriesViewProps) {
   const location = useLocation()
   const navigate = useNavigate()
   const preselectionAppliedFor = useRef<string | null>(null)
+
   // Selection state
   const [selectedResultSetId, setSelectedResultSetId] = useState<number | null>(null)
   const [selectedLoadCase, setSelectedLoadCase] = useState<string | null>(null)
   const [selectedDirection, setSelectedDirection] = useState<string>('X')
 
-  // Playback state
-  const [isPlaying, setIsPlaying] = useState(false)
-  const [currentPosition, setCurrentPosition] = useState(0) // float: integer part=step, fractional=interp
-  const [speedIndex, setSpeedIndex] = useState(DEFAULT_SPEED_INDEX)
-  const animationRef = useRef<number | null>(null)
-  const lastFrameTimeRef = useRef<number>(0)
-
-  // Imperative animation refs — bypass React during playback
-  const positionRef = useRef(0)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const plotlyRef = useRef<any>(null)
+  // DOM refs for imperative Plotly updates (owned here, passed to hook)
   const profileGdRefs = useRef<Record<string, HTMLElement>>({})
   const baseAccelGdRef = useRef<HTMLElement | null>(null)
   const sliderRef = useRef<HTMLInputElement>(null)
@@ -208,50 +138,7 @@ export function TimeSeriesView({ projectSlug }: TimeSeriesViewProps) {
     }
   }, [loadCases, selectedLoadCase])
 
-  // Reset load case when result set changes
-  useEffect(() => {
-    setCurrentPosition(0)
-    setIsPlaying(false)
-  }, [selectedResultSetId])
-
-  // Reset position when data changes
-  useEffect(() => {
-    setCurrentPosition(0)
-    setIsPlaying(false)
-  }, [allTypesData])
-
-  // Load Plotly module for imperative calls (resolves from cache, effectively free)
-  useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    import('../charts/PlotlyComponent').then((mod: any) => {
-      plotlyRef.current = mod.Plotly
-    })
-  }, [])
-
-  // Resize all plots when tab becomes visible (browser may report 0-height for hidden tabs)
-  useEffect(() => {
-    const resizeAll = () => {
-      const Plotly = plotlyRef.current
-      if (!Plotly) return
-      for (const rt of RESULT_TYPES) {
-        const gd = profileGdRefs.current[rt]
-        if (gd) Plotly.Plots.resize(gd)
-      }
-      const baseGd = baseAccelGdRef.current
-      if (baseGd) Plotly.Plots.resize(baseGd)
-    }
-    const handleVisibility = () => {
-      if (!document.hidden) requestAnimationFrame(resizeAll)
-    }
-    document.addEventListener('visibilitychange', handleVisibility)
-    return () => document.removeEventListener('visibilitychange', handleVisibility)
-  }, [])
-
-  // Keep positionRef in sync with React state (for non-animation state changes)
-  useEffect(() => {
-    positionRef.current = currentPosition
-  }, [currentPosition])
-
+  // Derived data
   const stories = useMemo(() => allTypesData?.stories ?? [], [allTypesData?.stories])
   const timeSteps = useMemo(() => allTypesData?.time_steps ?? [], [allTypesData?.time_steps])
   const totalSteps = timeSteps.length
@@ -269,175 +156,29 @@ export function TimeSeriesView({ projectSlug }: TimeSeriesViewProps) {
     return result
   }, [allTypesData?.envelopes])
 
-  // Animation loop — imperative Plotly updates, zero React re-renders per frame
-  const speedMultiplier = SPEED_LEVELS[speedIndex]
-  const maxPosition = totalSteps > 0 ? totalSteps - 1 : 0
-
-  // Stable refs read inside animate — prevents callback recreation on speed/data changes
-  const speedRef = useRef(speedMultiplier)
-  speedRef.current = speedMultiplier
-  const maxPosRef = useRef(maxPosition)
-  maxPosRef.current = maxPosition
-  const dataRef = useRef(allTypesData)
-  dataRef.current = allTypesData
-  const totalStepsRef = useRef(totalSteps)
-  totalStepsRef.current = totalSteps
-  const storiesRef = useRef(stories)
-  storiesRef.current = stories
-  const timeStepsRef = useRef(timeSteps)
-  timeStepsRef.current = timeSteps
-
-  const animate = useCallback(
-    (timestamp: number) => {
-      if (!lastFrameTimeRef.current) {
-        lastFrameTimeRef.current = timestamp
-      }
-
-      const elapsed = timestamp - lastFrameTimeRef.current
-      const frameInterval = BASE_SUBFRAME_MS / speedRef.current
-
-      if (elapsed >= frameInterval) {
-        lastFrameTimeRef.current = timestamp
-
-        const maxPos = maxPosRef.current
-        let nextPos = positionRef.current + 1 / SUB_FRAMES
-        if (nextPos >= maxPos) {
-          nextPos = maxPos
-          positionRef.current = nextPos
-          setCurrentPosition(nextPos)
-          setIsPlaying(false)
-          return
-        }
-        positionRef.current = nextPos
-
-        // Imperative Plotly updates (no React re-render)
-        const Plotly = plotlyRef.current
-        const data = dataRef.current
-        if (Plotly && data) {
-          const strs = storiesRef.current
-          const total = totalStepsRef.current
-          for (const rt of RESULT_TYPES) {
-            const dataKey = RESULT_TYPE_KEYS[rt]
-            const gd = profileGdRefs.current[rt]
-            if (!gd) continue
-            const profile = computeProfileAt(data.types, dataKey, nextPos, total, strs)
-            if (profile) {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const traceCount = (gd as any).data?.length ?? 0
-              if (traceCount > 0) {
-                Plotly.restyle(gd, { x: [profile] }, [traceCount - 1])
-              }
-            }
-          }
-
-          const baseGd = baseAccelGdRef.current
-          if (baseGd) {
-            const steps = timeStepsRef.current
-            const time = interpolateTimeAt(steps, nextPos)
-            Plotly.relayout(baseGd, {
-              'shapes[0].x1': time,
-              'shapes[1].x0': time,
-              'shapes[1].x1': time,
-            })
-          }
-        }
-
-        // Update slider and time display via DOM (no React re-render)
-        if (sliderRef.current) {
-          sliderRef.current.value = String(nextPos)
-        }
-        if (timeDisplayRef.current) {
-          const steps = timeStepsRef.current
-          const time = interpolateTimeAt(steps, nextPos)
-          timeDisplayRef.current.textContent = time.toFixed(3) + 's'
-        }
-      }
-
-      animationRef.current = requestAnimationFrame(animate)
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [] // All values read from refs — stable callback, never recreated
-  )
-
-  useEffect(() => {
-    if (isPlaying) {
-      lastFrameTimeRef.current = 0
-      animationRef.current = requestAnimationFrame(animate)
-    } else {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current)
-        animationRef.current = null
-      }
-    }
-    return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current)
-        animationRef.current = null
-      }
-    }
-  }, [isPlaying, animate])
-
-  // Handlers
-  const handlePlayPause = () => {
-    if (currentPosition >= maxPosition) {
-      setCurrentPosition(0)
-    }
-    setIsPlaying(!isPlaying)
-  }
-
-  const handleReset = () => {
-    setIsPlaying(false)
-    setCurrentPosition(0)
-  }
-
-  const handleSliderChange = (value: number) => {
-    setIsPlaying(false)
-    setCurrentPosition(Math.max(0, Math.min(value, maxPosition)))
-  }
-
-  const handleSlower = () => {
-    if (isPlaying) setCurrentPosition(positionRef.current)
-    setSpeedIndex((prev) => Math.max(0, prev - 1))
-  }
-
-  const handleFaster = () => {
-    if (isPlaying) setCurrentPosition(positionRef.current)
-    setSpeedIndex((prev) => Math.min(SPEED_LEVELS.length - 1, prev + 1))
-  }
-
-  // Interpolated values for a result type at current position
-  const getInterpolatedProfile = useCallback(
-    (resultType: string): number[] | null => {
-      if (!allTypesData) return null
-      const typeData = allTypesData.types[resultType]
-      if (!typeData) return null
-
-      const stepIndex = Math.floor(currentPosition)
-      const frac = currentPosition - stepIndex
-      const nextIndex = Math.min(stepIndex + 1, totalSteps - 1)
-
-      return stories.map((story) => {
-        const vals = typeData[story]
-        if (!vals) return 0
-        const curr = vals[stepIndex] ?? 0
-        if (frac === 0 || stepIndex === nextIndex) return curr
-        const next = vals[nextIndex] ?? 0
-        return curr + frac * (next - curr)
-      })
-    },
-    [allTypesData, currentPosition, totalSteps, stories]
-  )
-
-  // Current time (interpolated)
-  const currentTime = useMemo(() => {
-    if (timeSteps.length === 0) return 0
-    const stepIndex = Math.floor(currentPosition)
-    const frac = currentPosition - stepIndex
-    const nextIndex = Math.min(stepIndex + 1, timeSteps.length - 1)
-    const curr = timeSteps[stepIndex] ?? 0
-    const next = timeSteps[nextIndex] ?? 0
-    return curr + frac * (next - curr)
-  }, [currentPosition, timeSteps])
+  // Animation hook
+  const {
+    isPlaying,
+    currentPosition,
+    speedMultiplier,
+    maxPosition,
+    handlePlayPause,
+    handleReset,
+    handleSliderChange,
+    handleSlower,
+    handleFaster,
+    getInterpolatedProfile,
+    currentTime,
+  } = useTimeSeriesAnimation({
+    totalSteps,
+    allTypesData,
+    stories,
+    timeSteps,
+    profileGdRefs,
+    baseAccelGdRef,
+    sliderRef,
+    timeDisplayRef,
+  })
 
   // Base acceleration: lowest story's Accelerations time series
   const baseAccelData = useMemo(() => {
@@ -453,15 +194,21 @@ export function TimeSeriesView({ projectSlug }: TimeSeriesViewProps) {
   // Force Plotly resize after init — flex layout may not have settled when Plotly first reads dimensions
   const handleProfilePlotInit = useCallback((rt: string, gd: HTMLElement) => {
     profileGdRefs.current[rt] = gd
-    requestAnimationFrame(() => {
-      plotlyRef.current?.Plots?.resize(gd)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    import('../charts/PlotlyComponent').then((mod: any) => {
+      requestAnimationFrame(() => {
+        mod.Plotly?.Plots?.resize(gd)
+      })
     })
   }, [])
 
   const handleBaseAccelPlotInit = useCallback((gd: HTMLElement) => {
     baseAccelGdRef.current = gd
-    requestAnimationFrame(() => {
-      plotlyRef.current?.Plots?.resize(gd)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    import('../charts/PlotlyComponent').then((mod: any) => {
+      requestAnimationFrame(() => {
+        mod.Plotly?.Plots?.resize(gd)
+      })
     })
   }, [])
 
@@ -544,7 +291,7 @@ export function TimeSeriesView({ projectSlug }: TimeSeriesViewProps) {
               </div>
             </div>
 
-            {/* 4 profile plots — flex-1 fills remaining vertical space */}
+            {/* 4 profile plots -- flex-1 fills remaining vertical space */}
             <div className="ts-plots-row flex-1 min-h-0 min-w-0 flex gap-0.5 px-3 pt-1">
               {RESULT_TYPES.map((rt) => {
                 const dataKey = RESULT_TYPE_KEYS[rt]
@@ -553,7 +300,7 @@ export function TimeSeriesView({ projectSlug }: TimeSeriesViewProps) {
                 const unit = allTypesData?.units?.[dataKey] || ''
 
                 return (
-                  <ProfilePlot
+                  <TimeSeriesProfilePlot
                     key={rt}
                     resultType={rt}
                     unit={unit}
@@ -584,68 +331,22 @@ export function TimeSeriesView({ projectSlug }: TimeSeriesViewProps) {
             )}
 
             {/* Controls bar */}
-            <div className="ts-controls flex items-center gap-3 mx-3 my-2 px-3 py-1.5 text-[13px]">
-              {/* Play/Pause */}
-              <button
-                onClick={handlePlayPause}
-                className={clsx(
-                  'ts-play-btn px-3 py-1 rounded text-[13px] font-medium transition-colors',
-                  isPlaying
-                    ? 'bg-red-500/80 text-white hover:bg-red-500'
-                    : 'bg-accent-primary text-white hover:opacity-90'
-                )}
-              >
-                {isPlaying ? 'Pause' : '> Play'}
-              </button>
-
-              {/* Reset */}
-              <button
-                onClick={handleReset}
-                className="ts-reset-btn px-2 py-1 rounded text-[13px] text-text-secondary hover:text-text-primary transition-colors"
-              >
-                {'< Reset'}
-              </button>
-
-              {/* Slider */}
-              <div className="flex-1 flex items-center">
-                <input
-                  ref={sliderRef}
-                  type="range"
-                  min={0}
-                  max={maxPosition}
-                  step={0.25}
-                  value={currentPosition}
-                  onChange={(e) => handleSliderChange(parseFloat(e.target.value))}
-                  className="flex-1 h-1 bg-border-default rounded-lg appearance-none cursor-pointer accent-[var(--accent-primary)]"
-                />
-              </div>
-
-              {/* Time display */}
-              <span className="text-text-muted min-w-[90px] text-center">
-                Time: <span ref={timeDisplayRef} className="font-mono text-text-primary">{currentTime.toFixed(3)}s</span>
-              </span>
-
-              {/* Speed controls */}
-              <button
-                onClick={handleSlower}
-                disabled={speedIndex === 0}
-                className="text-text-muted hover:text-text-primary disabled:opacity-30 transition-colors"
-              >
-                {'<< Slower'}
-              </button>
-
-              <span className="font-mono text-text-primary min-w-[40px] text-center">
-                {speedMultiplier}x
-              </span>
-
-              <button
-                onClick={handleFaster}
-                disabled={speedIndex === SPEED_LEVELS.length - 1}
-                className="text-text-muted hover:text-text-primary disabled:opacity-30 transition-colors"
-              >
-                {'Faster >>'}
-              </button>
-            </div>
+            <TimeSeriesControls
+              isPlaying={isPlaying}
+              currentPosition={currentPosition}
+              maxPosition={maxPosition}
+              speedMultiplier={speedMultiplier}
+              currentTime={currentTime}
+              sliderRef={sliderRef}
+              timeDisplayRef={timeDisplayRef}
+              onPlayPause={handlePlayPause}
+              onReset={handleReset}
+              onSliderChange={handleSliderChange}
+              onSlower={handleSlower}
+              onFaster={handleFaster}
+              isSlowerDisabled={speedMultiplier <= SPEED_LEVELS[0]}
+              isFasterDisabled={speedMultiplier >= SPEED_LEVELS[SPEED_LEVELS.length - 1]}
+            />
           </div>
         ) : dataLoading ? (
           <div className="flex items-center justify-center h-full">
@@ -663,194 +364,5 @@ export function TimeSeriesView({ projectSlug }: TimeSeriesViewProps) {
         )}
       </div>
     </div>
-  )
-}
-
-// --- Profile Plot Sub-Component ---
-
-interface ProfilePlotProps {
-  resultType: string
-  unit: string
-  stories: string[]
-  profile: number[] | null
-  envelope: EnvelopeData | undefined
-  onPlotInit?: (graphDiv: HTMLElement) => void
-}
-
-function ProfilePlot({ resultType, unit, stories, profile, envelope, onPlotInit }: ProfilePlotProps) {
-  const theme = useThemeStore((s) => s.theme)
-  const traces = useMemo(() => {
-    const t: Plotly.Data[] = []
-
-    // Max envelope
-    if (envelope) {
-      t.push({
-        type: 'scatter',
-        mode: 'lines',
-        x: envelope.maxValues,
-        y: stories,
-        orientation: 'h',
-        line: { color: MAX_ENVELOPE_COLOR, width: 1, dash: 'dash' },
-        name: 'Max',
-        showlegend: false,
-        hoverinfo: 'skip',
-      } as Plotly.Data)
-    }
-
-    // Min envelope
-    if (envelope) {
-      t.push({
-        type: 'scatter',
-        mode: 'lines',
-        x: envelope.minValues,
-        y: stories,
-        orientation: 'h',
-        line: { color: MIN_ENVELOPE_COLOR, width: 1, dash: 'dash' },
-        name: 'Min',
-        showlegend: false,
-        hoverinfo: 'skip',
-      } as Plotly.Data)
-    }
-
-    // Current profile
-    if (profile) {
-      t.push({
-        type: 'scatter',
-        mode: 'lines+markers',
-        x: profile,
-        y: stories,
-        orientation: 'h',
-        line: { color: PROFILE_COLOR, width: 3 },
-        marker: { color: PROFILE_COLOR, size: 5, symbol: 'circle' },
-        name: resultType,
-        showlegend: false,
-      } as Plotly.Data)
-    }
-
-    return t
-  }, [profile, envelope, stories, resultType])
-
-  const layout = useMemo(
-    () => withPlotlyDefaults({
-      xaxis: createAxisLayout({
-        title: { text: `${unit}`, font: { size: 11, color: getChartColors().textColor } },
-        showgrid: false,
-        zerolinecolor: PROFILE_COLOR,
-        zerolinewidth: 1,
-        tickfont: { size: 10, color: getChartColors().textColor },
-      }),
-      yaxis: createAxisLayout({
-        showgrid: false,
-        tickfont: { size: 10, color: getChartColors().textColor },
-        categoryorder: 'array' as const,
-        categoryarray: stories,
-        range: [0, (stories.length > 0 ? stories.length - 1 : 0) + STORY_AXIS_TOP_PADDING],
-      }),
-      margin: { l: 52, r: 6, t: 4, b: 32 },
-    }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stories, unit, theme]
-  )
-
-  return (
-    <div className="ts-profile-plot flex-1 min-w-0 min-h-0 h-full overflow-hidden">
-      <LazyPlot
-        data={traces}
-        layout={layout}
-        config={PLOTLY_CONFIG_NO_MODE_BAR}
-        style={{ width: '100%', height: '100%' }}
-        useResizeHandler
-        onInitialized={(_figure, graphDiv) => onPlotInit?.(graphDiv as HTMLElement)}
-      />
-    </div>
-  )
-}
-
-// --- Base Acceleration Plot Sub-Component ---
-
-interface BaseAccelerationPlotProps {
-  timeSteps: number[]
-  values: number[]
-  currentTime: number
-  onPlotInit?: (graphDiv: HTMLElement) => void
-}
-
-function BaseAccelerationPlot({ timeSteps, values, currentTime, onPlotInit }: BaseAccelerationPlotProps) {
-  const theme = useThemeStore((s) => s.theme)
-  const traces = useMemo(
-    () => [
-      {
-        type: 'scatter' as const,
-        mode: 'lines' as const,
-        x: timeSteps,
-        y: values,
-        line: { color: ACCEL_LINE_COLOR, width: 1 },
-        showlegend: false,
-        hoverinfo: 'x+y' as const,
-      },
-    ],
-    [timeSteps, values]
-  )
-
-  const maxTime = timeSteps.length > 0 ? timeSteps[timeSteps.length - 1] : 1
-
-  // Stable layout - only recomputes when data range or theme changes
-  const baseLayout = useMemo(
-    () => withPlotlyDefaults({
-      xaxis: createAxisLayout({
-        title: { text: 'Time (s)', font: { size: 10, color: getChartColors().textColor } },
-        showgrid: false,
-        tickfont: { size: 9, color: getChartColors().textColor },
-        range: [0, maxTime],
-      }),
-      yaxis: createAxisLayout({
-        title: { text: 'Accel (g)', font: { size: 10, color: getChartColors().textColor } },
-        showgrid: false,
-        tickfont: { size: 9, color: getChartColors().textColor },
-      }),
-      margin: { l: 52, r: 6, t: 4, b: 28 },
-    }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [maxTime, theme]
-  )
-
-  // Only shapes change per frame - lightweight merge, no new axis objects
-  const layout = useMemo(
-    () => ({
-      ...baseLayout,
-      shapes: [
-        {
-          type: 'rect' as const,
-          x0: 0,
-          x1: currentTime,
-          y0: 0,
-          y1: 1,
-          yref: 'paper' as const,
-          fillcolor: 'rgba(74, 125, 137, 0.15)',
-          line: { width: 0 },
-        },
-        {
-          type: 'line' as const,
-          x0: currentTime,
-          x1: currentTime,
-          y0: 0,
-          y1: 1,
-          yref: 'paper' as const,
-          line: { color: MARKER_COLOR, width: 1.5 },
-        },
-      ],
-    }),
-    [baseLayout, currentTime]
-  )
-
-  return (
-    <LazyPlot
-      data={traces}
-      layout={layout}
-      config={PLOTLY_CONFIG_NO_MODE_BAR}
-      style={{ width: '100%', height: '100%' }}
-      useResizeHandler
-      onInitialized={(_figure, graphDiv) => onPlotInit?.(graphDiv as HTMLElement)}
-    />
   )
 }

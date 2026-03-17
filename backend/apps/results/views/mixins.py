@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 
 from core.mixins import ProjectLookupMixin
 
-from ..application import ResultDataService
+from ..services import ResultDataService
 from ..services.availability_service import get_available_result_types_payload
 
 

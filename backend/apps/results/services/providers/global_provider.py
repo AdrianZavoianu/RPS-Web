@@ -1,6 +1,11 @@
 """Provider functions for global/story-level result data."""
 
-from typing import Any, Dict, Optional
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Dict, Optional
+
+if TYPE_CHECKING:
+    from ..result_service import ResultDataService
 
 from config.result_types import RESULT_TYPE_CONFIG
 
@@ -44,7 +49,7 @@ def _filter_pushover_matrix_by_direction(
 
 
 def get_global_results(
-    service,
+    service: ResultDataService,
     result_set_id: int,
     result_type: str,
     direction: str,
@@ -104,7 +109,7 @@ def get_global_results(
 
 
 def get_chart_data(
-    service,
+    service: ResultDataService,
     result_set_id: int,
     result_type: str,
     direction: str,

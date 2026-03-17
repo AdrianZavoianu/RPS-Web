@@ -11,7 +11,7 @@ from apps.results.services import (
     FALLBACK_CACHE_THEN_RAW,
     ResultDataService,
 )
-from apps.results.services.data_assembler import (
+from core.data_assembler import (
     add_summary_metrics,
     build_abs_scatter_data,
     select_top_rows_by_abs_avg,

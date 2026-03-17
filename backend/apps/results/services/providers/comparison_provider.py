@@ -1,6 +1,11 @@
 """Provider functions for comparison datasets."""
 
-from typing import List, Optional
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, List, Optional
+
+if TYPE_CHECKING:
+    from ..result_service import ResultDataService
 
 from config.result_types import RESULT_TYPE_CONFIG
 
@@ -18,7 +23,7 @@ JOINT_RESULT_TYPES = {
 }
 
 
-def _fetch_dataset(service, rs_id, result_type, direction, element_id):
+def _fetch_dataset(service: ResultDataService, rs_id, result_type, direction, element_id):
     """Route to the correct provider based on result type."""
     if element_id:
         return service.get_element_results(
@@ -40,7 +45,7 @@ def _fetch_dataset(service, rs_id, result_type, direction, element_id):
 
 
 def get_comparison_dataset(
-    service,
+    service: ResultDataService,
     result_type: str,
     direction: Optional[str],
     result_set_ids: List[int],

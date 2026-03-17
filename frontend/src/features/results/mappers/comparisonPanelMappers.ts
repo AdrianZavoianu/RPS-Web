@@ -5,7 +5,7 @@ import type {
   ResultDataset,
   ResultSet,
 } from '../../../types'
-import { ROTATION_COMPARISON_COLORS } from '../../../utils/chartColors'
+import { ROTATION_COMPARISON_PALETTE as ROTATION_COMPARISON_COLORS } from '../../../utils/colors'
 import { seededJitter } from '../../../components/results/comparisonUtils'
 
 export interface NamedDataset<T> {

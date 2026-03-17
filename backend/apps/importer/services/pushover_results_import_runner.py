@@ -36,27 +36,10 @@ from apps.results.models import (
 )
 
 from .cache_builder import CacheBuilderService
-from .detail_importers.elements import (
-    import_beam_rotations as _import_beam_rotations,
-    import_column_forces as _import_column_forces,
-    import_column_rotations as _import_column_rotations,
-    import_quad_rotations as _import_quad_rotations,
-    import_wall_shears as _import_wall_shears,
-)
-from .detail_importers.joints import (
-    import_soil_pressures as _import_soil_pressures,
-    import_vertical_displacements as _import_vertical_displacements,
-)
-from .global_aggregation import build_story_index
-from .global_result_importers import (
-    import_story_accelerations as _import_story_accelerations,
-    import_story_displacements as _import_story_displacements,
-    import_story_drifts as _import_story_drifts,
-    import_story_forces as _import_story_forces,
-)
 from .import_contracts import PushoverResultsImportStats
 from .import_context import ImportContext
 from .runner_pipeline import SheetImportStep, run_sheet_import_step
+from .shared_importers import build_common_sheet_importers
 from .sheet_step_definitions import (
     PUSHOVER_RESULTS_SHEET_STEP_DEFINITIONS,
     PUSHOVER_VERTICAL_DISPLACEMENTS_STEP_DEFINITION,
@@ -81,107 +64,11 @@ def _pushover_only_load_cases(
     }
 
 
-def _import_column_sheets(
-    parsed: tuple,
-    allowed_cases: set[str],
-    *,
-    import_context: ImportContext,
-) -> None:
-    """Import column forces from one parsed sheet payload."""
-    story_index = build_story_index(parsed[2])
-    _import_column_forces(
-        import_context,
-        parsed[0],
-        parsed[1],
-        story_index,
-        parsed[3],
-        allowed_cases,
-    )
-
-
 def _build_pushover_sheet_importers(
     import_context: ImportContext,
 ) -> dict[str, Callable[[tuple, set[str]], None]]:
     """Build parser-method keyed importer callbacks for pushover results."""
-    return {
-        "get_story_drifts": lambda parsed, allowed_cases: _import_story_drifts(
-            import_context,
-            parsed[0],
-            parsed[1],
-            build_story_index(parsed[2]),
-            allowed_cases,
-        ),
-        "get_story_forces": lambda parsed, allowed_cases: _import_story_forces(
-            import_context,
-            parsed[0],
-            parsed[1],
-            build_story_index(parsed[2]),
-            allowed_cases,
-        ),
-        "get_joint_displacements": lambda parsed, allowed_cases: _import_story_displacements(
-            import_context,
-            parsed[0],
-            parsed[1],
-            build_story_index(parsed[2]),
-            allowed_cases,
-        ),
-        "get_story_accelerations": lambda parsed, allowed_cases: _import_story_accelerations(
-            import_context,
-            parsed[0],
-            parsed[1],
-            build_story_index(parsed[2]),
-            allowed_cases,
-        ),
-        "get_pier_forces": lambda parsed, allowed_cases: _import_wall_shears(
-            import_context,
-            parsed[0],
-            parsed[1],
-            build_story_index(parsed[2]),
-            parsed[3],
-            allowed_cases,
-        ),
-        "get_quad_rotations": lambda parsed, allowed_cases: _import_quad_rotations(
-            import_context,
-            parsed[0],
-            parsed[1],
-            build_story_index(parsed[2]),
-            parsed[3],
-            allowed_cases,
-        ),
-        "get_column_forces": lambda parsed, allowed_cases: _import_column_sheets(
-            parsed,
-            allowed_cases,
-            import_context=import_context,
-        ),
-        "get_fiber_hinge_states": lambda parsed, allowed_cases: _import_column_rotations(
-            import_context,
-            parsed[0],
-            parsed[1],
-            build_story_index(parsed[2]),
-            parsed[3],
-            allowed_cases,
-        ),
-        "get_hinge_states": lambda parsed, allowed_cases: _import_beam_rotations(
-            import_context,
-            parsed[0],
-            parsed[1],
-            build_story_index(parsed[2]),
-            parsed[3],
-            allowed_cases,
-        ),
-        "get_soil_pressures": lambda parsed, allowed_cases: _import_soil_pressures(
-            import_context,
-            parsed[0],
-            parsed[1],
-            allowed_cases,
-        ),
-        "get_vertical_displacements": lambda parsed, allowed_cases: _import_vertical_displacements(
-            import_context,
-            parsed[0],
-            parsed[1],
-            allowed_cases,
-        ),
-    }
+    return build_common_sheet_importers(import_context)
 
 
 def _run_pushover_results_sheet_steps(
